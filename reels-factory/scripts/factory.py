@@ -190,6 +190,20 @@ def cmd_status(args, cfg) -> int:
     return 0
 
 
+def cmd_kesim(args, cfg) -> int:
+    from reels import kesim
+    if args.mode:
+        kesim.save_settings({"mode": args.mode})
+    proj = kesim.montage([Path(f).expanduser().resolve() for f in args.files])
+    for c in proj.get("clips", []):
+        print(f"✔ {c.get('output')}  ({c.get('duration', 0):.1f} sn)")
+    for d in proj.get("delivered", []):
+        print(f"  Hazır: {d}")
+    for n in proj.get("notes", []):
+        print(f"  · {n}")
+    return 0 if proj.get("status") == "done" else 1
+
+
 def cmd_mcp(args, cfg) -> int:
     from reels import mcp_setup
     if args.list:
@@ -243,6 +257,9 @@ def main() -> int:
     p.add_argument("--target", type=int, default=7)
     p.add_argument("--edl", action="store_true", help="boşluk/dolgu/tekrar kesim listesi")
     p.add_argument("--floor", type=float, default=0.45)
+    p = sub.add_parser("kesim", help="Kesim: dosyaları tek adımda montajla (öğrenilen stil, ses, altyazı, müzik)")
+    p.add_argument("files", nargs="+")
+    p.add_argument("--mode", choices=["auto", "full", "clips"])
     p = sub.add_parser("mcp", help="MCP sunucularını Claude Code'a kaydet (reels-fabrikasi, playwright, github...)")
     p.add_argument("--list", action="store_true", help="yalnızca listele, kaydetme")
     p = sub.add_parser("status", help="görev durumları")
@@ -253,7 +270,7 @@ def main() -> int:
     cfg = load_config()
     handlers = {"doctor": cmd_doctor, "new": cmd_new, "validate": cmd_validate, "produce": cmd_produce,
                 "run": cmd_run, "status": cmd_status, "candidates": cmd_candidates, "selftest": cmd_selftest,
-                "hook": cmd_hook, "title": cmd_title, "chapters": cmd_chapters, "mcp": cmd_mcp}
+                "hook": cmd_hook, "title": cmd_title, "chapters": cmd_chapters, "mcp": cmd_mcp, "kesim": cmd_kesim}
     try:
         return handlers[args.cmd](args, cfg)
     except (StageError, FileNotFoundError) as exc:

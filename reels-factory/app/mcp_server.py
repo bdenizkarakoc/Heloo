@@ -30,11 +30,18 @@ except ImportError:  # mcp 1.x
 
 APP_DIR = Path(__file__).resolve().parent
 ROOT = APP_DIR.parent
+sys.path.insert(0, str(ROOT / "scripts"))
 BASE = os.environ.get("RF_APP_URL", "http://127.0.0.1:8765").rstrip("/")
 UPLOAD_EXT = {".mp4", ".mov", ".m4v", ".mkv", ".webm", ".avi", ".mts", ".3gp", ".jpg", ".jpeg", ".png", ".webp",
               ".heic", ".heif", ".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac", ".opus"}
 
-mcp = FastMCP("reels-fabrikasi")
+mcp = FastMCP("reels-fabrikasi", instructions=(
+    "Reels Fabrikası + Kesim. Montaj/video düzenleme isteklerinde Adobe Premiere yerine Kesim araçlarını kullan: "
+    "tek adımda her şey için kesim_montaj; adım adım düzenleme için kesim_kes, kesim_aralik_sil, kesim_birlestir, "
+    "kesim_yazi_ekle, kesim_renk, kesim_hiz, kesim_cerceve, kesim_muzik_ekle, kesim_ses_ayarla, "
+    "kesim_ses_iyilestir, kesim_kapak; her araç yeni dosya üretir (girdiye yazmaz), sonucu bir sonraki araca ver; "
+    "bitince kesim_hazira_koy. Yeni içerik videosu için kesim_video_yap. Yayınlamak yerine yayina_hazirla "
+    "(yalnızca onay kuyruğu)."))
 
 
 def _call(method: str, path: str, body: dict | None = None, data: bytes | None = None, timeout: float = 60):
@@ -205,6 +212,73 @@ def kanca_puani(kancalar: list[str]) -> str:
                        cwd=ROOT, capture_output=True, text=True, encoding="utf-8", timeout=120,
                        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     return (r.stdout + r.stderr).strip()
+
+
+# ----------------------------------------------------------------------------
+# Kesim: montaj ve Premiere benzeri düzenleme araçları
+# ----------------------------------------------------------------------------
+
+def _kesim_tool(fn, name: str):
+    """kesim_edit işlevini MCP aracı yapar; hataları kullanıcıya okunur mesaj olarak döndürür."""
+    import functools
+
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        except Exception as exc:  # noqa: BLE001
+            raise ToolError(str(exc)[-600:]) from exc
+    mcp.tool(name=name)(wrapper)
+
+
+def _register_kesim() -> None:
+    from reels import kesim_edit as k
+    for fn in (k.bilgi, k.kes, k.aralik_sil, k.birlestir, k.yazi_ekle, k.renk, k.hiz, k.cerceve, k.muzik_ekle,
+               k.ses_ayarla, k.ses_iyilestir, k.kapak):
+        _kesim_tool(fn, f"kesim_{fn.__name__}")
+
+
+_register_kesim()
+
+
+@mcp.tool()
+def kesim_montaj(dosyalar: list[str], mod: str = "auto") -> dict:
+    """Videoları/fotoğrafları Kesim'de tek adımda montajlar: birleştirme, boşluk kesme, 9:16, kelime vurgulu
+    altyazı, renk, zoom, ses iyileştirme, müzik; fabrikanın öğrendiği en güncel stil ve kendini geliştirme turu
+    kullanılır. Sonuç Masaüstü\\kesim\\Hazır klasörüne konur. mod: auto / full (tamamı) / clips (en iyi anlar).
+    İş kuyruğa eklenir; durumu kesim_durum ile izle."""
+    if mod in ("full", "clips", "auto"):
+        _api("POST", "/api/kesim/settings", {"mode": mod})
+    return _api("POST", "/api/kesim/edit", {"files": [_upload(f) for f in dosyalar]})
+
+
+@mcp.tool()
+def kesim_video_yap(konu: str = "", metin: str = "", kategori: str = "", medya_dosyalari: list[str] | None = None) -> dict:
+    """"Şu videoyu yap": fabrikanın araştırma, senaryo, ses, görsel/video/foto ve müzik kaynaklarıyla yeni video
+    üretir; senin fotoğraf/video/müziğin varsa onları kullanır. Bitince Kesim'in Hazır klasörüne de konur."""
+    media = [_upload(f) for f in (medya_dosyalari or [])]
+    return _api("POST", "/api/new", {"topic": konu, "text": metin, "category": kategori or None, "count": 1,
+                                     "media": media, "kesim": True})
+
+
+@mcp.tool()
+def kesim_durum() -> dict:
+    """Kesim: son montajlar (aşama, çıktılar), kullanılan stil, Montaja at / Hazır klasörleri, Kesim.exe bilgisi."""
+    st = _api("GET", "/api/kesim")
+    st["projects"] = [{k: p.get(k) for k in ("id", "status", "stage", "error", "style_used", "delivered", "notes")}
+                      | {"clips": [c.get("output") for c in p.get("clips", [])]} for p in st.get("projects", [])]
+    return st
+
+
+@mcp.tool()
+def kesim_hazira_koy(dosya: str) -> str:
+    """Bitmiş videoyu Masaüstü\\kesim\\Hazır klasörüne kopyalar."""
+    from reels import kesim
+    p = Path(dosya).expanduser()
+    p = p if p.is_absolute() else ROOT / p
+    if not p.is_file():
+        raise ToolError(f"dosya bulunamadı: {dosya}")
+    return kesim.to_ready(p)
 
 
 if __name__ == "__main__":

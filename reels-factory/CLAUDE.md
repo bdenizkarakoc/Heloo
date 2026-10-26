@@ -16,6 +16,7 @@ python scripts/factory.py run --count N          # tam otonom (Claude API anahta
 python app/server.py --open                      # yerel uygulama (kontrol paneli + otomatik mod; /studio: kendi videonu düzenle)
 python scripts/factory.py hook "..." "..."      # kanca puanı (Türkçe) · title "..." --thumb "..." · chapters x.srt
 python -m graphify update scripts                # kod haritası → scripts/graphify-out/GRAPH_REPORT.md (kodda gezinmeden önce)
+python scripts/factory.py kesim <dosyalar...>     # Kesim: tek adımda montaj → Masaüstü\kesim\Hazır
 python scripts/factory.py mcp [--list]           # MCP sunucularını Claude Code'a kaydet
 python scripts/factory.py status [<görev>]
 ```
@@ -48,6 +49,9 @@ python scripts/factory.py status [<görev>]
 | `skills/youtube-agent/` | YouTube agent skill (MIT, değiştirilmeden): 11 beceri + 6 araç |
 | `scripts/reels/yt_tools.py` | Bu araçların Türkçe uyarlaması: kanca puanı, başlık/kapak denetimi, bölümler, kesim listesi |
 | `scripts/reels/knowledge.py` | Graphify: içerik bilgi haritası (brief → knowledge_map) ve kod haritası |
+| `scripts/reels/kesim.py` | Kesim: bırak→montaj (pencere + Montaja at klasörü), öğrenilen en güncel stil, Hazır'a teslim, eski Kesim.exe çıktılarından stil öğrenme |
+| `scripts/reels/kesim_edit.py` | Kesim düzenleme araçları (Premiere yerine): kes, aralık sil, birleştir+geçiş, yazı, renk, hız, çerçeve, müzik, ses, kapak |
+| `app/kesim.html` | Sade Kesim penceresi (`/kesim`, `server.py --open --page kesim`) |
 | `app/mcp_server.py` | MCP sunucusu (stdio): fabrikayı Claude Code/Desktop'a araç olarak açar; yayın yalnızca onay kuyruğuna |
 | `scripts/reels/mcp_setup.py` | `factory.py mcp`: MCP sunucularını (reels-fabrikasi, playwright, memory, filesystem, fetch, git, github, sentry, context7, brave-search, postgres) Claude Code'a kaydeder |
 | `app/publish.html` | Yayın sayfası (`/publish`) |
@@ -59,6 +63,9 @@ python scripts/factory.py status [<görev>]
 
 - `scripts/reels/__init__.py` Windows'ta bütün alt süreçleri `CREATE_NO_WINDOW` ile başlatır; bilerek pencere açan
   çağrı `creationflags` vermeli.
+- Montaj/video düzenleme isteklerinde Adobe Premiere değil Kesim kullanılır (`kesim_*` MCP araçları ya da
+  `factory.py kesim`). Kullanıcı sohbette video/fotoğraf yükleyip montaj isterse `factory.py kesim` ile yap ve çıktıyı gönder.
+  Kullanıcının `Masaüstü\kesim` klasöründeki mevcut dosyalarına (Kesim.exe dahil) dokunma.
 - Gizli bilgiler yalnızca `.env` dosyasında; loglar `SecretFilter` ile maskelenir. Asla koda yazma.
 - Ücretli API çağrıları yalnızca anahtar tanımlıysa ve `budget.*` sınırları içinde yapılır; MCP
   üzerinden kredi harcayan araçları kullanıcı onayı olmadan çağırma.

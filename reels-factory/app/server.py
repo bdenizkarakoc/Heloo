@@ -19,6 +19,7 @@ import mimetypes
 import os
 import queue
 import socket
+import subprocess
 import sys
 import threading
 import time
@@ -31,7 +32,7 @@ from urllib.parse import unquote, urlparse
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from reels import audience, claude_setup, knowledge, notes, cloud_sync, doctor, log, pipeline, publish, publish_sources, studio, voice  # noqa: E402
+from reels import audience, claude_setup, kesim, knowledge, notes, cloud_sync, doctor, log, pipeline, publish, publish_sources, studio, voice  # noqa: E402
 from reels.config import load_config  # noqa: E402
 from reels.job import Job  # noqa: E402
 from reels.util import read_json, write_json  # noqa: E402
@@ -65,6 +66,7 @@ class Factory:
         self.pub_wake = threading.Event()
         threading.Thread(target=self._publisher, daemon=True, name="publisher").start()
         threading.Thread(target=self._telegram, daemon=True, name="telegram").start()
+        threading.Thread(target=self._kesim_loop, daemon=True, name="kesim").start()
 
     # --- görev ekleme
     def enqueue(self, kind: str, **kw) -> dict:
@@ -90,7 +92,18 @@ class Factory:
                 with self.lock:
                     self.current = None
 
+    def _kesim_loop(self) -> None:
+        """Masaüstü\\kesim\\Montaja at klasörü ve Kesim.exe çıktıları (15 sn'de bir)."""
+        while True:
+            time.sleep(15)
+            kesim.tick(self.enqueue)
+
     def _run(self, task: dict) -> None:
+        if task["kind"] == "kesim_learn":
+            with self.lock:
+                self.current["job"] = "kesim-stil"
+            kesim.learn(task["video"])
+            return
         if task["kind"] == "audiofx":
             from reels import audiofx
             src = studio.UPLOADS / task["file"]
@@ -159,6 +172,9 @@ class Factory:
                 self.current["job"] = task["project"]
             proj = (studio.run_analyze if task["kind"] == "studio_analyze" else studio.run_edit)(task["project"])
             L.info("✔ Stüdyo işi bitti: %s", task["project"])
+            if task["kind"] == "studio_edit" and (proj or {}).get("options", {}).get("kesim"):
+                proj["delivered"] = kesim.deliver(proj)
+                studio.save_project(proj)
             for c in (proj or {}).get("clips", []) if task["kind"] == "studio_edit" else []:
                 if c.get("output"):
                     self.auto_queue(c["output"], "studio")
@@ -185,6 +201,8 @@ class Factory:
                 self.current["job"] = job.id
         out = pipeline.produce(job, cfg, from_stage=task.get("from_stage"))
         L.info("✔ Video hazır: %s", out.get("video"))
+        if task.get("kesim") and out.get("video"):  # Kesim penceresinden istendi: Hazır klasörüne de koy
+            kesim.to_ready(ROOT / out["video"])
         if out.get("video"):
             self.auto_queue(out["video"], "local")
             self.maybe_refresh_knowledge()
@@ -482,6 +500,13 @@ class Handler(BaseHTTPRequestHandler):
                 return self._file(voice.say(text))
             except Exception as exc:  # noqa: BLE001
                 return self._json({"error": str(exc)}, 502)
+        if path in ("/kesim", "/kesim.html"):
+            return self._file(ROOT / "app" / "kesim.html")
+        if path == "/api/kesim":
+            st = kesim.status()
+            st["styles"] = [{"slug": x["slug"], "name": x["name"], "version": x["version"]} for x in studio.list_styles()]
+            st["projects"] = [p for p in studio.list_projects(15) if p.get("options", {}).get("kesim")][:8]
+            return self._json(st)
         if path in ("/studio", "/studio.html"):
             return self._file(ROOT / "app" / "studio.html")
         if path == "/api/studio/styles":
@@ -584,6 +609,8 @@ class Handler(BaseHTTPRequestHandler):
         data = self._body()
         if path.startswith("/api/studio/"):
             return self._studio_post(path[len("/api/studio/"):], data)
+        if path.startswith("/api/kesim/"):
+            return self._kesim_post(path[len("/api/kesim/"):], data)
         if path.startswith("/api/voice/"):
             return self._voice_post(path[len("/api/voice/"):], data)
         if path.startswith("/api/publish/"):
@@ -638,7 +665,7 @@ class Handler(BaseHTTPRequestHandler):
             text = (data.get("text") or "").strip() or None
             tasks = [FACTORY.enqueue("new", category=data.get("category") or None,
                                      topic=(data.get("topic") or "").strip() or None, text=text,
-                                     draw=bool(data.get("draw")), source="elle",
+                                     draw=bool(data.get("draw")), source="elle", kesim=bool(data.get("kesim")),
                                      media=[Path(str(f)).name for f in (data.get("media") or [])])
                      for _ in range(1 if (text or data.get("media")) else n)]
             return self._json({"queued": tasks})
@@ -659,6 +686,33 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/cloud/sync":
             FACTORY.cloud_wake.set()
             return self._json({"ok": True})
+        return self.send_error(404)
+
+    def _kesim_post(self, action: str, data: dict):
+        try:
+            if action == "edit":  # yüklenen dosyalarla tek tık montaj
+                files = [studio.UPLOADS / Path(str(f)).name for f in (data.get("files") or [])]
+                files = [f for f in files if f.is_file()]
+                if not files:
+                    return self._json({"error": "önce video veya fotoğraf bırakın"}, 400)
+                return self._json(kesim.start(files, FACTORY.enqueue))
+            if action == "settings":
+                return self._json(kesim.save_settings(data))
+            if action == "probe":
+                return self._json(kesim.probe(try_help=bool(data.get("help"))))
+            if action == "open":  # bir videoyu Kesim.exe'de aç
+                p = (ROOT / str(data.get("video", ""))).resolve()
+                if ROOT.resolve() not in p.parents:
+                    return self._json({"error": "izinsiz yol"}, 400)
+                return self._json(kesim.open_in_kesim(p))
+            if action == "folder":  # Montaja at / Hazır klasörünü Gezgin'de aç
+                d = kesim.kesim_dir() / (kesim.READY_NAME if data.get("which") == "ready" else kesim.INBOX_NAME)
+                d.mkdir(parents=True, exist_ok=True)
+                if os.name == "nt":
+                    os.startfile(d)  # noqa: S606
+                return self._json({"ok": True, "path": str(d)})
+        except Exception as exc:  # noqa: BLE001
+            return self._json({"error": str(exc)}, 400)
         return self.send_error(404)
 
     def _studio_post(self, action: str, data: dict):
@@ -784,17 +838,32 @@ def port_in_use(port: int) -> bool:
         return s.connect_ex(("127.0.0.1", port)) == 0
 
 
+def open_window(url: str, app: bool = False) -> None:
+    """Sayfayı açar; app=True ise (Kesim) adres çubuğu olmayan sade bir pencerede (Edge/Chrome --app)."""
+    if app and os.name == "nt":
+        for base in (os.environ.get("ProgramFiles(x86)", ""), os.environ.get("ProgramFiles", ""),
+                     os.environ.get("LOCALAPPDATA", "")):
+            for exe in (Path(base) / "Microsoft/Edge/Application/msedge.exe",
+                        Path(base) / "Google/Chrome/Application/chrome.exe"):
+                if base and exe.is_file():
+                    subprocess.Popen([str(exe), f"--app={url}", "--window-size=560,780"])  # noqa: S603
+                    return
+    webbrowser.open(url)
+
+
 def main() -> int:
     global FACTORY
     ap = argparse.ArgumentParser(description="Reels Fabrikası uygulaması")
     ap.add_argument("--port", type=int, default=8765)
     ap.add_argument("--open", action="store_true", help="tarayıcıda aç")
+    ap.add_argument("--page", default="", help="açılacak sayfa (ör. kesim: sade montaj penceresi)")
     args = ap.parse_args()
-    url = f"http://127.0.0.1:{args.port}/"
+    url = f"http://127.0.0.1:{args.port}/{args.page}"
+    as_app = args.page == "kesim"
     if port_in_use(args.port):  # zaten çalışıyor: yalnızca paneli aç
         print(f"Uygulama zaten çalışıyor: {url}")
         if args.open:
-            webbrowser.open(url)
+            open_window(url, as_app)
         return 0
     log.setup_logging(False)
     import logging
@@ -807,7 +876,7 @@ def main() -> int:
     print(f"Reels Fabrikası çalışıyor: {url}  (durdurmak için Ctrl+C)")
     L.info("Uygulama başladı: %s", url)
     if args.open:
-        threading.Timer(1.0, lambda: webbrowser.open(url)).start()
+        threading.Timer(1.0, lambda: open_window(url, as_app)).start()
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
