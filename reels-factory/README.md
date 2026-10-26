@@ -52,14 +52,17 @@ Betik şunları yapar: `pip install -r requirements.txt`, `npm install` (HyperFr
 `npx hyperframes browser ensure` (Chrome Headless Shell), HyperFrames telemetrisini kapatır,
 `.env.example` → `.env` kopyalar ve `doctor` çalıştırır.
 
-Windows (PowerShell):
+**Windows — tek komutla her şey** (PowerShell'e yapıştırın; kurulum ve güncelleme aynı komut):
 
 ```powershell
-winget install Python.Python.3.12 OpenJS.NodeJS.LTS Gyan.FFmpeg Git.Git   # yoksa; sonra terminali yeniden açın
-git clone -b claude/autonomous-ai-reels-factory-x82681 https://github.com/bdenizkarakoc/Heloo.git
-cd Heloo\reels-factory
-powershell -ExecutionPolicy Bypass -File scripts\setup.ps1
+irm https://raw.githubusercontent.com/bdenizkarakoc/Heloo/claude/autonomous-ai-reels-factory-x82681/reels-factory/scripts/install-all.ps1 | iex
 ```
+
+`scripts/install-all.ps1`: eksikse Git/Python/FFmpeg/Node.js'i winget ile kurar → kodu `Belgeler\Heloo` altına indirir
+(varsa günceller) → Python/Node paketleri, render tarayıcısı, ses motoru (PyTorch CPU) → Claude Code (kurulum +
+tarayıcıda giriş) → masaüstü kısayolları ve Windows açılışında başlatma → uygulamayı açar. `.env`, videolar,
+sesler ve kanallar korunur. Seçenekler komuttan önce: `$env:RF_DIR="C:\Reels"`, `$env:RF_NO_VOICE=1`,
+`$env:RF_NO_CLAUDE=1`.
 
 Elle kurulum:
 
