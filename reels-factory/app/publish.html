@@ -138,6 +138,11 @@
         <div id="stStock" class="muted" style="margin-top:6px"></div>
       </div>
       <div class="card">
+        <h2>Claude (senaryo, AI asistan, stil öğrenme)</h2>
+        <p class="muted">Bilgisayarda Claude Code oturumu açıksa anahtar gerekmez. API anahtarı girersen fabrika ve Kesim'in AI asistanı onu kullanır (console.anthropic.com → API Keys; kullanım ücretlidir, <code>budget.*</code> sınırları geçerli). Anahtar yalnızca bu bilgisayardaki <code>.env</code> dosyasına yazılır; silmek için boş bırakıp Kaydet.</p>
+        <div class="row"><input id="antKey" type="password" placeholder="Claude API anahtarı (sk-ant-...)" autocomplete="off"><button class="ghost" style="flex:0 0 auto" onclick="saveSecret('ANTHROPIC_API_KEY', 'antKey')">Kaydet</button></div>
+      </div>
+      <div class="card">
         <h2>Yapay zekâ görsel ve video</h2>
         <p class="muted"><b>AI görsel:</b> Hugging Face hesabı (ücretsiz) → huggingface.co/settings/tokens → "Read" belirteci. FLUX.1-schnell kullanılır (Apache-2.0, ticari kullanım serbest); ücretsiz hesapta aylık kota küçüktür.<br>
         <b>AI video:</b> Replicate (ücretli, kart gerekir) → replicate.com/account/api-tokens. Wan 2.2: 5 sn'lik klip ≈ 0,05 $. Video başına en fazla 4 klip, 8 görsel (bütçe sınırı).</p>

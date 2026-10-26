@@ -832,7 +832,7 @@ class Handler(BaseHTTPRequestHandler):
     # Uygulamadan girilebilecek gizli değerler (başka ad yazılamaz; değerler asla geri gönderilmez)
     SECRET_NAMES = {"YOUTUBE_CLIENT_ID", "YOUTUBE_CLIENT_SECRET", "TIKTOK_CLIENT_KEY", "TIKTOK_CLIENT_SECRET",
                     "TELEGRAM_BOT_TOKEN", "PEXELS_API_KEY", "PIXABAY_API_KEY", "HF_TOKEN", "REPLICATE_API_TOKEN",
-                    "OPENAI_API_KEY", "BRAVE_API_KEY", "CONTEXT7_API_KEY", "GITHUB_PAT", "POSTGRES_DSN"}
+                    "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "BRAVE_API_KEY", "CONTEXT7_API_KEY", "GITHUB_PAT", "POSTGRES_DSN"}
 
     def _publish_post(self, action: str, data: dict):
         from reels.config import set_secret
@@ -862,6 +862,8 @@ class Handler(BaseHTTPRequestHandler):
                 slug_tok = name.startswith("RF_") and name.endswith(("_TIKTOK_TOKEN", "_TIKTOK_REFRESH_TOKEN"))
                 if name not in self.SECRET_NAMES and not slug_tok:
                     return self._json({"error": "bu ad kaydedilemez"}, 400)
+                if name == "ANTHROPIC_API_KEY" and data.get("value") and not str(data["value"]).strip().startswith("sk-ant-"):
+                    return self._json({"error": "Claude API anahtarı sk-ant- ile başlamalı"}, 400)
                 set_secret(name, str(data.get("value", "")))
                 _caps_cache.clear()
                 return self._json({"saved": name})
