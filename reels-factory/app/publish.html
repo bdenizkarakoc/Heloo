@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Yayın</title>
+<style>
+  :root { --bg:#0b0f1a; --card:#141b2d; --line:#253049; --ink:#eef2fb; --muted:#9aa6c2; --acc:#ffd23f; --acc2:#4fd1c5; --bad:#ff6b6b; --ok:#4fd1c5; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { display: flex; align-items: center; gap: 14px; padding: 16px 22px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--bg); z-index: 5; flex-wrap: wrap; }
+  header h1 { font-size: 19px; margin: 0; } header a { color: var(--acc2); text-decoration: none; font-size: 14px; }
+  .tabs { display: flex; gap: 6px; } .tabs button { background: transparent; color: var(--muted); border: 1px solid var(--line); }
+  .tabs button.on { background: #24304d; color: var(--ink); }
+  main { padding: 18px 22px; max-width: 1280px; margin: 0 auto; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin-bottom: 18px; }
+  .card h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 10px; }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
+  input, select, textarea { width: 100%; padding: 9px 10px; border-radius: 9px; border: 1px solid var(--line); background: #0e1424; color: var(--ink); font: inherit; }
+  textarea { resize: vertical; }
+  button { cursor: pointer; border: 0; border-radius: 10px; padding: 9px 14px; font: 600 14px system-ui, sans-serif; background: var(--acc); color: #111; }
+  button.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+  button.ok { background: var(--ok); } button.bad { background: transparent; color: var(--bad); border: 1px solid #5a2a30; }
+  button:disabled { opacity: .45; cursor: default; }
+  .muted { color: var(--muted); font-size: 13px; } .err { color: var(--bad); font-size: 13px; } .good { color: var(--acc2); font-size: 13px; }
+  .row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; } .row > * { flex: 1; min-width: 140px; }
+  .pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; background: #1d2740; color: var(--muted); }
+  .pill.pending { background: #3b331a; color: var(--acc); } .pill.published { background: #133a36; color: var(--acc2); }
+  .pill.failed, .pill.rejected { background: #3d1c22; color: var(--bad); } .pill.partial, .pill.publishing, .pill.approved { background: #1c2f4a; color: #8cc4ff; }
+  .item { display: grid; grid-template-columns: 220px 1fr 330px; gap: 16px; border-top: 1px solid var(--line); padding: 16px 0; }
+  .item:first-child { border-top: 0; padding-top: 0; }
+  @media (max-width: 1000px) { .item { grid-template-columns: 1fr; } }
+  .item video { width: 100%; aspect-ratio: 9/16; background: #000; border-radius: 10px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; } .chips label { display: flex; gap: 6px; align-items: center; margin: 0; color: var(--ink); font-size: 13px; background: #0e1424; border: 1px solid var(--line); padding: 5px 9px; border-radius: 8px; }
+  .chips input { width: auto; }
+  .count { font-size: 22px; font-weight: 700; color: var(--acc); }
+  .score { font-size: 34px; font-weight: 800; } .bars div { display: flex; justify-content: space-between; font-size: 13px; }
+  ul { margin: 6px 0; padding-left: 18px; font-size: 13px; } li { margin: 2px 0; }
+  .persona { font-size: 12px; color: var(--muted); border-left: 2px solid var(--line); padding-left: 8px; margin: 6px 0; }
+  .persona b { color: var(--ink); font-weight: 600; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; } @media (max-width: 900px) { .grid2 { grid-template-columns: 1fr; } }
+  .acc { border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-top: 10px; } .acc h3 { margin: 0 0 6px; font-size: 15px; }
+  .logo { width: 72px; height: 72px; object-fit: contain; background: #0e1424; border-radius: 12px; border: 1px solid var(--line); }
+  details summary { cursor: pointer; color: var(--acc2); font-size: 13px; margin-top: 6px; }
+  .msg { padding: 10px 14px; border-radius: 10px; background: #133a36; color: var(--acc2); margin-bottom: 14px; display: none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Yayın</h1>
+  <div class="tabs"><button class="on" data-tab="queue">Onay ve yayın</button><button data-tab="channels">Kanallar ve hesaplar</button><button data-tab="settings">Ayarlar</button></div>
+  <span style="flex:1"></span>
+  <a href="/studio">🎬 Stüdyo</a><a href="/voice">🎙️ Sesim</a><a href="/">← Kontrol paneli</a>
+</header>
+<main>
+  <div class="msg" id="msg"></div>
+
+  <section id="tab-queue">
+    <div class="card">
+      <h2>Onay bekleyenler ve yayınlananlar</h2>
+      <p class="muted">Yeni video bu listeye gelir. Belirlenen süre içinde <b>Onayla</b> dersen hemen, yanıt vermezsen süre dolunca otomatik yayınlanır; <b>Reddet</b> dersen yayınlanmaz. Telegram bağlıysa aynı düğmeler telefonuna da gelir. Videolar kontrol panelinden, Stüdyo'dan veya otomatik (Kanallar → otomatik kuyruk) eklenir.</p>
+      <div id="items" class="muted">Yükleniyor…</div>
+    </div>
+  </section>
+
+  <section id="tab-channels" style="display:none">
+    <div class="grid2">
+      <div class="card">
+        <h2>Kanal</h2>
+        <select id="chSel"></select>
+        <div class="row">
+          <div><label>Kanal adı</label><input id="chName" placeholder="ör. Merak Fabrikası"></div>
+          <div><label>Kullanıcı adı (videoda yazılır)</label><input id="chHandle" placeholder="@merakfabrikasi"></div>
+        </div>
+        <div class="row" style="align-items:center">
+          <img id="chLogo" class="logo" alt="" style="flex:0 0 auto">
+          <div><label>Logo (PNG, şeffaf arka plan önerilir)</label><input type="file" id="chLogoFile" accept="image/*"></div>
+        </div>
+        <div class="row">
+          <div><label>Logo konumu</label><select id="chPos"><option value="top-right">sağ üst</option><option value="top-left">sol üst</option></select></div>
+          <div><label>Onay süresi (saat)</label><input id="chHours" type="number" min="0" max="72" step="0.5" value="2"></div>
+        </div>
+        <div class="chips" style="margin-top:10px"><label><input type="checkbox" id="chShow" checked>Kanal adını videoya yaz</label>
+          <label><input type="checkbox" id="chAuto" checked>Onay gelmezse otomatik yayınla</label>
+          <label><input type="checkbox" id="chDefault">Varsayılan kanal</label></div>
+        <label>Varsayılan platformlar</label>
+        <div class="chips" id="chTargets"></div>
+        <label>Otomatik onay kuyruğuna al</label>
+        <div class="chips"><label><input type="checkbox" id="aqLocal">bu bilgisayarda üretilenler</label><label><input type="checkbox" id="aqCloud">buluttan gelenler</label><label><input type="checkbox" id="aqStudio">Stüdyo klipleri</label></div>
+        <label>Paylaşım yazısının sonuna eklenecek (isteğe bağlı)</label>
+        <textarea id="chSuffix" rows="2" placeholder="ör. Takip et: @merakfabrikasi #bilim"></textarea>
+        <div style="margin-top:12px"><button id="btnChSave">Kanalı kaydet</button> <span id="chMsg" class="muted"></span></div>
+      </div>
+
+      <div class="card">
+        <h2>Hesaplar <span class="muted" id="accFor"></span></h2>
+        <div class="acc"><h3>Instagram + Facebook Sayfası <span id="stMeta"></span></h3>
+          <p class="muted">Instagram İşletme/İçerik Üreticisi hesabı bir Facebook Sayfasına bağlı olmalı. developers.facebook.com'da bir uygulama oluştur, Graph API Explorer'dan <code>instagram_basic, instagram_content_publish, pages_show_list, pages_read_engagement, pages_manage_posts</code> izinleriyle uzun ömürlü kullanıcı belirteci al ve yapıştır.</p>
+          <div class="row"><input id="metaToken" type="password" placeholder="Meta kullanıcı belirteci"><button class="ghost" style="flex:0 0 auto" id="btnMetaPages">Sayfaları getir</button></div>
+          <div class="row" id="metaPick" style="display:none"><select id="metaPages"></select><button style="flex:0 0 auto" id="btnMetaConnect">Bağla</button></div>
+        </div>
+        <div class="acc"><h3>YouTube Shorts <span id="stYt"></span></h3>
+          <p class="muted">Google Cloud Console'da YouTube Data API v3'ü etkinleştir, "Masaüstü uygulaması" OAuth istemcisi oluştur; yönlendirme adresi: <code id="ytRedirect"></code>. Not: Google'ın denetiminden geçmemiş projelerle yüklenen videolar <b>gizli</b> kalır.</p>
+          <div class="row"><input id="ytId" placeholder="OAuth istemci kimliği"><input id="ytSecret" type="password" placeholder="İstemci gizli anahtarı"><button class="ghost" style="flex:0 0 auto" id="btnYtSave">Kaydet</button></div>
+          <div style="margin-top:8px" class="row"><select id="ytPrivacy"><option value="public">herkese açık</option><option value="unlisted">liste dışı</option><option value="private">gizli</option></select><button style="flex:0 0 auto" id="btnYtConnect">Google ile bağlan</button></div>
+        </div>
+        <div class="acc"><h3>TikTok <span id="stTt"></span></h3>
+          <p class="muted">developers.tiktok.com'da Content Posting API'li bir uygulama gerekir. TikTok, denetimden geçmemiş uygulamaların paylaşımlarını yalnızca <b>"sadece ben"</b> gizliliğiyle kabul eder.</p>
+          <div class="row"><input id="ttKey" placeholder="Client key"><input id="ttSecret" type="password" placeholder="Client secret"><button class="ghost" style="flex:0 0 auto" id="btnTtApp">Kaydet</button></div>
+          <div class="row" style="margin-top:8px"><input id="ttAccess" type="password" placeholder="Erişim belirteci"><input id="ttRefresh" type="password" placeholder="Yenileme belirteci"><button style="flex:0 0 auto" id="btnTtSave">Bağla</button></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="tab-settings" style="display:none">
+    <div class="grid2">
+      <div class="card">
+        <h2>Onay bildirimi: Telegram</h2>
+        <p class="muted">Telefonuna video + <b>Onayla / Reddet / Ertele</b> düğmeleri gelir. Telegram'da @BotFather'a <code>/newbot</code> yaz, verdiği belirteci buraya yapıştır, sonra botuna <code>/start</code> gönder.</p>
+        <div class="row"><input id="tgToken" type="password" placeholder="Bot belirteci"><button style="flex:0 0 auto" id="btnTg">Kaydet</button></div>
+        <div style="margin-top:8px"><span id="stTg" class="muted"></span> <button class="ghost" id="btnTgTest">Test mesajı</button></div>
+      </div>
+      <div class="card">
+        <h2>Kitle testi ("Bu video nasıl?")</h2>
+        <label>Yeni video kuyruğa girince</label>
+        <select id="audAuto"><option value="claude">Claude ile sanal izleyici paneli (hızlı)</option><option value="mirofish">MiroFish simülasyonu (kendi sunucun; maliyetli)</option><option value="off">otomatik test yapma</option></select>
+        <label>MiroFish adresi</label>
+        <input id="mfUrl" placeholder="http://localhost:5001">
+        <p class="muted">MiroFish (github.com/666ghj/MiroFish, AGPL-3.0) ayrı kurulur: <code>docker compose up -d</code>; kendi LLM ve Zep anahtarlarını ister ve çok sayıda LLM çağrısı yapar. Sonuçlar tahmindir.</p>
+        <button id="btnSettings">Kaydet</button> <span id="setMsg" class="muted"></span>
+      </div>
+      <div class="card">
+        <h2>Stok video anahtarları (isteğe bağlı)</h2>
+        <p class="muted">Videolarda fotoğraf yerine gerçek video klipler için. Anahtar yoksa NASA video arşivi (uzay konuları) kullanılır.</p>
+        <div class="row"><input id="pexKey" type="password" placeholder="Pexels API anahtarı"><button class="ghost" style="flex:0 0 auto" onclick="saveSecret('PEXELS_API_KEY', 'pexKey')">Kaydet</button></div>
+        <div class="row" style="margin-top:8px"><input id="pixKey" type="password" placeholder="Pixabay API anahtarı"><button class="ghost" style="flex:0 0 auto" onclick="saveSecret('PIXABAY_API_KEY', 'pixKey')">Kaydet</button></div>
+        <div id="stStock" class="muted" style="margin-top:6px"></div>
+      </div>
+    </div>
+  </section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const api = async (p, body) => (await fetch(p, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {})).json();
+const PL = { instagram: "Instagram", facebook: "Facebook", youtube: "YouTube", tiktok: "TikTok" };
+const ST = { pending: "onay bekliyor", approved: "onaylandı", publishing: "yayınlanıyor", published: "yayınlandı", partial: "kısmen yayınlandı", failed: "yayınlanamadı", rejected: "reddedildi" };
+let channels = [], editing = new Set();
+
+function flash(t) { $("msg").textContent = t; $("msg").style.display = "block"; setTimeout(() => ($("msg").style.display = "none"), 6000); }
+document.querySelectorAll(".tabs button").forEach((b) => (b.onclick = () => {
+  document.querySelectorAll(".tabs button").forEach((x) => x.classList.toggle("on", x === b));
+  ["queue", "channels", "settings"].forEach((t) => ($("tab-" + t).style.display = b.dataset.tab === t ? "block" : "none"));
+}));
+
+function audienceHtml(a) {
+  if (!a) return '<div class="muted">Kitle testi henüz yapılmadı.</div>';
+  if (a.error) return `<div class="err">Kitle testi yapılamadı: ${esc(a.error)}</div>`;
+  if (a.method === "mirofish") return `<div><b>MiroFish raporu</b> <span class="muted">${esc(a.at)}</span></div><details open><summary>raporu göster</summary><div class="muted" style="white-space:pre-wrap">${esc((a.markdown || "").slice(0, 6000))}</div></details>`;
+  const col = a.score >= 70 ? "var(--acc2)" : a.score >= 45 ? "var(--acc)" : "var(--bad)";
+  return `<div class="row" style="align-items:center"><div style="flex:0 0 auto"><span class="score" style="color:${col}">${esc(a.score)}</span><span class="muted">/100</span></div>
+    <div class="bars"><div><span>Açılış</span><b>${esc(a.hook)}/10</b></div><div><span>Anlaşılırlık</span><b>${esc(a.clarity)}/10</b></div><div><span>Görsel</span><b>${esc(a.visual)}/10</b></div><div><span>İzlenme oranı</span><b>${esc(a.est_watch_through)}</b></div></div></div>
+    <div style="margin-top:6px">${esc(a.verdict)}</div>
+    ${a.platform_fit ? `<div class="muted" style="margin-top:4px">${Object.entries(a.platform_fit).map(([k, v]) => `${PL[k] || k}: ${esc(v)}`).join(" · ")}</div>` : ""}
+    <details><summary>izleyiciler, riskler ve öneriler</summary>
+      ${(a.personas || []).map((p) => `<div class="persona"><b>${esc(p.who)}</b> — ${p.stops ? "durur" : "geçer"}, izler ${esc(p.watch)}, ${esc(p.action)}${p.comment ? `<br>“${esc(p.comment)}”` : ""}</div>`).join("")}
+      ${a.strengths?.length ? `<div class="good" style="margin-top:6px">Güçlü yanlar</div><ul>${a.strengths.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
+      ${a.risks?.length ? `<div class="err">Riskler</div><ul>${a.risks.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
+      ${a.improvements?.length ? `<div class="muted">Öneriler</div><ul>${a.improvements.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
+    </details><div class="muted" style="margin-top:4px">${esc(a.note || "")}</div>`;
+}
+
+function itemHtml(it) {
+  const pend = it.status === "pending";
+  const live = ["pending", "failed", "partial", "approved"].includes(it.status);
+  const res = Object.entries(it.results || {}).map(([p, r]) => r.status === "published"
+    ? `<div class="good">✔ ${PL[p]}: ${r.url ? `<a href="${esc(r.url)}" target="_blank" style="color:var(--acc2)">aç</a>` : "gönderildi"}${r.privacy ? ` (${esc(r.privacy)})` : ""}</div>`
+    : `<div class="err">✖ ${PL[p]}: ${esc(r.error)}</div>`).join("");
+  return `<div class="item" data-id="${esc(it.id)}">
+    <div><video src="/${esc(it.video)}" poster="/${esc(it.cover)}" controls preload="none"></video></div>
+    <div>
+      <div><b>${esc(it.title)}</b> <span class="pill ${esc(it.status)}">${esc(ST[it.status] || it.status)}</span> <span class="muted">· ${esc(it.channel_name)} · kaynak: ${esc(it.source)}</span></div>
+      ${pend ? `<div style="margin-top:6px">${it.auto_publish ? `<span class="count">${Math.floor(it.minutes_left / 60)} sa ${it.minutes_left % 60} dk</span> <span class="muted">sonra otomatik yayınlanacak</span>` : `<span class="muted">Onay verilene kadar yayınlanmayacak (otomatik yayın kapalı).</span>`}</div>` : ""}
+      <label>Paylaşım yazısı</label>
+      <textarea rows="5" id="cap-${esc(it.id)}" ${live ? "" : "disabled"} onfocus="editing.add('${esc(it.id)}')">${esc(it.caption)}</textarea>
+      <label>Nerede paylaşılsın?</label>
+      <div class="chips">${Object.keys(PL).map((p) => `<label><input type="checkbox" value="${p}" class="tg-${esc(it.id)}" ${it.targets.includes(p) ? "checked" : ""} ${live ? "" : "disabled"} onchange="editing.add('${esc(it.id)}')">${PL[p]}</label>`).join("")}</div>
+      ${channels.length > 1 && live ? `<label>Kanal</label><select id="ch-${esc(it.id)}" onchange="editing.add('${esc(it.id)}')">${channels.map((c) => `<option value="${esc(c.slug)}" ${c.slug === it.channel ? "selected" : ""}>${esc(c.name)}</option>`).join("")}</select>` : ""}
+      <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+        ${live ? `<button class="ok" onclick="doAct('${esc(it.id)}','approve')">✅ Onayla, şimdi yayınla</button>` : ""}
+        ${pend ? `<button class="ghost" onclick="doAct('${esc(it.id)}','snooze')">⏰ 2 saat ertele</button><button class="bad" onclick="doAct('${esc(it.id)}','reject')">❌ Reddet</button>` : ""}
+        ${live ? `<button class="ghost" onclick="saveEdit('${esc(it.id)}')">Değişiklikleri kaydet</button>` : ""}
+      </div>
+      <div style="margin-top:8px">${res}</div>
+    </div>
+    <div><h2 style="font-size:13px;color:var(--muted);letter-spacing:.06em;text-transform:uppercase;margin:0 0 6px">🔮 Bu video nasıl?</h2>
+      ${audienceHtml(it.audience)}
+      <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap"><button class="ghost" onclick="runAud('${esc(it.id)}','claude')">Claude paneli</button><button class="ghost" onclick="runAud('${esc(it.id)}','mirofish')">MiroFish</button>
+      <a href="/${esc(it.sheet)}" target="_blank" class="muted" style="align-self:center">kareler</a></div>
+      ${it.audience_runs && it.audience_runs.mirofish && it.audience !== it.audience_runs.mirofish ? `<details><summary>MiroFish sonucu</summary>${audienceHtml(it.audience_runs.mirofish)}</details>` : ""}
+    </div></div>`;
+}
+
+async function refresh() {
+  const items = await api("/api/publish/items");
+  const box = $("items");
+  if (!items.length) { box.innerHTML = "Henüz kuyrukta video yok. Kontrol panelinde veya Stüdyo'da bir videonun altındaki <b>Yayına gönder</b> bağlantısını kullan."; return; }
+  // düzenlenen öğeleri bozmadan güncelle
+  const keep = {}; editing.forEach((id) => { const el = box.querySelector(`[data-id="${id}"]`); if (el) keep[id] = el; });
+  box.innerHTML = items.map(itemHtml).join("");
+  Object.entries(keep).forEach(([id, el]) => { const n = box.querySelector(`[data-id="${id}"]`); if (n) n.replaceWith(el); });
+}
+
+function collect(id) {
+  const body = { id, caption: $("cap-" + id).value, targets: [...document.querySelectorAll(".tg-" + id + ":checked")].map((x) => x.value) };
+  if ($("ch-" + id)) body.channel = $("ch-" + id).value;
+  return body;
+}
+window.saveEdit = async (id) => { const r = await api("/api/publish/act", { ...collect(id), action: "update" }); editing.delete(id); r.error ? flash(r.error) : flash("Kaydedildi"); refresh(); };
+window.doAct = async (id, action) => {
+  if (editing.has(id) && action === "approve") await api("/api/publish/act", { ...collect(id), action: "update" });
+  if (action === "reject" && !confirm("Bu video yayınlanmayacak. Emin misin?")) return;
+  const r = await api("/api/publish/act", { id, action, hours: 2 });
+  editing.delete(id); r.error ? flash(r.error) : flash({ approve: "Onaylandı, yayınlanıyor…", reject: "Reddedildi", snooze: "2 saat ertelendi" }[action]); refresh();
+};
+window.runAud = async (id, method) => { await api("/api/publish/audience", { id, method }); flash("Kitle testi sıraya alındı; birkaç dakika içinde burada görünür."); };
+
+// --- kanallar
+function fillChannel(c) {
+  c = c || { name: "", handle: "", logo_pos: "top-right", approval_hours: 2, show_name: true, auto_publish: true, targets: Object.keys(PL), auto_queue: {}, caption_suffix: "", accounts: { youtube: {}, tiktok: {} }, connected: {} };
+  $("chName").value = c.name; $("chHandle").value = c.handle || ""; $("chPos").value = c.logo_pos; $("chHours").value = c.approval_hours;
+  $("chShow").checked = c.show_name; $("chAuto").checked = c.auto_publish; $("chDefault").checked = !!c.default; $("chSuffix").value = c.caption_suffix || "";
+  $("aqLocal").checked = !!c.auto_queue.local; $("aqCloud").checked = !!c.auto_queue.cloud; $("aqStudio").checked = !!c.auto_queue.studio;
+  $("chTargets").innerHTML = Object.keys(PL).map((p) => `<label><input type="checkbox" value="${p}" class="cht" ${c.targets.includes(p) ? "checked" : ""}>${PL[p]}${c.connected?.[p] ? " ✓" : ""}</label>`).join("");
+  $("chLogo").src = c.logo ? `/channels/${c.slug}/${c.logo}?t=${Date.now()}` : "data:,"; $("chLogo").style.visibility = c.logo ? "visible" : "hidden";
+  $("accFor").textContent = c.slug ? "— " + c.name : "— önce kanalı kaydet";
+  const yes = (b, extra) => (b ? `<span class="good">✓ bağlı${extra ? " · " + esc(extra) : ""}</span>` : '<span class="muted">bağlı değil</span>');
+  $("stMeta").innerHTML = `IG ${yes(c.connected?.instagram, c.accounts?.instagram?.ig_username)} · FB ${yes(c.connected?.facebook, c.accounts?.facebook?.page_name)}`;
+  $("stYt").innerHTML = yes(c.connected?.youtube, c.accounts?.youtube?.channel_title);
+  $("stTt").innerHTML = yes(c.connected?.tiktok);
+  $("ytPrivacy").value = c.accounts?.youtube?.privacy || "public";
+}
+async function loadChannels(select) {
+  channels = await api("/api/publish/channels");
+  const cur = select || $("chSel").value;
+  $("chSel").innerHTML = channels.map((c) => `<option value="${esc(c.slug)}">${esc(c.name)}${c.default ? " (varsayılan)" : ""}</option>`).join("") + '<option value="">+ yeni kanal</option>';
+  $("chSel").value = channels.some((c) => c.slug === cur) ? cur : (channels[0]?.slug || "");
+  fillChannel(channels.find((c) => c.slug === $("chSel").value));
+}
+$("chSel").onchange = () => fillChannel(channels.find((c) => c.slug === $("chSel").value));
+const curSlug = () => $("chSel").value;
+$("btnChSave").onclick = async () => {
+  const body = { slug: curSlug() || undefined, name: $("chName").value, handle: $("chHandle").value, logo_pos: $("chPos").value,
+    approval_hours: +$("chHours").value, show_name: $("chShow").checked, auto_publish: $("chAuto").checked, default: $("chDefault").checked || !channels.length,
+    targets: [...document.querySelectorAll(".cht:checked")].map((x) => x.value), caption_suffix: $("chSuffix").value,
+    auto_queue: { local: $("aqLocal").checked, cloud: $("aqCloud").checked, studio: $("aqStudio").checked },
+    accounts: { youtube: { privacy: $("ytPrivacy").value } } };
+  const c = await api("/api/publish/channel", body);
+  if (c.error) { $("chMsg").innerHTML = `<span class="err">${esc(c.error)}</span>`; return; }
+  const f = $("chLogoFile").files[0];
+  if (f) { const r = await (await fetch(`/api/publish/logo?slug=${encodeURIComponent(c.slug)}`, { method: "PUT", body: f })).json(); if (r.error) flash(r.error); $("chLogoFile").value = ""; }
+  $("chMsg").textContent = "Kaydedildi ✓"; loadChannels(c.slug);
+};
+$("btnMetaPages").onclick = async () => {
+  const pages = await api("/api/publish/meta/pages", { token: $("metaToken").value });
+  if (pages.error) { flash(pages.error); return; }
+  $("metaPages").innerHTML = pages.map((p) => `<option value="${esc(p.page_id)}">${esc(p.page_name)}${p.ig_username ? " + Instagram @" + esc(p.ig_username) : " (Instagram bağlı değil)"}</option>`).join("");
+  $("metaPick").style.display = "flex";
+};
+$("btnMetaConnect").onclick = async () => {
+  if (!curSlug()) { flash("Önce kanalı kaydet"); return; }
+  const r = await api("/api/publish/meta/connect", { slug: curSlug(), token: $("metaToken").value, page_id: $("metaPages").value });
+  r.error ? flash(r.error) : flash(`Bağlandı: ${r.page}${r.instagram ? " + @" + r.instagram : ""}`); $("metaToken").value = ""; loadChannels(curSlug());
+};
+window.saveSecret = async (name, inputId) => { const r = await api("/api/publish/secret", { name, value: $(inputId).value }); $(inputId).value = ""; r.error ? flash(r.error) : flash("Kaydedildi (.env)"); loadStatus(); };
+$("btnYtSave").onclick = async () => { await saveSecret("YOUTUBE_CLIENT_ID", "ytId"); await saveSecret("YOUTUBE_CLIENT_SECRET", "ytSecret"); };
+$("btnYtConnect").onclick = async () => { if (!curSlug()) { flash("Önce kanalı kaydet"); return; } $("btnChSave").click(); location.href = `/api/publish/youtube/start?slug=${encodeURIComponent(curSlug())}`; };
+$("btnTtApp").onclick = async () => { await saveSecret("TIKTOK_CLIENT_KEY", "ttKey"); await saveSecret("TIKTOK_CLIENT_SECRET", "ttSecret"); };
+$("btnTtSave").onclick = async () => { if (!curSlug()) { flash("Önce kanalı kaydet"); return; } const r = await api("/api/publish/tiktok", { slug: curSlug(), access_token: $("ttAccess").value, refresh_token: $("ttRefresh").value }); $("ttAccess").value = $("ttRefresh").value = ""; r.error ? flash(r.error) : flash("TikTok kaydedildi"); loadChannels(curSlug()); };
+$("btnTg").onclick = () => saveSecret("TELEGRAM_BOT_TOKEN", "tgToken");
+$("btnTgTest").onclick = async () => { const r = await api("/api/publish/telegram/test", {}); r.error ? flash(r.error) : flash("Test mesajı gönderildi"); };
+$("btnSettings").onclick = async () => { const r = await api("/api/publish/settings", { audience_auto: $("audAuto").value, mirofish_url: $("mfUrl").value }); $("setMsg").innerHTML = r.error ? `<span class="err">${esc(r.error)}</span>` : "Kaydedildi ✓"; };
+
+async function loadStatus() {
+  const s = await api("/api/publish/status");
+  $("stTg").innerHTML = s.telegram.bot ? (s.telegram.chat ? '<span class="good">✓ bağlı</span>' : "Bot kaydedildi — şimdi Telegram'da botuna /start gönder") : "bağlı değil";
+  $("audAuto").value = s.audience_auto; if (document.activeElement !== $("mfUrl")) $("mfUrl").value = s.mirofish_url || "";
+  $("stStock").textContent = `Pexels: ${s.stock.pexels ? "✓" : "yok"} · Pixabay: ${s.stock.pixabay ? "✓" : "yok"} · NASA video: her zaman`;
+  $("ytRedirect").textContent = location.origin.replace("localhost", "127.0.0.1") + "/oauth/youtube";
+}
+const q = new URLSearchParams(location.search);
+if (q.get("msg")) { flash(q.get("msg")); document.querySelector("[data-tab=channels]").click(); history.replaceState(null, "", "/publish"); }
+loadChannels().then(refresh); loadStatus();
+setInterval(refresh, 15000); setInterval(loadStatus, 20000);
+</script>
+</body>
+</html>

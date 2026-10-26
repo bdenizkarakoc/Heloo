@@ -49,6 +49,7 @@
   <span style="flex:1"></span>
   <a href="/studio" style="color:var(--acc2);text-decoration:none;font-weight:600">🎬 Stüdyo</a>
   <a href="/voice" style="color:var(--acc2);text-decoration:none;font-weight:600">🎙️ Sesim</a>
+  <a href="/publish" style="color:var(--acc2);text-decoration:none;font-weight:600">📤 Yayın</a>
   <span id="autoBadge" class="pill">otomatik mod kapalı</span>
 </header>
 <main>
@@ -180,7 +181,7 @@ const vidCard = (title, v, sub) => `
     <div class="vid">
       <video src="/${esc(v.video)}" poster="/${esc(v.thumbnail || "")}" controls preload="none"></video>
       <div class="meta"><div>${esc(title)}</div>${sub ? `<div class="muted">${esc(sub)}</div>` : ""}
-        <a href="/${esc(v.video)}" download>indir</a>${v.post ? `<a href="/${esc(v.post)}" target="_blank">paylaşım metni</a>` : ""}${v.srt ? `<a href="/${esc(v.srt)}" download>altyazı</a>` : ""}</div>
+        <a href="/${esc(v.video)}" download>indir</a>${v.post ? `<a href="/${esc(v.post)}" target="_blank">paylaşım metni</a>` : ""}${v.srt ? `<a href="/${esc(v.srt)}" download>altyazı</a>` : ""}<a href="#" onclick="toPublish('${esc(v.video)}');return false">yayına gönder</a></div>
     </div>`;
 let cloudSeen = null, claudeTimer = null;
 
@@ -238,6 +239,10 @@ async function refreshLog() {
   if (atBottom) pre.scrollTop = pre.scrollHeight;
 }
 
+window.toPublish = async (video) => {
+  const r = await api("/api/publish/queue", { video });
+  alert(r.error ? r.error : "Onay kuyruğuna ekleniyor (logo/ad işleniyor, kitle testi yapılıyor). Yayın sayfasından izleyebilirsin.");
+};
 window.showLog = (id) => { logJob = id; refreshLog(); };
 window.reproduce = async (id) => { await api("/api/produce", { job: id }); refreshStatus(); };
 $("btnNew").onclick = async () => {

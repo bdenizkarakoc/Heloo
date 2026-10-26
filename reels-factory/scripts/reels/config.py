@@ -6,6 +6,7 @@ settings.yaml içine gizli bilgi yazılmaz.
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -40,6 +41,32 @@ def load_dotenv(path: Path | None = None) -> None:
         value = value.strip().strip('"').strip("'")
         if key and value and key not in os.environ:
             os.environ[key] = value
+
+
+def set_secret(name: str, value: str) -> None:
+    """Bir gizli değeri .env dosyasına yazar (varsa günceller) ve bu oturumda etkinleştirir.
+
+    Uygulamadaki hesap bağlama ekranları kullanır; değer loglara yazılmaz (SecretFilter)."""
+    if not re.fullmatch(r"[A-Z][A-Z0-9_]{2,80}", name or ""):
+        raise ValueError("geçersiz anahtar adı")
+    value = (value or "").strip().replace("\n", "").replace("\r", "")
+    path = ROOT / ".env"
+    lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+    out, done = [], False
+    for line in lines:
+        if line.split("=", 1)[0].strip() == name:
+            if not done and value:
+                out.append(f"{name}={value}")
+            done = True
+        else:
+            out.append(line)
+    if not done and value:
+        out.append(f"{name}={value}")
+    path.write_text("\n".join(out) + "\n", encoding="utf-8")
+    if value:
+        os.environ[name] = value
+    else:
+        os.environ.pop(name, None)
 
 
 def secret(name: str) -> str | None:

@@ -185,6 +185,53 @@ Kurallar: yalnızca **kendi sesini** (veya yazılı izni olan birinin sesini) ko
 bu bilgisayarda (`studio/voices/`) kalır; buluttaki otomatik üretim bu sesi kullanmaz (edge-tts kullanır).
 Bazı platformlar yapay zekâ ile üretilmiş sesin etiketlenmesini ister.
 
+## Yayın: onay, otomatik paylaşım, kanal logosu (📤 Yayın)
+
+`/publish` sayfası üç bölümden oluşur.
+
+**Kanallar ve hesaplar.** Kanal adı, videoya yazılacak kullanıcı adı, logo (PNG) ve konumu, onay süresi
+(varsayılan 2 saat), "onay gelmezse otomatik yayınla", varsayılan platformlar ve otomatik kuyruk kaynakları
+(bu bilgisayarda üretilenler / buluttan gelenler / Stüdyo klipleri). Birden çok kanal açılabilir; her videoda
+kanal ve platformlar ayrı ayrı değiştirilebilir ("sadece Instagram'a paylaş, Facebook'a paylaşma" gibi).
+Logo ve ad, yayından önce videonun sağ/sol üst köşesine (platform arayüzünün altına) işlenir.
+
+| Platform | Gerekenler | Bilinen kısıt |
+|---|---|---|
+| Instagram (Reels) | İşletme/İçerik Üreticisi hesabı + bağlı Facebook Sayfası; Meta geliştirici uygulaması ve `instagram_content_publish` izinli belirteç | Meta uygulama incelemesi gerekebilir; kendi hesabın için geliştirme modunda çalışır |
+| Facebook (Sayfa Reels) | Aynı Meta belirteci (`pages_manage_posts`) | — |
+| YouTube Shorts | Google Cloud OAuth istemcisi (YouTube Data API v3), "Google ile bağlan" | Google denetiminden geçmemiş projelerin yüklemeleri **gizli** kalır |
+| TikTok | TikTok geliştirici uygulaması (Content Posting API), erişim + yenileme belirteci | Denetimden (audit) geçmemiş uygulamalar yalnızca **"sadece ben"** paylaşabilir |
+
+Belirteçler yalnızca `.env` dosyasına yazılır (uygulama geri göstermez, loglarda maskelenir).
+
+**Onay ve yayın.** Kuyruğa giren her video: logo/ad işlenir → kitle testi yapılır → **onay bekler**. Geri sayım
+görünür; **Onayla** hemen yayınlar, **Reddet** asla yayınlamaz, **Ertele** 2 saat ekler, paylaşım yazısı ve
+platformlar düzenlenebilir. Süre dolunca yanıt yoksa (otomatik yayın açıksa) seçili platformlara yüklenir.
+Bir platform hata verirse diğerleri yine yayınlanır; tekrar denemede yalnızca başarısız olanlar gönderilir.
+**Telegram** (isteğe bağlı, Ayarlar): video + Onayla/Reddet/Ertele düğmeleri telefona gelir. Bilgisayar ve
+uygulama açık olmalıdır (otomatik yayın ve Telegram dinleme uygulamada çalışır).
+
+**Kitle testi — "Bu video nasıl?"** Yayından önce:
+- **Claude paneli** (varsayılan): videonun kareleri, metni ve paylaşım yazısı Claude'a gösterilir; 10 farklı Türk
+  izleyici profilinin tepkisi canlandırılır → 0-100 puan, açılış/anlaşılırlık/görsel puanları, tahmini izlenme
+  oranı, örnek yorumlar, riskler (telif, hatalı bilgi…) ve öneriler.
+- **MiroFish** ([github.com/666ghj/MiroFish](https://github.com/666ghj/MiroFish), AGPL-3.0): kendi bilgisayarında
+  `docker compose up -d` ile çalıştırdığın MiroFish sunucusunun adresini (ör. `http://localhost:5001`) Ayarlar'a
+  yaz. Video içeriği tohum belge olarak verilir, çok ajanlı sosyal medya simülasyonu çalışır, raporu buraya gelir.
+  MiroFish kendi LLM ve Zep anahtarlarını ister ve çok sayıda LLM çağrısı yapar (maliyetli; `max_rounds` 10).
+  Simülasyon Twitter/Reddit benzeri ortamlardadır. Bu bağlayıcı MiroFish'in arka uç kodundan yazıldı; çalışan
+  bir MiroFish ile henüz denenmedi.
+Her iki sonuç da **tahmindir**, gerçek izlenme verisi değildir.
+
+## Video klipler
+
+`visuals.prefer_video: true` iken fotoğraf sahnelerinde önce konuyla ilgili **video klip** aranır: Pexels ve
+Pixabay (ücretsiz anahtar; Yayın → Ayarlar) ve anahtarsız NASA video arşivi. Klip başlığında sorgu kelimesi
+geçmeli (`video_min_relevance`); NASA arşiv klipleri sıklıkla üzerine yazılmış metin, jenerik veya konuşan
+kişi içerdiğinden Claude üç karesini denetler ve uygun değilse kullanılmaz (Claude yoksa arşiv klibi hiç
+kullanılmaz). Uzun kliplerde giriş/jenerik atlanır, kısa klipler döngülenir. Uygun klip yoksa fotoğraf + kamera
+hareketi + hareketli grafik kullanılır.
+
 ## Bulutta otomatik çalışma (Claude Code on the web)
 
 Zamanlanmış bir bulut görevi günde iki kez (İstanbul saatiyle ~09:47 ve ~18:47) `cloud/ROUTINE.md`

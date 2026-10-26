@@ -34,3 +34,7 @@ config/app.json
 # Video Stüdyosu (yüklenen videolar, öğrenilen stiller, çalışma klasörleri)
 studio/
 output/studio/
+
+# Yayın: kanal ayarları/logolar ve onay kuyruğu (kullanıcı verisi)
+channels/
+publish/

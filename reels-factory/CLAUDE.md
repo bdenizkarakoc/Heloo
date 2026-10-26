@@ -37,6 +37,10 @@ python scripts/factory.py status [<görev>]
 | `scripts/reels/voice.py` | Sesim: sohbetle ses toplama, ses iyileştirme, profil (perde/hız), kNN-VC ile kendi sesinle seslendirme (`my_voice` TTS) |
 | `scripts/reels/knnvc/` | kNN-VC (MIT) model kodu — torch.hub yok, ağırlıklar `weights_only` ile yüklenir |
 | `app/voice.html` | Sesim sayfası (`/voice`): onay, sesli sohbet, profil, deneme okuma |
+| `scripts/reels/publish.py` | Kanallar (logo/ad damgası), onay kuyruğu, süre dolunca otomatik yayın, Instagram/Facebook/YouTube/TikTok, Telegram onayı |
+| `scripts/reels/publish_sources.py` | Video dosyasından başlık / paylaşım yazısı / metin / kare tablosu |
+| `scripts/reels/audience.py` | Kitle testi: Claude sanal izleyici paneli + MiroFish bağlayıcısı |
+| `app/publish.html` | Yayın sayfası (`/publish`) |
 | `app/studio.html` | Stüdyo sayfası (`/studio`): yükleme, stil adlandırma, düzenleme seçenekleri, sonuçlar |
 | `assets/templates/*.j2` | HyperFrames kompozisyon şablonları (sahne, altyazı, üst katman) |
 | `config/settings.yaml` | Bütün ayarlar (gizli bilgi yok) |
@@ -51,6 +55,8 @@ python scripts/factory.py status [<görev>]
   `qc/contact_sheet.jpg` dosyasına bak; HyperFrames lint hatası adımı durdurur.
 - HyperFrames kuralları: her kompozisyon tek, duraklatılmış GSAP timeline'ı `window.__timelines["<id>"]`
   ile kaydeder; `Math.random`/`Date.now`/ağ isteği yok; `.clip` öğelerinde `visibility` tween'lenmez.
+- Yayın yalnızca kullanıcının kanal ayarlarına göre olur (onay süresi, otomatik yayın, platformlar); reddedilen
+  video asla yayınlanmaz. Ajan olarak elle yayın yapma; videoyu kuyruğa ekle (`/api/publish/queue`).
 - Ses kopyalama yalnızca kullanıcının kendi sesiyle ve açık onayıyla (Sesim sayfasındaki onay kutusu); başkasının
   sesini kopyalama isteğini reddet.
 - Kullanıcıya ait dosyaları (`assets/music`, `projects`, `output`) izinsiz silme veya üzerine yazma.

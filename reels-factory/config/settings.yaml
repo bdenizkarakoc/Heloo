@@ -205,6 +205,9 @@ visuals:
   license_mode: any         # kullanıcı isteğiyle açıldı (2026-10-26); varsayılan önerilen değer: strict
   wikipedia_langs: [tr, en]  # kişi/varlık görselleri için aranacak Vikipedi dilleri (visual.subject)
   min_short_side: 720        # bundan küçük görseller elenir
+  prefer_video: true         # fotoğraf sahnelerinde önce konuyla ilgili video klip ara (Pexels/Pixabay anahtarı varsa
+                             # onlar, yoksa NASA video arşivi); bulunamazsa fotoğraf + kamera hareketi
+  video_min_relevance: 2.0   # klip başlığında sorgu kelimesi geçmeli (ilgisiz stok video yerine fotoğraf)
   candidates_per_scene: 6
   license_allow: [cc0, pdm, by]   # Openverse: yalnızca ticari kullanım + değişikliğe izin verenler
   user_agent: "ReelsFactory/0.1 (+https://github.com/; automated short-video generator)"
@@ -291,3 +294,12 @@ budget:
 retry:
   attempts: 3
   backoff: 2.0               # 2s, 4s, 8s ...
+
+# ---------------------------------------------------------------------
+# Yayın öncesi kitle testi (uygulamada Yayın → Ayarlar'dan da değiştirilebilir)
+# ---------------------------------------------------------------------
+audience:
+  mirofish:
+    url: ""                  # kendi MiroFish sunucun, ör. http://localhost:5001 (docker compose up)
+    max_rounds: 10           # simülasyon turu (maliyet: tur başına çok sayıda LLM çağrısı)
+    timeout_min: 90

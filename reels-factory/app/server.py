@@ -30,7 +30,7 @@ from urllib.parse import unquote, urlparse
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from reels import claude_setup, cloud_sync, doctor, log, pipeline, studio, voice  # noqa: E402
+from reels import audience, claude_setup, cloud_sync, doctor, log, pipeline, publish, publish_sources, studio, voice  # noqa: E402
 from reels.config import load_config  # noqa: E402
 from reels.job import Job  # noqa: E402
 from reels.util import read_json, write_json  # noqa: E402
@@ -61,6 +61,9 @@ class Factory:
         self.cloud: dict = {"running": False, "last": None}
         self.cloud_wake = threading.Event()
         threading.Thread(target=self._cloud_loop, daemon=True, name="cloud").start()
+        self.pub_wake = threading.Event()
+        threading.Thread(target=self._publisher, daemon=True, name="publisher").start()
+        threading.Thread(target=self._telegram, daemon=True, name="telegram").start()
 
     # --- görev ekleme
     def enqueue(self, kind: str, **kw) -> dict:
@@ -87,6 +90,27 @@ class Factory:
                     self.current = None
 
     def _run(self, task: dict) -> None:
+        if task["kind"] == "pub_prepare":
+            info = publish_sources.info_for(task["video"])
+            it = publish.enqueue(info["video"], task.get("title") or info["title"],
+                                 task.get("caption") if task.get("caption") is not None else info["caption"],
+                                 info["text"], task.get("channel"), task.get("targets"), info["source"], info["sheet"])
+            with self.lock:
+                self.current["job"] = it["id"]
+            mode = publish.settings().get("audience_auto", "claude")
+            if mode != "off" and not it.get("audience"):
+                self._audience(it["id"], mode)
+            if not it.get("notified"):
+                it = publish.load(it["id"])
+                publish.tg_notify(it)
+                it["notified"] = True
+                publish.save(it)
+            return
+        if task["kind"] == "audience":
+            with self.lock:
+                self.current["job"] = task["item"]
+            self._audience(task["item"], task.get("method", "claude"))
+            return
         if task["kind"] in ("voice_build", "voice_setup"):
             with self.lock:
                 self.current["job"] = f"ses-{task.get('slug', 'motor')}"
@@ -103,8 +127,11 @@ class Factory:
         if task["kind"] in ("studio_analyze", "studio_edit"):
             with self.lock:
                 self.current["job"] = task["project"]
-            (studio.run_analyze if task["kind"] == "studio_analyze" else studio.run_edit)(task["project"])
+            proj = (studio.run_analyze if task["kind"] == "studio_analyze" else studio.run_edit)(task["project"])
             L.info("✔ Stüdyo işi bitti: %s", task["project"])
+            for c in (proj or {}).get("clips", []) if task["kind"] == "studio_edit" else []:
+                if c.get("output"):
+                    self.auto_queue(c["output"], "studio")
             return
         cfg = load_config()
         if task["kind"] == "new":
@@ -126,6 +153,56 @@ class Factory:
                 self.current["job"] = job.id
         out = pipeline.produce(job, cfg, from_stage=task.get("from_stage"))
         L.info("✔ Video hazır: %s", out.get("video"))
+        if out.get("video"):
+            self.auto_queue(out["video"], "local")
+
+    # --- yayın
+    def auto_queue(self, video_rel: str, origin: str) -> None:
+        """Varsayılan kanal bu kaynaktan gelen videoları otomatik onay kuyruğuna almak üzere ayarlıysa ekler."""
+        c = publish.default_channel()
+        if c and (c.get("auto_queue") or {}).get(origin) and not publish.find_by_video(video_rel):
+            self.enqueue("pub_prepare", video=video_rel, topic=f"yayın: {Path(video_rel).name}")
+
+    def _audience(self, pid: str, method: str) -> None:
+        it = publish.load(pid)
+        vinfo = {"id": pid, "title": it["title"], "text": it.get("text", ""), "caption": it.get("caption", ""),
+                 "platforms": it["targets"]}
+        try:
+            if method == "mirofish":
+                res = audience.mirofish_test(vinfo, publish.QUEUE / pid)
+            else:
+                res = audience.panel_test(vinfo, ROOT / it["sheet"], publish.QUEUE / pid)
+        except Exception as exc:  # noqa: BLE001 — test yapılamasa da yayın akışı sürer
+            res = {"method": method, "error": str(exc)[:300]}
+            L.warning("Kitle testi yapılamadı: %s", exc)
+        it = publish.load(pid)
+        it.setdefault("audience_runs", {})[method] = res
+        if method == "claude" or not it.get("audience"):
+            it["audience"] = res
+        publish.save(it)
+
+    def _publisher(self) -> None:
+        while True:
+            self.pub_wake.wait(30)
+            self.pub_wake.clear()
+            try:
+                for it in publish.due():
+                    publish.publish_item(it["id"])
+            except Exception as exc:  # noqa: BLE001
+                L.error("Yayın zamanlayıcısı hatası: %s", exc)
+
+    def _telegram(self) -> None:
+        offset = 0
+        while True:
+            time.sleep(4)
+            if not publish.secret("TELEGRAM_BOT_TOKEN"):
+                continue
+            try:
+                offset = publish.tg_poll(offset)
+                self.pub_wake.set()
+            except Exception as exc:  # noqa: BLE001
+                L.debug("Telegram: %s", exc)
+                time.sleep(20)
 
     # --- otomatik mod
     def save_auto(self, data: dict) -> dict:
@@ -184,6 +261,10 @@ class Factory:
             res = cloud_sync.sync()
             with self.lock:
                 self.cloud.update(running=False, last=res)
+            if res.get("new"):
+                for v in cloud_sync.videos():
+                    if v["name"] in res["new"]:
+                        self.auto_queue(v["video"], "cloud")
             self.cloud_wake.wait(CLOUD_SYNC_MIN * 60)
             self.cloud_wake.clear()
 
@@ -287,6 +368,47 @@ class Handler(BaseHTTPRequestHandler):
             if p and p.suffix.lower() in ok and "uploads" not in p.parts:
                 return self._file(p)
             return self.send_error(403)
+        if path in ("/publish", "/publish.html"):
+            return self._file(ROOT / "app" / "publish.html")
+        if path.startswith("/publish/queue/"):
+            p = self._safe(ROOT / "publish" / "queue", path[len("/publish/queue/"):])
+            return self._file(p) if p and p.suffix.lower() in (".mp4", ".jpg", ".json") else self.send_error(403)
+        if path.startswith("/channels/"):
+            p = self._safe(ROOT / "channels", path[len("/channels/"):])
+            return self._file(p) if p and p.suffix.lower() == ".png" else self.send_error(403)
+        if path == "/api/publish/items":
+            items = publish.items()
+            for it in items:
+                it["minutes_left"] = publish.ceil_minutes(it) if it["status"] == "pending" else None
+            return self._json(items)
+        if path == "/api/publish/channels":
+            return self._json(publish.channels())
+        if path == "/api/publish/status":
+            return self._json(publish.status_summary())
+        if path == "/api/publish/youtube/start":
+            from urllib.parse import parse_qs
+            slug = (parse_qs(url.query).get("slug") or [""])[0]
+            try:
+                target = publish.youtube_auth_url(slug, self._yt_redirect())
+            except Exception as exc:  # noqa: BLE001
+                return self._json({"error": str(exc)}, 400)
+            self.send_response(302)
+            self.send_header("Location", target)
+            self.end_headers()
+            return None
+        if path == "/oauth/youtube":
+            from urllib.parse import parse_qs
+            q = parse_qs(url.query)
+            try:
+                res = publish.youtube_callback(q.get("state", [""])[0], q.get("code", [""])[0], self._yt_redirect())
+                msg = f"YouTube kanalı bağlandı: {res['channel']}"
+            except Exception as exc:  # noqa: BLE001
+                msg = f"YouTube bağlanamadı: {exc}"
+            from urllib.parse import quote
+            self.send_response(302)
+            self.send_header("Location", "/publish?msg=" + quote(msg))
+            self.end_headers()
+            return None
         if path in ("/voice", "/voice.html"):
             return self._file(ROOT / "app" / "voice.html")
         if path == "/api/voice/profiles":
@@ -354,6 +476,15 @@ class Handler(BaseHTTPRequestHandler):
                                                    q.get("ext", ["webm"])[0]))
             except Exception as exc:  # noqa: BLE001
                 return self._json({"error": str(exc)}, 400)
+        if url.path == "/api/publish/logo":
+            n = int(self.headers.get("Content-Length") or 0)
+            if not 0 < n < 10 * 1024 * 1024:
+                return self._json({"error": "logo boş veya çok büyük (en fazla 10 MB)"}, 400)
+            try:
+                return self._json({"logo": publish.save_logo(parse_qs(url.query).get("slug", [""])[0],
+                                                             self.rfile.read(n))})
+            except Exception as exc:  # noqa: BLE001
+                return self._json({"error": str(exc)}, 400)
         if url.path != "/api/studio/upload":
             return self.send_error(404)
         name = studio.safe_upload_name((parse_qs(url.query).get("name") or ["video.mp4"])[0])
@@ -390,6 +521,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._studio_post(path[len("/api/studio/"):], data)
         if path.startswith("/api/voice/"):
             return self._voice_post(path[len("/api/voice/"):], data)
+        if path.startswith("/api/publish/"):
+            return self._publish_post(path[len("/api/publish/"):], data)
         if path == "/api/new":
             n = max(1, min(10, int(data.get("count") or 1)))
             text = (data.get("text") or "").strip() or None
@@ -462,6 +595,64 @@ class Handler(BaseHTTPRequestHandler):
                 import hashlib
                 out = voice.speak(slug, text, d / (hashlib.sha1(text.encode()).hexdigest()[:12] + ".wav"))
                 return self._json({"audio": out.relative_to(ROOT).as_posix()})
+        except Exception as exc:  # noqa: BLE001
+            return self._json({"error": str(exc)}, 400)
+        return self.send_error(404)
+
+
+    def _yt_redirect(self) -> str:
+        return f"http://127.0.0.1:{self.server.server_address[1]}/oauth/youtube"
+
+    # Uygulamadan girilebilecek gizli değerler (başka ad yazılamaz; değerler asla geri gönderilmez)
+    SECRET_NAMES = {"YOUTUBE_CLIENT_ID", "YOUTUBE_CLIENT_SECRET", "TIKTOK_CLIENT_KEY", "TIKTOK_CLIENT_SECRET",
+                    "TELEGRAM_BOT_TOKEN", "PEXELS_API_KEY", "PIXABAY_API_KEY"}
+
+    def _publish_post(self, action: str, data: dict):
+        from reels.config import set_secret
+        try:
+            if action == "queue":
+                video = str(data.get("video", ""))
+                publish_sources.info_for(video)  # var mı / izinli klasörde mi
+                t = FACTORY.enqueue("pub_prepare", video=video, channel=data.get("channel") or None,
+                                    targets=data.get("targets") or None, topic=f"yayın: {Path(video).name}")
+                return self._json({"queued": [t]})
+            if action == "act":
+                it = publish.act(data["id"], data["action"], by="panel",
+                                 **{k: data.get(k) for k in ("caption", "title", "targets", "channel", "hours")
+                                    if k in data})
+                FACTORY.pub_wake.set()
+                return self._json(it)
+            if action == "audience":
+                return self._json({"queued": [FACTORY.enqueue("audience", item=data["id"],
+                                                              method=data.get("method", "claude"),
+                                                              topic="kitle testi")]})
+            if action == "channel":
+                return self._json(publish.save_channel(data))
+            if action == "settings":
+                return self._json(publish.save_settings(data))
+            if action == "secret":
+                name = str(data.get("name", ""))
+                slug_tok = name.startswith("RF_") and name.endswith(("_TIKTOK_TOKEN", "_TIKTOK_REFRESH_TOKEN"))
+                if name not in self.SECRET_NAMES and not slug_tok:
+                    return self._json({"error": "bu ad kaydedilemez"}, 400)
+                set_secret(name, str(data.get("value", "")))
+                _caps_cache.clear()
+                return self._json({"saved": name})
+            if action == "tiktok":
+                slug = str(data["slug"])
+                set_secret(publish.env_key(slug, "TIKTOK_TOKEN"), str(data.get("access_token", "")))
+                if data.get("refresh_token"):
+                    set_secret(publish.env_key(slug, "TIKTOK_REFRESH_TOKEN"), str(data["refresh_token"]))
+                return self._json({"saved": True})
+            if action == "meta/pages":
+                pages = publish.meta_pages(str(data["token"]).strip())
+                return self._json([{k: v for k, v in p.items() if k != "page_token"} for p in pages])
+            if action == "meta/connect":
+                return self._json(publish.connect_meta(str(data["slug"]), str(data["token"]).strip(),
+                                                       str(data["page_id"])))
+            if action == "telegram/test":
+                publish._tg("sendMessage", data={"chat_id": publish.tg_chat(), "text": "Reels Fabrikası test ✅"})
+                return self._json({"ok": True})
         except Exception as exc:  # noqa: BLE001
             return self._json({"error": str(exc)}, 400)
         return self.send_error(404)

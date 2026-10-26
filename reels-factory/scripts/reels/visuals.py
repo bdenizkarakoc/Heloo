@@ -22,7 +22,7 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
 
 from . import log
 from .config import Config, ROOT, secret
-from .util import StageError, TransientError, download, http_json, retry, run
+from .util import StageError, TransientError, download, http_json, media_duration, retry, run
 
 L = log.get("visuals")
 IMG_EXT = (".jpg", ".jpeg", ".png", ".webp")
@@ -136,6 +136,77 @@ def _nasa(scene: dict, job_dir: Path, cfg: Config, budget: Budget) -> list[dict]
                     "credit": credit, "source": f"https://images.nasa.gov/details/{d.get('nasa_id')}",
                     "thumb": links.get("thumb", {}).get("href"),
                     "desc": " ".join(d.get("keywords") or []) + " " + (d.get("description") or "")[:300]})
+    return out
+
+
+# Konuşan kişi, röportaj, basın toplantısı gibi arka plan videosu olarak uygun olmayan NASA videoları
+VIDEO_OFFTOPIC = re.compile(r"\b(asked|scientist|interview|explains?|briefing|conference|live|q&a|press|talk|"
+                            r"webinar|podcast|update|news|media|panel|town hall|event|ceremony|horizontal video)\b", re.I)
+
+
+def _nasa_video(scene: dict, job_dir: Path, cfg: Config, budget: Budget) -> list[dict]:
+    """NASA video arşivi (kamu malı, anahtarsız). Konuşma/röportaj videoları elenir."""
+    q = scene["visual"].get("query")
+    if not q or scene["visual"].get("kind") != "video":
+        return []
+    words = q.split()
+    found = []
+    for sub in dict.fromkeys([q, " ".join(words[:2]), words[0]]):  # ayrıntılı sorgu boş dönerse kısalt
+        data = retry(3, 2.0)(http_json)("GET", "https://images-api.nasa.gov/search",
+                                         params={"q": sub, "media_type": "video", "page_size": 30})
+        found = data.get("collection", {}).get("items", [])
+        if found:
+            break
+    items = []
+    for it in found:
+        d = (it.get("data") or [{}])[0]
+        title = d.get("title", "")
+        if VIDEO_OFFTOPIC.search(title) or not it.get("href"):
+            continue
+        credit = d.get("secondary_creator") or f"NASA/{d.get('center', '')}".rstrip("/")
+        if THIRD_PARTY.search(f"{credit} {d.get('description', '')}") and license_mode(cfg) == "strict":
+            continue
+        items.append({"provider": "nasa", "kind": "video", "title": title, "href": it["href"],
+                      "license": "Kamu malı — NASA medya kullanım yönergeleri", "credit": credit,
+                      "source": f"https://images.nasa.gov/details/{d.get('nasa_id')}",
+                      "desc": " ".join(d.get("keywords") or []) + " " + (d.get("description") or "")[:300]})
+    out = []
+    for c in rank(items, q)[:6]:  # dosya listesi yalnızca en ilgili birkaç video için alınır
+        try:
+            files = retry(2, 2.0)(http_json)("GET", c.pop("href").replace(" ", "%20"))
+        except (StageError, TransientError):
+            continue
+        mp4 = {f.rsplit("~", 1)[-1].split(".")[0]: f for f in files if f.lower().endswith(".mp4") and "~" in f}
+        url = mp4.get("medium") or mp4.get("small") or mp4.get("mobile")
+        if url:
+            out.append({**c, "url": url.replace("http://", "https://").replace(" ", "%20"), "w": 1280, "h": 720})
+    return out
+
+
+def _pixabay(scene: dict, job_dir: Path, cfg: Config, budget: Budget) -> list[dict]:
+    """Pixabay foto/video (PIXABAY_API_KEY; ücretsiz, ticari kullanım serbest)."""
+    key = secret("PIXABAY_API_KEY")
+    q = scene["visual"].get("query")
+    if not key or not q:
+        return []
+    out = []
+    if scene["visual"].get("kind") == "video":
+        data = retry(3, 2.0)(http_json)("GET", "https://pixabay.com/api/videos/",
+                                         params={"key": key, "q": q[:100], "per_page": 20, "safesearch": "true"})
+        for v in data.get("hits", []):
+            f = (v.get("videos") or {}).get("large") or (v.get("videos") or {}).get("medium") or {}
+            if f.get("url"):
+                out.append({"url": f["url"], "w": f.get("width"), "h": f.get("height"), "provider": "pixabay",
+                            "kind": "video", "title": v.get("tags", ""), "license": "Pixabay Content License",
+                            "credit": f"Video: {v.get('user', '')} / Pixabay", "source": v.get("pageURL", "")})
+    data = retry(3, 2.0)(http_json)("GET", "https://pixabay.com/api/",
+                                     params={"key": key, "q": q[:100], "per_page": 20, "image_type": "photo",
+                                             "safesearch": "true"})
+    for p in data.get("hits", []):
+        out.append({"url": p.get("largeImageURL"), "w": p.get("imageWidth"), "h": p.get("imageHeight"),
+                    "thumb": p.get("previewURL"), "provider": "pixabay", "kind": "photo", "title": p.get("tags", ""),
+                    "license": "Pixabay Content License", "credit": f"Foto: {p.get('user', '')} / Pixabay",
+                    "source": p.get("pageURL", "")})
     return out
 
 
@@ -303,11 +374,19 @@ def _replicate_run(model: str, inputs: dict, cfg: Config, timeout: int = 300) ->
     return out[0] if isinstance(out, list) else out
 
 
-SEARCH_PROVIDERS = {"nasa", "openverse", "pexels", "wikipedia"}
+SEARCH_PROVIDERS = {"nasa", "nasa_video", "openverse", "pexels", "pixabay", "wikipedia"}
+VIDEO_PROVIDERS = ["pexels", "pixabay", "nasa_video"]
 # Konudan çok "etkinlik/insan" fotoğrafı olduğunu düşündüren kelimeler (otomatik seçimde geri plana itilir)
 OFFTOPIC = re.compile(r"\b(viewing|visitors?|students?|people|crowd|team|briefing|conference|press|award|"
                       r"ceremony|workshop|event|portrait|poster|logo|diagram|chart|graph|illustration of the team|"
                       r"engineers?|technicians?|celebrat\w*)\b", re.I)
+
+
+def relevance(c: dict, query: str) -> float:
+    terms = {t for t in re.findall(r"[a-z0-9]+", (query or "").lower()) if len(t) > 2}
+    title = (c.get("title") or "").lower()
+    text = title + " " + (c.get("desc") or "").lower()
+    return sum(2.0 for t in terms if t in title) + sum(0.5 for t in terms if t in text)
 
 
 def rank(cands: list[dict], query: str) -> list[dict]:
@@ -355,7 +434,8 @@ def search_candidates(scene: dict, job_dir: Path, cfg: Config, providers: list[s
 
 PROVIDERS = {
     "agent_media": _agent_media, "url": _url, "ai_video": _ai_video, "ai_image": _ai_image,
-    "nasa": _nasa, "pexels": _pexels, "openverse": _openverse, "wikipedia": _wikipedia,
+    "nasa": _nasa, "nasa_video": _nasa_video, "pexels": _pexels, "pixabay": _pixabay, "openverse": _openverse,
+    "wikipedia": _wikipedia,
 }
 
 
@@ -400,9 +480,18 @@ def prepare_image(src: Path, dest_dir: Path, sid: str, crop: list | None = None)
             "hash": _dhash(img), "kind": "photo"}
 
 
-def prepare_video(src: Path, dest_dir: Path, sid: str, seconds: float) -> dict:
+def prepare_video(src: Path, dest_dir: Path, sid: str, seconds: float, start: float | None = None) -> dict:
+    """Klibi sahne süresine getirir: uzun videolarda giriş/jenerik atlanır, kısa klip döngülenir."""
     dest = dest_dir / f"{sid}.mp4"
-    run(["ffmpeg", "-y", "-v", "error", "-i", src, "-t", f"{seconds + 1.0:.2f}", "-an",
+    try:
+        total = media_duration(src)
+    except (StageError, ValueError, KeyError):
+        total = 0.0
+    if start is None:
+        start = total * 0.2 if total > seconds * 3 else 0.0
+    start = max(0.0, min(start, max(0.0, total - seconds - 0.5))) if total else 0.0
+    run(["ffmpeg", "-y", "-v", "error", "-stream_loop", "-1", "-ss", f"{start:.2f}", "-i", src,
+         "-t", f"{seconds + 1.0:.2f}", "-an",
          "-vf", "scale='if(gt(iw,ih),-2,1080)':'if(gt(iw,ih),1080,-2)',fps=30",
          "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", dest])
     frame = dest_dir / f"{sid}_poster.jpg"
@@ -411,6 +500,38 @@ def prepare_video(src: Path, dest_dir: Path, sid: str, seconds: float) -> dict:
     with Image.open(frame) as im:
         w, h = im.size
     return {"file": dest.name, "bg": info["bg"], "w": w, "h": h, "hash": info["hash"], "kind": "video"}
+
+
+def vet_clip(clip: Path, query: str, cfg: Config) -> tuple[bool, str]:
+    """Belgesel/arşiv klipleri için Claude görsel denetimi: üzerine yazılmış metin, logo, konuşan kişi veya
+    konu dışı içerik varsa klip kullanılmaz. Claude yoksa (False) — denetlenemeyen arşiv klibi kullanılmaz."""
+    from .studio import ai_mode, ask_ai
+    if ai_mode(cfg) == "none":
+        return False, "Claude yok: arşiv klibi denetlenemedi"
+    total = media_duration(clip)
+    frames = []
+    for i, t in enumerate((total * 0.15, total * 0.5, total * 0.85)):
+        f = clip.with_name(f"{clip.stem}_vet{i}.jpg")
+        run(["ffmpeg", "-y", "-v", "error", "-ss", f"{t:.2f}", "-i", clip, "-frames:v", "1", "-vf", "scale=-2:360", f])
+        frames.append(f)
+    sheet = clip.with_name(f"{clip.stem}_vet.jpg")
+    ims = [Image.open(f).convert("RGB") for f in frames]
+    out = Image.new("RGB", (sum(im.width for im in ims) + 20, max(im.height for im in ims)), (0, 0, 0))
+    x = 0
+    for im in ims:
+        out.paste(im, (x, 0))
+        x += im.width + 10
+    out.save(sheet, quality=85)
+    res = ask_ai(cfg, f"Bu üç kare, '{query}' konulu bir videoda arka plan klibi olarak kullanılacak bir videodan. "
+                      "Kullanılabilir mi? Kullanılamaz sayılır: üzerinde yazı/altyazı/başlık/logo/filigran varsa, "
+                      "kameraya konuşan kişi veya röportaj varsa, konuyla ilgisizse. "
+                      'Yalnızca JSON: {"ok": true/false, "reason": "kısa Türkçe"}', [sheet],
+                 clip.with_name(f"{clip.stem}_vet.json"), timeout=300)
+    for f in frames:
+        f.unlink(missing_ok=True)
+    if not res:
+        return False, "denetim yanıtı alınamadı"
+    return bool(res.get("ok")), str(res.get("reason", ""))
 
 
 def choose_fit(meta: dict, scene: dict) -> str:
@@ -425,7 +546,22 @@ def choose_fit(meta: dict, scene: dict) -> str:
 
 def fetch_scene_visual(scene: dict, job_dir: Path, cfg: Config, providers: list[str], used: dict,
                        budget: Budget, seconds: float) -> dict | None:
-    """Sahne için ilk uygun görseli bulur; bulamazsa None (grafik arka plana düşülür)."""
+    """Sahne için ilk uygun görseli bulur; bulamazsa None (grafik arka plana düşülür).
+
+    visuals.prefer_video açıksa fotoğraf sahnelerinde önce konuyla yeterince ilgili bir video klip aranır."""
+    vis = scene["visual"]
+    if (cfg.get_path("visuals.prefer_video", False) and vis.get("kind") == "photo" and vis.get("query")
+            and not vis.get("subject") and not vis.get("pick") and not vis.get("providers")):
+        trial = {**scene, "visual": {**vis, "kind": "video", "providers": VIDEO_PROVIDERS,
+                                     "min_relevance": float(cfg.get_path("visuals.video_min_relevance", 2.0))}}
+        meta = _fetch(trial, job_dir, cfg, providers, used, budget, seconds)
+        if meta:
+            return meta
+    return _fetch(scene, job_dir, cfg, providers, used, budget, seconds)
+
+
+def _fetch(scene: dict, job_dir: Path, cfg: Config, providers: list[str], used: dict,
+           budget: Budget, seconds: float) -> dict | None:
     if scene["visual"].get("kind") == "graphic" and not scene["visual"].get("query") \
             and not scene["visual"].get("prompt"):
         return None
@@ -462,6 +598,9 @@ def fetch_scene_visual(scene: dict, job_dir: Path, cfg: Config, providers: list[
                 L.info("%s: '%s' doğrulanamadı (%s), atlandı", scene["id"], c.get("title", "")[:50], why)
                 continue
             c["verified"] = why
+            if scene["visual"].get("min_relevance") and \
+                    relevance(c, scene["visual"].get("query", "")) < scene["visual"]["min_relevance"]:
+                continue  # otomatik video denemesi: konuyla ilgisi zayıf klip yerine fotoğrafa dönülür
             if c.get("w") and c.get("h") and min(c["w"], c["h"]) < min_side:
                 continue
             try:
@@ -475,7 +614,7 @@ def fetch_scene_visual(scene: dict, job_dir: Path, cfg: Config, providers: list[
                     ext = Path(c["url"].split("?")[0]).suffix.lower() or (".mp4" if c["kind"] == "video" else ".jpg")
                     raw = retry(3, 2.0)(download)(c["url"], out_dir / f"{scene['id']}_raw{ext}", max_mb=150)
                 if c["kind"] == "video" or raw.suffix.lower() in VID_EXT:
-                    meta = prepare_video(raw, out_dir, scene["id"], seconds)
+                    meta = prepare_video(raw, out_dir, scene["id"], seconds, scene["visual"].get("start"))
                 else:
                     meta = prepare_image(raw, out_dir, scene["id"], scene["visual"].get("crop"))
             except (StageError, TransientError, OSError) as exc:
@@ -483,6 +622,16 @@ def fetch_scene_visual(scene: dict, job_dir: Path, cfg: Config, providers: list[
                 continue
             if min(meta["w"], meta["h"]) < min_side and c["provider"] != "agent_media":
                 continue
+            if name == "nasa_video":  # arşiv klipleri sıklıkla yazı/jenerik içerir: görsel denetim şart
+                vetted = scene["visual"].setdefault("_vetted", 0)
+                if vetted >= 2:
+                    continue
+                scene["visual"]["_vetted"] = vetted + 1
+                ok, why = vet_clip(out_dir / meta["file"], scene["visual"].get("query", ""), cfg)
+                L.info("%s: arşiv klibi '%s' denetimi: %s (%s)", scene["id"], c.get("title", "")[:40],
+                       "uygun" if ok else "uygun değil", why)
+                if not ok:
+                    continue
             if any(_similar(meta["hash"], h) for h in used["hashes"]):
                 L.info("%s: önceki sahneyle aynı görünen görsel atlandı", scene["id"])
                 continue

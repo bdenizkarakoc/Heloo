@@ -66,6 +66,11 @@ python scripts/factory.py candidates <görev> <sahne> [--query "farklı sorgu"]
 `fit: "contain"` + `align`, kapanışta açılış görseline dönmek için `reuse` kullan.
 İçinde yazı, filigran, insan kalabalığı veya konuyla ilgisiz öğe olan görselleri seçme.
 
+**Video klipler:** `visuals.prefer_video` açıkken fotoğraf sahnelerinde önce ilgili stok/arşiv video klip denenir
+(Pexels/Pixabay anahtarı varsa onlar, yoksa NASA video arşivi; arşiv klipleri yazı/konuşan kişi için Claude
+denetiminden geçer). Bir sahnede kesin video istiyorsan `visual.kind: "video"`; klibin başlangıcı `visual.start` (sn).
+`candidates` çıktısında klipler de görünür; yazı, filigran veya konuşan kişi içeren klibi seçme.
+
 **Gerçek kişiler:** Sahne bir kişiyi göstermeliyse `visual.subject` ver; `wikipedia` sağlayıcısı kişinin
 maddesindeki görselleri, diğerleri adın geçtiği sonuçları getirir. Yüzden kişi tanımlama yapma;
 doğrulama yalnızca metin kanıtıyla (madde ana görseli / başlık-açıklamada ad) yapılır. Başka tanınmış

@@ -55,7 +55,7 @@
   <h1>Reels Stüdyosu</h1>
   <span id="aiNote" class="muted"></span>
   <span style="flex:1"></span>
-  <a href="/voice">🎙️ Sesim</a><a href="/">← Kontrol paneli</a>
+  <a href="/voice">🎙️ Sesim</a><a href="/publish">📤 Yayın</a><a href="/">← Kontrol paneli</a>
 </header>
 <main>
   <section>
@@ -228,7 +228,7 @@ function projectHtml(p) {
         <div class="meta"><div><b>${esc(c.title || "Klip")}</b></div>
         <div class="muted">${fmt(c.duration)} · ${c.cut_seconds > 0 ? fmt(c.cut_seconds) + " boşluk kesildi" : "kesim yok"}${c.music ? " · müzik: " + esc(c.music) : ""}</div>
         ${(c.qc || []).filter((q) => !q.ok).map((q) => `<div class="note">! ${esc(q.name)}: ${esc(q.detail)}</div>`).join("")}
-        <a href="/${esc(c.output)}" download>indir</a><a href="/${esc(c.srt)}" download>altyazı</a><a href="/${esc(c.sheet)}" target="_blank">kareler</a></div></div>`
+        <a href="/${esc(c.output)}" download>indir</a><a href="/${esc(c.srt)}" download>altyazı</a><a href="/${esc(c.sheet)}" target="_blank">kareler</a><a href="#" onclick="toPublish('${esc(c.output)}');return false">yayına gönder</a></div></div>`
       : `<div class="vid"><div style="aspect-ratio:9/16;display:grid;place-items:center" class="muted">${esc(c.title || "Klip")}<br>sırada</div></div>`).join("")}</div>`;
   }
   (p.notes || []).forEach((n) => (body += `<div class="note">• ${esc(n)}</div>`));
@@ -253,6 +253,10 @@ async function refresh() {
   }
 }
 
+window.toPublish = async (video) => {
+  const r = await api("/api/publish/queue", { video });
+  alert(r.error ? r.error : "Onay kuyruğuna ekleniyor. Yayın sayfasından izleyebilirsin.");
+};
 window.showLog = (pid) => { logPid = pid; refresh(); };
 window.saveStyle = async (pid) => {
   const name = $("nm-" + pid).value.trim();
