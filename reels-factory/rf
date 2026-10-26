@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Reels Fabrikası komut kısayolu: varsa .venv Python'u ile scripts/factory.py çalıştırır.
+cd "$(dirname "$0")"
+PY=.venv/bin/python; [ -x "$PY" ] || PY=python3
+exec "$PY" scripts/factory.py "$@"

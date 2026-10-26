@@ -5,15 +5,18 @@ Kullanıcı: biridaldc@gmail.com · Depo: bdenizkarakoc/Heloo · Kod dalı: `cla
 · Teslim dalı: `reels-videos` (yalnızca `scripts/deliver.sh` yazar).
 
 ## 0. Hazırlık
-Depo çalışma klasöründe yoksa önce klonla: `git clone https://github.com/bdenizkarakoc/Heloo.git && cd Heloo`.
+**Önce depoyu yazma yetkisiyle bağla:** `add_repo` aracını `owner: bdenizkarakoc`, `repo: Heloo`, `access: push`
+ile çağır (araç ToolSearch ile yüklenir) ve verdiği klonlama komutunu kullan. Bu adım olmadan teslim (push) 403 verir.
+Araç yoksa veya reddedilirse `git clone https://github.com/bdenizkarakoc/Heloo.git && cd Heloo` ile devam et ve
+teslim edilemezse bunu özetinde açıkça yaz.
 ```bash
 git fetch origin claude/autonomous-ai-reels-factory-x82681
 git checkout -B claude/autonomous-ai-reels-factory-x82681 origin/claude/autonomous-ai-reels-factory-x82681
-cd reels-factory && bash scripts/cloud-setup.sh
+cd reels-factory && bash scripts/cloud-setup.sh   # .venv kurar; bundan sonra ./rf <komut>
 ```
 
 ## 1. Kendi kendini denetle ve onar
-`python3 scripts/factory.py selftest` çalıştır.
+`./rf selftest` çalıştır.
 - Başarısızsa `logs/selftest.json` ve ilgili logları incele, hatanın kök nedenini bul ve **en küçük** kod
   düzeltmesini yap. `selftest` tekrar başarılı olursa düzeltmeyi kod dalına commit edip push et
   (`git push -u origin claude/autonomous-ai-reels-factory-x82681`). Testleri atlama, devre dışı bırakma.
@@ -29,7 +32,7 @@ sonra `bash scripts/inbox.sh done <dosya>`.
 **B) Gmail (yalnızca Gmail araçları oturumda varsa):**  `from:biridaldc@gmail.com subject:Reels: is:unread newer_than:14d` ara (en fazla 2 ileti).
 Her biri için:
 1. Metin = e-postanın gövdesi (konudaki "Reels:" sonrası konu ipucudur).
-2. `python3 scripts/factory.py new --manual --draw --text-file <metin dosyası> [--topic "<konu>"]`
+2. `./rf new --manual --draw --text-file <metin dosyası> [--topic "<konu>"]`
    (gövde "görsel: arama" içeriyorsa `--draw` kullanma; o zaman lisanslı/arama görselleri kullanılır).
 3. `skills/reels-production/SKILL.md` akışını uygula: metni incele ve web'de doğrula, yanlışları düzelt
    (facts'e not et), anlamı koru, senaryoyu yaz, `validate` et. `--draw` ise her fotoğraf sahnesi için
@@ -40,7 +43,7 @@ Her biri için:
 
 ## 3. Otomatik video
 Gelen kutusunda metin yoksa (veya metinlerden sonra süre kalıyorsa) 1 otomatik video üret:
-`python3 scripts/factory.py new --manual` (kategori ağırlıklara göre seçilir; `brief.json`'daki geçmiş
+`./rf new --manual` (kategori ağırlıklara göre seçilir; `brief.json`'daki geçmiş
 başlıkları tekrarlama) → SKILL.md akışı (araştırma, kaynaklı senaryo, görsel denetimi) → `produce` → denetim.
 
 ## 4. Teslim
