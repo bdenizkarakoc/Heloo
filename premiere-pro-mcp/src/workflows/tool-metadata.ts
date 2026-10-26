@@ -1,0 +1,91 @@
+import type { ToolAnnotations } from "@modelcontextprotocol/server";
+
+const READ_PREFIXES = ["get_", "list_", "inspect_", "find_", "check_", "search_"];
+const READ_ONLY_TOOLS = new Set([
+  "verify_premiere_connection",
+  "create_context_edit_plan",
+  "create_editorial_context_pack",
+  "create_editorial_plan",
+  "preview_editorial_plan",
+  "preview_project_intake",
+  "preview_motion_graphics_demo",
+  "preview_product_spot",
+  "preview_brand_spot",
+  "preview_mogrt_recipe",
+  "validate_mogrt_brand_kit",
+  "preview_mogrt_batch",
+  "inspect_after_effects_template_source",
+  "preview_mogrt_library_publish",
+  "inspect_mogrt_library",
+  "inspect_after_effects_render_templates",
+  "preview_after_effects_render",
+  "preview_mogrt_premiere_handoff",
+  "preview_after_effects_render_handoff",
+  "validate_project_for_export",
+  "verify_delivery_conformance",
+  "read_sequence_captions",
+  "plan_silence_review_markers",
+  "verify_mogrt_artifact",
+  "analyze_dialogue_edit_candidates",
+  "review_dialogue_candidates",
+  "review_quote_paper_edit",
+  "review_text_changes",
+  "review_sync_evidence",
+  "review_broll_placements",
+  "preview_derived_dialogue_sequence_uxp",
+  "preview_workflow_recipe",
+  "preview_watched_media_import",
+  "plan_platform_delivery_matrix",
+  "validate_platform_publish_package",
+  "plan_filler_word_removal",
+  "plan_pause_tightening",
+  "plan_word_mute_ranges",
+  "detect_repeated_takes",
+  "check_caption_safe_zone",
+  "rank_short_form_candidates",
+  "plan_chapter_markers",
+  "plan_emphasis_zoom_keyframes",
+  "plan_beat_montage",
+  "plan_cross_app_workflow",
+  "plan_speaker_checkerboard",
+  "plan_active_speaker_reframe",
+  "plan_reaction_captions",
+  "plan_short_subscribe_cta",
+  "plan_short_export_folder",
+  "diff_sequence_snapshots",
+  "audit_timeline_health",
+  "plan_client_notes_checklist",
+  "plan_multicam_angle_switches",
+  "compute_mask_fit_motion",
+]);
+const DESTRUCTIVE_PREFIXES = ["delete_", "remove_", "ripple_delete", "close_"];
+const DESTRUCTIVE_TOOLS = new Set(["manage_project_context"]);
+const OPEN_WORLD_TOOLS = new Set(["execute_extendscript", "send_raw_script"]);
+
+/** Conservative MCP hints. They describe expected behavior, never authorization. */
+export function annotationsForTool(name: string, explicit?: ToolAnnotations): ToolAnnotations {
+  const readOnly = explicit?.readOnlyHint ?? (READ_ONLY_TOOLS.has(name) || READ_PREFIXES.some((prefix) => name.startsWith(prefix)));
+  return {
+    title: name.split("_").map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" "),
+    readOnlyHint: readOnly,
+    destructiveHint: !readOnly && (
+      DESTRUCTIVE_TOOLS.has(name) || name.startsWith("manage_") || name.startsWith("batch_") || DESTRUCTIVE_PREFIXES.some((prefix) => name.startsWith(prefix))
+    ),
+    idempotentHint: readOnly,
+    openWorldHint: OPEN_WORLD_TOOLS.has(name),
+    ...explicit,
+  };
+}
+
+export function structuredToolResult(tool: string, success: boolean, data?: unknown, error?: string) {
+  return {
+    ok: success,
+    tool,
+    ...(success
+      ? { data: data ?? null }
+      // Keep diagnostic data on failure (per-property outcomes, what was and was
+      // not applied). Dropping it left errors pointing at "data.notCopied" that
+      // the client never received.
+      : { error: error ?? "Unknown error", ...(data === undefined || data === null ? {} : { data }) }),
+  };
+}

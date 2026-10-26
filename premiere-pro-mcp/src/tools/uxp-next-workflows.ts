@@ -1,0 +1,671 @@
+import type { UxpWebSocketBridge } from "../bridge/uxp-websocket-bridge.js";
+import { withApplyGuards, withApplySnapshot } from "./uxp-apply-snapshot.js";
+
+const WAIT_RESPONSE_BUFFER_MS = 5_000;
+
+type EventArgs = {
+  action?: string;
+  after_revision?: number;
+  categories?: string[];
+  event_names?: string[];
+  limit?: number;
+  timeout_ms?: number;
+};
+
+type ReadinessArgs = {
+  action?: string;
+  sequence_id?: string;
+  expected_sequence_id?: string;
+  operation_type?: string;
+  after_revision?: number;
+  timeout_ms?: number;
+  poll_min_ms?: number;
+  poll_max_ms?: number;
+};
+
+type ProjectSessionArgs = {
+  action?: string;
+  project_id?: string;
+  expected_path?: string;
+  path?: string;
+  paths?: string[];
+  include_paths?: boolean;
+  show_dialogs?: boolean;
+  add_to_mru?: boolean;
+  save_before_close?: boolean;
+  confirm_external_write?: boolean;
+  confirm_overwrite?: boolean;
+  confirm_close?: boolean;
+  confirm_discard_unsaved?: boolean;
+  operation_id?: string;
+};
+
+type GrowingMediaArgs = {
+  action?: string;
+  project_id?: string;
+  expected_path?: string;
+  lease_ms?: number;
+  confirm_pause?: boolean;
+  operation_id?: string;
+};
+
+type CheckpointArgs = {
+  action?: string;
+  owner?: string;
+  sequence_id?: string;
+  expected_owner_id?: string;
+  name?: string;
+  value_type?: string;
+  value?: string | number | boolean;
+  persistence?: string;
+  operation_id?: string;
+};
+
+type MediaHealthArgs = {
+  action?: string;
+  project_item_ids?: string[];
+  project_item_id?: string;
+  expected_offline?: boolean;
+  confirm_set_offline?: boolean;
+  match_path?: string;
+  ignore_subclips?: boolean;
+  include_paths?: boolean;
+  include_media_timing?: boolean;
+  operation_id?: string;
+};
+
+type SourceMediaTimingArgs = {
+  action?: string;
+  project_item_id?: string;
+  expected_timing?: {
+    start_seconds?: number;
+    duration_seconds?: number;
+  };
+  start_seconds?: number;
+  confirm_set_start?: boolean;
+  operation_id?: string;
+};
+
+type SourceMediaOverridesArgs = {
+  action?: string;
+  project_item_id?: string;
+  expected_overrides?: {
+    project_guid?: string;
+    frame_rate?: number;
+    pixel_aspect_ratio?: number;
+  };
+  frame_rate?: number;
+  pixel_aspect_ratio?: {
+    numerator?: number;
+    denominator?: number;
+  };
+  confirm_media_interpretation?: boolean;
+  operation_id?: string;
+};
+
+type TrackStateArgs = {
+  action?: string;
+  sequence_id?: string;
+  expected_sequence_id?: string;
+  media_type?: string;
+  track_indices?: number[];
+  muted?: boolean;
+  expected_muted?: boolean;
+  operation_id?: string;
+};
+
+type SourceClipItem = {
+  project_item_id?: string;
+  media_type?: string;
+  expected_in_seconds?: number;
+  expected_out_seconds?: number;
+  in_seconds?: number;
+  out_seconds?: number;
+  clear_in_out?: boolean;
+  scale_to_frame?: boolean;
+};
+
+type SourceClipArgs = {
+  action?: string;
+  items?: SourceClipItem[];
+  operation_id?: string;
+};
+
+function invoke(
+  bridge: UxpWebSocketBridge,
+  command: string,
+  args: Record<string, unknown> = {},
+  hostWaitMs?: number,
+) {
+  const request = hostWaitMs === undefined
+    ? bridge.request(command, args)
+    : bridge.request(command, args, { minimumTimeoutMs: hostWaitMs + WAIT_RESPONSE_BUFFER_MS });
+  return request
+    .then((result) => ({ success: true, data: { backend: "uxp", result } }))
+    .catch((error: unknown) => ({
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    }));
+}
+
+function eventQuery(args: EventArgs, includeTimeout: boolean) {
+  return {
+    ...(args.after_revision !== undefined ? { afterRevision: args.after_revision } : {}),
+    ...(args.categories !== undefined ? { categories: args.categories } : {}),
+    ...(args.event_names !== undefined ? { eventNames: args.event_names } : {}),
+    ...(args.limit !== undefined ? { limit: args.limit } : {}),
+    ...(includeTimeout && args.timeout_ms !== undefined ? { timeoutMs: args.timeout_ms } : {}),
+  };
+}
+
+export function getUxpNextWorkflowTools(bridge: UxpWebSocketBridge) {
+  const ownerIdentityGuardSchema = { type: "string", pattern: "^[A-Za-z0-9._:-]{1,128}$" };
+  const booleanGuardSchema = { type: "boolean" };
+  const sourceTimingSnapshotSchema = { properties: {
+    start_seconds: { type: "number" }, duration_seconds: { type: "number" },
+  } };
+  const sourceOverridesSnapshotSchema = { properties: {
+    project_guid: { type: "string" }, frame_rate: { type: "number" }, pixel_aspect_ratio: { type: "number" },
+  } };
+  const sourceClipSnapshotSchema = { type: "array", minItems: 1, maxItems: 64, items: { type: "object", additionalProperties: false, properties: {
+    project_item_id: { type: "string", minLength: 1, maxLength: 512 },
+    media_type: { type: "string", enum: ["video", "audio"] },
+    expected_in_seconds: { type: "number", minimum: 0, maximum: 86400000, sourceKey: "inSeconds" },
+    expected_out_seconds: { type: "number", minimum: 0, maximum: 86400000, sourceKey: "outSeconds" },
+  }, required: ["project_item_id", "media_type", "expected_in_seconds", "expected_out_seconds"] } };
+  return {
+    inspect_premiere_events_uxp: {
+      description: "List or briefly wait for bounded, redacted Premiere host-event receipts without polling the complete project state. Compatible hosts can also emit timeline.snap.* receipts plus operation.clip.extend.reached and coalesced operation.effect.drag.over receipts for documented root notifications; raw event payloads are never returned.",
+      parameters: {
+        type: "object" as const,
+        additionalProperties: false,
+        properties: {
+          action: { type: "string", enum: ["list", "wait"] },
+          after_revision: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+          categories: {
+            type: "array", maxItems: 32, uniqueItems: true,
+            items: { type: "string", pattern: "^[A-Za-z0-9._:-]{1,128}$" },
+          },
+          event_names: {
+            type: "array", maxItems: 32, uniqueItems: true,
+            items: { type: "string", pattern: "^[A-Za-z0-9._:-]{1,128}$" },
+          },
+          limit: { type: "integer", minimum: 1, maximum: 256 },
+          timeout_ms: {
+            type: "integer", minimum: 0, maximum: 60000,
+            description: "Used only by wait; zero performs a non-blocking check.",
+          },
+        },
+        required: ["action"],
+      },
+      handler: async (args: EventArgs) => {
+        if (args.action === "list") return invoke(bridge, "events.list", eventQuery(args, false));
+        if (args.action === "wait") {
+          return invoke(bridge, "events.wait", eventQuery(args, true), args.timeout_ms ?? 0);
+        }
+        return { success: false, error: `Unsupported event action: ${String(args.action)}` };
+      },
+    },
+    wait_for_host_readiness_uxp: {
+      description: "Capture a pre-dispatch readiness revision or wait, without retrying, for video-effect analysis or one documented operation-completion receipt.",
+      parameters: {
+        type: "object" as const,
+        additionalProperties: false,
+        properties: {
+          action: { type: "string", enum: ["snapshot", "analysis", "operation"] },
+          sequence_id: { type: "string", pattern: "^[A-Za-z0-9._:-]{1,128}$" },
+          expected_sequence_id: ownerIdentityGuardSchema,
+          operation_type: { type: "string", enum: ["import", "export", "effect_drop", "generative_extend"] },
+          after_revision: {
+            type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER,
+            description: "Required for operation waits; capture it with snapshot before dispatching the operation.",
+          },
+          timeout_ms: { type: "integer", minimum: 0, maximum: 60000 },
+          poll_min_ms: { type: "integer", minimum: 100, maximum: 2000 },
+          poll_max_ms: { type: "integer", minimum: 100, maximum: 5000 },
+        },
+        required: ["action"],
+      },
+      handler: async (args: ReadinessArgs) => {
+        if (args.action === "snapshot") {
+          return invoke(bridge, "readiness.snapshot", {
+            ...(args.sequence_id !== undefined ? { sequenceId: args.sequence_id } : {}),
+          });
+        }
+        if (args.action === "analysis") {
+          return invoke(bridge, "readiness.analysis.wait", {
+            ...(args.sequence_id !== undefined ? { sequenceId: args.sequence_id } : {}),
+            ...(args.expected_sequence_id !== undefined ? { expectedSequenceId: args.expected_sequence_id } : {}),
+            ...(args.timeout_ms !== undefined ? { timeoutMs: args.timeout_ms } : {}),
+            ...(args.poll_min_ms !== undefined ? { pollMinMs: args.poll_min_ms } : {}),
+            ...(args.poll_max_ms !== undefined ? { pollMaxMs: args.poll_max_ms } : {}),
+          }, args.timeout_ms ?? 30_000);
+        }
+        if (args.action === "operation") {
+          const operations: Record<string, string> = {
+            import: "import", export: "export", effect_drop: "effectDrop", generative_extend: "generativeExtend",
+          };
+          return invoke(bridge, "readiness.operation.wait", {
+            ...(args.operation_type !== undefined ? { operationType: operations[args.operation_type] } : {}),
+            ...(args.after_revision !== undefined ? { afterRevision: args.after_revision } : {}),
+            ...(args.timeout_ms !== undefined ? { timeoutMs: args.timeout_ms } : {}),
+          }, args.timeout_ms ?? 30_000);
+        }
+        return { success: false, error: `Unsupported readiness action: ${String(args.action)}` };
+      },
+    },
+    manage_project_sessions_uxp: {
+      description: "List or explicitly create, open, save, branch, and close Premiere project sessions. Path writes stay inside the approved UXP workspace; Save As handle changes are read back and branch copies reopen the source after every copy.",
+      parameters: {
+        type: "object" as const,
+        additionalProperties: false,
+        properties: {
+          action: {
+            type: "string",
+            enum: ["list", "validate", "create", "open", "save", "save_as", "branch_copies", "close"],
+          },
+          project_id: { type: "string", pattern: "^[A-Za-z0-9._:-]{1,128}$" },
+          expected_path: { type: "string", minLength: 1, maxLength: 4096 },
+          path: { type: "string", minLength: 1, maxLength: 4096 },
+          paths: {
+            type: "array", minItems: 1, maxItems: 16, uniqueItems: true,
+            items: { type: "string", minLength: 1, maxLength: 4096 },
+          },
+          include_paths: { type: "boolean", description: "List project paths only when explicitly requested; defaults to redacted." },
+          show_dialogs: { type: "boolean", description: "For open only; defaults to false." },
+          add_to_mru: { type: "boolean", description: "For open only; defaults to false." },
+          save_before_close: { type: "boolean", description: "For close only; defaults to true." },
+          confirm_external_write: { type: "boolean" },
+          confirm_overwrite: { type: "boolean" },
+          confirm_close: { type: "boolean" },
+          confirm_discard_unsaved: { type: "boolean" },
+          operation_id: { type: "string", pattern: "^[A-Za-z0-9._:-]{1,128}$" },
+        },
+        required: ["action"],
+      },
+      handler: async (args: ProjectSessionArgs) => {
+        const common = {
+          ...(args.project_id !== undefined ? { projectId: args.project_id } : {}),
+          ...(args.expected_path !== undefined ? { expectedPath: args.expected_path } : {}),
+          ...(args.operation_id !== undefined ? { operationId: args.operation_id } : {}),
+        };
+        if (args.action === "list") return invoke(bridge, "project.sessions.list", {
+          ...(args.include_paths !== undefined ? { includePaths: args.include_paths } : {}),
+        });
+        if (args.action === "validate") return invoke(bridge, "project.sessions.validate", { path: args.path });
+        if (args.action === "create") return invoke(bridge, "project.sessions.create", {
+          path: args.path,
+          ...(args.confirm_external_write !== undefined ? { confirmExternalWrite: args.confirm_external_write } : {}),
+          ...(args.confirm_overwrite !== undefined ? { confirmOverwrite: args.confirm_overwrite } : {}),
+          ...(args.operation_id !== undefined ? { operationId: args.operation_id } : {}),
+        });
+        if (args.action === "open") return invoke(bridge, "project.sessions.open", {
+          path: args.path,
+          ...(args.show_dialogs !== undefined ? { showDialogs: args.show_dialogs } : {}),
+          ...(args.add_to_mru !== undefined ? { addToMru: args.add_to_mru } : {}),
+          ...(args.operation_id !== undefined ? { operationId: args.operation_id } : {}),
+        });
+        if (args.action === "save") return invoke(bridge, "project.sessions.save", common);
+        if (args.action === "save_as") return invoke(bridge, "project.sessions.saveAs", {
+          ...common, path: args.path,
+          ...(args.confirm_external_write !== undefined ? { confirmExternalWrite: args.confirm_external_write } : {}),
+          ...(args.confirm_overwrite !== undefined ? { confirmOverwrite: args.confirm_overwrite } : {}),
+        });
+        if (args.action === "branch_copies") return invoke(bridge, "project.sessions.branchCopies", {
+          ...common, paths: args.paths,
+          ...(args.confirm_external_write !== undefined ? { confirmExternalWrite: args.confirm_external_write } : {}),
+          ...(args.confirm_overwrite !== undefined ? { confirmOverwrite: args.confirm_overwrite } : {}),
+        });
+        if (args.action === "close") return invoke(bridge, "project.sessions.close", {
+          ...common,
+          ...(args.save_before_close !== undefined ? { saveBeforeClose: args.save_before_close } : {}),
+          ...(args.confirm_close !== undefined ? { confirmClose: args.confirm_close } : {}),
+          ...(args.confirm_discard_unsaved !== undefined ? { confirmDiscardUnsaved: args.confirm_discard_unsaved } : {}),
+        });
+        return { success: false, error: `Unsupported project-session action: ${String(args.action)}` };
+      },
+    },
+    manage_growing_media_uxp: {
+      description: "Inspect, pause under a bounded lease, or resume Premiere growing-media swaps. Pause expires within ten minutes and is resumed on ordinary panel or bridge shutdown; status is panel-local and never claims a host readback.",
+      parameters: {
+        type: "object" as const,
+        additionalProperties: false,
+        properties: {
+          action: { type: "string", enum: ["status", "pause", "resume"] },
+          project_id: { type: "string", pattern: "^[A-Za-z0-9._:-]{1,128}$" },
+          expected_path: { type: "string", minLength: 1, maxLength: 4096 },
+          lease_ms: { type: "integer", minimum: 1000, maximum: 600000 },
+          confirm_pause: { type: "boolean", description: "Must be true for pause." },
+          operation_id: { type: "string", pattern: "^[A-Za-z0-9._:-]{1,128}$" },
+        },
+        required: ["action"],
+      },
+      handler: async (args: GrowingMediaArgs) => {
+        if (args.action === "status") return invoke(bridge, "growing.status");
+        if (args.action === "pause") return invoke(bridge, "growing.pause", {
+          ...(args.project_id !== undefined ? { projectId: args.project_id } : {}),
+          ...(args.expected_path !== undefined ? { expectedPath: args.expected_path } : {}),
+          ...(args.lease_ms !== undefined ? { leaseMs: args.lease_ms } : {}),
+          ...(args.confirm_pause !== undefined ? { confirmPause: args.confirm_pause } : {}),
+          ...(args.operation_id !== undefined ? { operationId: args.operation_id } : {}),
+        });
+        if (args.action === "resume") return invoke(bridge, "growing.resume", {
+          ...(args.project_id !== undefined ? { projectId: args.project_id } : {}),
+          ...(args.operation_id !== undefined ? { operationId: args.operation_id } : {}),
+        });
+        return { success: false, error: `Unsupported growing-media action: ${String(args.action)}` };
+      },
+    },
+    manage_workflow_checkpoints_uxp: {
+      description: "Read or transactionally write small, namespaced workflow checkpoints on the active project or a targeted sequence. Persistent values may sync with cloud projects; never store secrets, native paths, transcripts, or media names.",
+      parameters: {
+        type: "object" as const,
+        additionalProperties: false,
+        properties: {
+          action: { type: "string", enum: ["has", "get", "set", "clear"] },
+          owner: { type: "string", enum: ["project", "sequence"] },
+          sequence_id: { type: "string", pattern: "^[A-Za-z0-9._:-]{1,128}$" },
+          expected_owner_id: { ...ownerIdentityGuardSchema, description: "The expected_owner_id returned by has or get, passed unchanged." },
+          name: { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$" },
+          value_type: { type: "string", enum: ["string", "int", "float", "bool"] },
+          value: { type: ["string", "number", "boolean"], maxLength: 8192 },
+          persistence: { type: "string", enum: ["session", "persistent"] },
+          operation_id: { type: "string", pattern: "^[A-Za-z0-9._:-]{1,128}$" },
+        },
+        required: ["action", "name"],
+      },
+      handler: async (args: CheckpointArgs) => {
+        const common = {
+          ...(args.owner !== undefined ? { owner: args.owner } : {}),
+          ...(args.sequence_id !== undefined ? { sequenceId: args.sequence_id } : {}),
+          ...(args.expected_owner_id !== undefined ? { expectedOwnerId: args.expected_owner_id } : {}),
+          name: args.name,
+        };
+        if (args.action === "has") return withApplyGuards(invoke(bridge, "checkpoint.has", common), {
+          expected_owner_id: { schema: ownerIdentityGuardSchema, sourceKey: "ownerId" },
+        });
+        if (args.action === "get") return withApplyGuards(invoke(bridge, "checkpoint.get", {
+          ...common, ...(args.value_type !== undefined ? { valueType: args.value_type } : {}),
+        }), { expected_owner_id: { schema: ownerIdentityGuardSchema, sourceKey: "ownerId" } });
+        if (args.action === "set") return invoke(bridge, "checkpoint.set", {
+          ...common,
+          ...(args.value_type !== undefined ? { valueType: args.value_type } : {}),
+          ...(args.value !== undefined ? { value: args.value } : {}),
+          ...(args.persistence !== undefined ? { persistence: args.persistence } : {}),
+          ...(args.operation_id !== undefined ? { operationId: args.operation_id } : {}),
+        });
+        if (args.action === "clear") return invoke(bridge, "checkpoint.clear", {
+          ...common, ...(args.operation_id !== undefined ? { operationId: args.operation_id } : {}),
+        });
+        return { success: false, error: `Unsupported checkpoint action: ${String(args.action)}` };
+      },
+    },
+    maintain_media_health_uxp: {
+      description: "Inspect up to 64 source media items, refresh them serially, transactionally set them offline, or find project items matching an approved media path. Native paths are redacted unless explicitly requested; opt-in media timing is read-only, bounded, and runtime-compatible.",
+      parameters: {
+        type: "object" as const,
+        additionalProperties: false,
+        properties: {
+          action: { type: "string", enum: ["inspect", "refresh", "set_offline", "find_by_media_path"] },
+          project_item_ids: {
+            type: "array", minItems: 1, maxItems: 64, uniqueItems: true,
+            items: { type: "string", minLength: 1, maxLength: 512 },
+          },
+          project_item_id: { type: "string", minLength: 1, maxLength: 512, description: "One project item ID. find_by_media_path uses it as the item to match; the other actions treat it as a one-item project_item_ids." },
+          expected_offline: { ...booleanGuardSchema, description: "The expected_offline returned by inspect, passed unchanged. Mixed or unreadable states require separate item inspections." },
+          confirm_set_offline: { type: "boolean" },
+          match_path: { type: "string", minLength: 1, maxLength: 4096 },
+          ignore_subclips: { type: "boolean" },
+          include_paths: { type: "boolean", description: "Explicitly include media/proxy/origin paths; defaults to redacted." },
+          include_media_timing: { type: "boolean", description: "For inspect only, include bounded source start/duration readback; defaults to false." },
+          operation_id: { type: "string", pattern: "^[A-Za-z0-9._:-]{1,128}$" },
+        },
+        required: ["action"],
+      },
+      handler: async (args: MediaHealthArgs) => {
+        // inspect, refresh and set_offline take a list; a single project_item_id is a one-item list.
+        if (args.action !== "find_by_media_path" && args.project_item_id !== undefined) {
+          if (args.project_item_ids !== undefined) {
+            return { success: false, error: "Pass project_item_ids or project_item_id, not both." };
+          }
+          args = { ...args, project_item_ids: [args.project_item_id] };
+        }
+        if (args.action === "inspect") return withApplyGuards(invoke(bridge, "media.health.inspect", {
+          ...(args.project_item_ids !== undefined ? { projectItemIds: args.project_item_ids } : {}),
+          ...(args.include_paths !== undefined ? { includePaths: args.include_paths } : {}),
+          ...(args.include_media_timing !== undefined ? { includeMediaTiming: args.include_media_timing } : {}),
+        }), {
+          expected_offline: {
+            schema: booleanGuardSchema,
+            sourceValue: (record) => {
+              const items = record.items;
+              if (!Array.isArray(items) || items.length === 0) return undefined;
+              const offline = (items[0] as Record<string, unknown>)?.offline;
+              return items.every((item) => item && typeof item === "object" && (item as Record<string, unknown>).offline === offline) ? offline : undefined;
+            },
+          },
+        });
+        if (args.action === "refresh") return invoke(bridge, "media.health.refresh", {
+          ...(args.project_item_ids !== undefined ? { projectItemIds: args.project_item_ids } : {}),
+          ...(args.expected_offline !== undefined ? { expectedOffline: args.expected_offline } : {}),
+          ...(args.operation_id !== undefined ? { operationId: args.operation_id } : {}),
+        });
+        if (args.action === "set_offline") return invoke(bridge, "media.health.setOffline", {
+          ...(args.project_item_ids !== undefined ? { projectItemIds: args.project_item_ids } : {}),
+          ...(args.expected_offline !== undefined ? { expectedOffline: args.expected_offline } : {}),
+          ...(args.confirm_set_offline !== undefined ? { confirmSetOffline: args.confirm_set_offline } : {}),
+          ...(args.operation_id !== undefined ? { operationId: args.operation_id } : {}),
+        });
+        if (args.action === "find_by_media_path") return invoke(bridge, "media.health.findByPath", {
+          ...(args.project_item_id !== undefined ? { projectItemId: args.project_item_id } : {}),
+          ...(args.match_path !== undefined ? { matchPath: args.match_path } : {}),
+          ...(args.ignore_subclips !== undefined ? { ignoreSubclips: args.ignore_subclips } : {}),
+          ...(args.include_paths !== undefined ? { includePaths: args.include_paths } : {}),
+        });
+        return { success: false, error: `Unsupported media-health action: ${String(args.action)}` };
+      },
+    },
+    manage_source_media_timing_uxp: {
+      description: "Inspect or transactionally set one source media item's timecode start through stable Premiere 26.3 UXP APIs. Setting requires the exact bounded timing snapshot, explicit confirmation, one undoable transaction, per-item serialization, and native readback.",
+      parameters: {
+        type: "object" as const,
+        additionalProperties: false,
+        properties: {
+          action: { type: "string", enum: ["inspect", "set_start"] },
+          project_item_id: { type: "string", minLength: 1, maxLength: 512 },
+          expected_timing: {
+            type: "object", additionalProperties: false,
+            properties: {
+              start_seconds: { type: "number", minimum: 0, maximum: 86400000 },
+              duration_seconds: { type: "number", minimum: 0, maximum: 86400000 },
+            },
+            required: ["start_seconds", "duration_seconds"],
+            description: "Required for set_start; the expected_timing object returned by inspect, passed unchanged. A changed start or duration rejects the request before action creation.",
+          },
+          start_seconds: { type: "number", minimum: 0, maximum: 86400000 },
+          confirm_set_start: { type: "boolean", description: "Required true for set_start because source timecode changes can affect editorial synchronization." },
+          operation_id: { type: "string", pattern: "^[A-Za-z0-9._:-]{1,128}$" },
+        },
+        required: ["action", "project_item_id"],
+      },
+      handler: async (args: SourceMediaTimingArgs) => {
+        const common = {
+          ...(args.project_item_id === undefined ? {} : { projectItemId: args.project_item_id }),
+        };
+        if (args.action === "inspect") return withApplySnapshot(invoke(bridge, "source.mediaTiming.inspect", common), sourceTimingSnapshotSchema, "expected_timing");
+        if (args.action === "set_start") return invoke(bridge, "source.mediaTiming.setStart", {
+          ...common,
+          ...(args.expected_timing === undefined ? {} : { expectedTiming: {
+            ...(args.expected_timing.start_seconds === undefined ? {} : { startSeconds: args.expected_timing.start_seconds }),
+            ...(args.expected_timing.duration_seconds === undefined ? {} : { durationSeconds: args.expected_timing.duration_seconds }),
+          } }),
+          ...(args.start_seconds === undefined ? {} : { startSeconds: args.start_seconds }),
+          ...(args.confirm_set_start === undefined ? {} : { confirmSetStart: args.confirm_set_start }),
+          ...(args.operation_id === undefined ? {} : { operationId: args.operation_id }),
+        });
+        return { success: false, error: `Unsupported source-media timing action: ${String(args.action)}` };
+      },
+    },
+    manage_source_media_overrides_uxp: {
+      description: "Inspect or transactionally set one source media item's explicit frame-rate and/or pixel-aspect-ratio override through stable Premiere 26.3 UXP actions. Updates require the complete effective-interpretation snapshot, explicit confirmation, an operation_id, per-item serialization, one undoable transaction, and native effective-value readback. Premiere does not expose an override-presence getter, so this tool cannot clear or distinguish an explicit override from matching file-native interpretation.",
+      parameters: {
+        type: "object" as const,
+        additionalProperties: false,
+        properties: {
+          action: { type: "string", enum: ["inspect", "update"] },
+          project_item_id: { type: "string", minLength: 1, maxLength: 512 },
+          expected_overrides: {
+            type: "object", additionalProperties: false,
+            properties: {
+              project_guid: { type: "string", pattern: "^[A-Za-z0-9._:-]{1,128}$" },
+              frame_rate: { type: "number", minimum: 1, maximum: 240 },
+              pixel_aspect_ratio: { type: "number", minimum: 0.01, maximum: 100 },
+            },
+            required: ["project_guid", "frame_rate", "pixel_aspect_ratio"],
+            description: "Required for update; the expected_overrides object returned by inspect, passed unchanged. Any changed effective value or active project rejects before the transaction.",
+          },
+          frame_rate: { type: "number", minimum: 1, maximum: 240 },
+          pixel_aspect_ratio: {
+            type: "object", additionalProperties: false,
+            properties: {
+              numerator: { type: "integer", minimum: 1, maximum: 10000 },
+              denominator: { type: "integer", minimum: 1, maximum: 10000 },
+            },
+            required: ["numerator", "denominator"],
+          },
+          confirm_media_interpretation: { type: "boolean", description: "Required true for update because source interpretation can alter editorial timing and framing." },
+          operation_id: { type: "string", pattern: "^[A-Za-z0-9._:-]{1,128}$", description: "Required for update so an interrupted mutation can be safely replayed." },
+        },
+        required: ["action", "project_item_id"],
+      },
+      operationalCapability: {
+        backend: "UXP" as const,
+        backends: ["uxp" as const],
+        minimumPremiereVersion: "26.3",
+        verificationBoundary: "structured_uxp_readback" as const,
+        hostVerificationRequired: true,
+        notes: [
+          "The documented UXP actions and effective-value readback are covered by mocks and static declaration inventory.",
+          "No licensed Premiere host validation has run; the API has no override-presence or clear-override getter.",
+        ],
+      },
+      handler: async (args: SourceMediaOverridesArgs) => {
+        const common = {
+          ...(args.project_item_id === undefined ? {} : { projectItemId: args.project_item_id }),
+        };
+        if (args.action === "inspect") return withApplySnapshot(invoke(bridge, "source.mediaOverrides.inspect", common), sourceOverridesSnapshotSchema, "expected_overrides");
+        if (args.action === "update") return invoke(bridge, "source.mediaOverrides.update", {
+          ...common,
+          ...(args.expected_overrides === undefined ? {} : { expectedOverrides: {
+            ...(args.expected_overrides.project_guid === undefined ? {} : { projectGuid: args.expected_overrides.project_guid }),
+            ...(args.expected_overrides.frame_rate === undefined ? {} : { frameRate: args.expected_overrides.frame_rate }),
+            ...(args.expected_overrides.pixel_aspect_ratio === undefined ? {} : { pixelAspectRatio: args.expected_overrides.pixel_aspect_ratio }),
+          } }),
+          ...(args.frame_rate === undefined ? {} : { frameRate: args.frame_rate }),
+          ...(args.pixel_aspect_ratio === undefined ? {} : { pixelAspectRatio: {
+            ...(args.pixel_aspect_ratio.numerator === undefined ? {} : { numerator: args.pixel_aspect_ratio.numerator }),
+            ...(args.pixel_aspect_ratio.denominator === undefined ? {} : { denominator: args.pixel_aspect_ratio.denominator }),
+          } }),
+          ...(args.confirm_media_interpretation === undefined ? {} : { confirmMediaInterpretation: args.confirm_media_interpretation }),
+          ...(args.operation_id === undefined ? {} : { operationId: args.operation_id }),
+        });
+        return { success: false, error: `Unsupported source-media override action: ${String(args.action)}` };
+      },
+    },
+    manage_track_state_uxp: {
+      description: "Inspect audio, video, and caption track mute state or set one media type serially with stale-state preflight and per-track readback. Adobe exposes this as direct promises, so no undo transaction is claimed.",
+      parameters: {
+        type: "object" as const,
+        additionalProperties: false,
+        properties: {
+          action: { type: "string", enum: ["inspect", "set_mute"] },
+          sequence_id: { type: "string", pattern: "^[A-Za-z0-9._:-]{1,128}$" },
+          expected_sequence_id: ownerIdentityGuardSchema,
+          media_type: { type: "string", enum: ["all", "video", "audio", "caption"] },
+          track_indices: {
+            type: "array", minItems: 1, maxItems: 64, uniqueItems: true,
+            items: { type: "integer", minimum: 0, maximum: 1023 },
+          },
+          muted: { type: "boolean" },
+          expected_muted: { ...booleanGuardSchema, description: "The expected_muted returned by inspect, passed unchanged. Mixed or unreadable states require separate track inspections." },
+          operation_id: { type: "string", pattern: "^[A-Za-z0-9._:-]{1,128}$" },
+        },
+        required: ["action"],
+      },
+      handler: async (args: TrackStateArgs) => {
+        const common = {
+          ...(args.sequence_id !== undefined ? { sequenceId: args.sequence_id } : {}),
+          ...(args.expected_sequence_id !== undefined ? { expectedSequenceId: args.expected_sequence_id } : {}),
+          ...(args.media_type !== undefined ? { mediaType: args.media_type } : {}),
+          ...(args.track_indices !== undefined ? { trackIndices: args.track_indices } : {}),
+        };
+        if (args.action === "inspect") return withApplyGuards(invoke(bridge, "track.state.inspect", common), {
+          expected_sequence_id: { schema: ownerIdentityGuardSchema, sourceKey: "sequenceId" },
+          expected_muted: {
+            schema: booleanGuardSchema,
+            sourceValue: (record) => {
+              const tracks = record.tracks;
+              if (!Array.isArray(tracks) || tracks.length === 0) return undefined;
+              const muted = (tracks[0] as Record<string, unknown>)?.muted;
+              return tracks.every((track) => track && typeof track === "object" && (track as Record<string, unknown>).muted === muted) ? muted : undefined;
+            },
+          },
+        });
+        if (args.action === "set_mute") return invoke(bridge, "track.state.set", {
+          ...common,
+          ...(args.muted !== undefined ? { muted: args.muted } : {}),
+          ...(args.expected_muted !== undefined ? { expectedMuted: args.expected_muted } : {}),
+          ...(args.operation_id !== undefined ? { operationId: args.operation_id } : {}),
+        });
+        return { success: false, error: `Unsupported track-state action: ${String(args.action)}` };
+      },
+    },
+    manage_source_clip_uxp: {
+      description: "Inspect or transactionally update source-clip in/out points and request scale-to-frame for up to 64 media items. In/out values are read back; Adobe exposes no getter for clear or scale state, so those requests remain committed-unverified.",
+      parameters: {
+        type: "object" as const,
+        additionalProperties: false,
+        properties: {
+          action: { type: "string", enum: ["inspect", "update"] },
+          items: {
+            type: "array", minItems: 1, maxItems: 64,
+            items: {
+              type: "object", additionalProperties: false,
+              properties: {
+                project_item_id: { type: "string", minLength: 1, maxLength: 512 },
+                media_type: { type: "string", enum: ["video", "audio"] },
+                expected_in_seconds: sourceClipSnapshotSchema.items.properties.expected_in_seconds,
+                expected_out_seconds: sourceClipSnapshotSchema.items.properties.expected_out_seconds,
+                in_seconds: { type: "number", minimum: 0, maximum: 86400000 },
+                out_seconds: { type: "number", minimum: 0, maximum: 86400000 },
+                clear_in_out: { type: "boolean" },
+                scale_to_frame: { type: "boolean", enum: [true] },
+              },
+              required: ["project_item_id"],
+            },
+          },
+          operation_id: { type: "string", pattern: "^[A-Za-z0-9._:-]{1,128}$" },
+        },
+        required: ["action", "items"],
+      },
+      handler: async (args: SourceClipArgs) => {
+        const items = args.items?.map((item) => ({
+          ...(item.project_item_id !== undefined ? { projectItemId: item.project_item_id } : {}),
+          ...(item.media_type !== undefined ? { mediaType: item.media_type } : {}),
+          ...(item.expected_in_seconds !== undefined ? { expectedInSeconds: item.expected_in_seconds } : {}),
+          ...(item.expected_out_seconds !== undefined ? { expectedOutSeconds: item.expected_out_seconds } : {}),
+          ...(item.in_seconds !== undefined ? { inSeconds: item.in_seconds } : {}),
+          ...(item.out_seconds !== undefined ? { outSeconds: item.out_seconds } : {}),
+          ...(item.clear_in_out !== undefined ? { clearInOut: item.clear_in_out } : {}),
+          ...(item.scale_to_frame !== undefined ? { scaleToFrame: item.scale_to_frame } : {}),
+        }));
+        if (args.action === "inspect") return withApplySnapshot(invoke(bridge, "source.clip.inspect", { items }), sourceClipSnapshotSchema, "items", "items");
+        if (args.action === "update") return invoke(bridge, "source.clip.update", {
+          items,
+          ...(args.operation_id !== undefined ? { operationId: args.operation_id } : {}),
+        });
+        return { success: false, error: `Unsupported source-clip action: ${String(args.action)}` };
+      },
+    },
+  };
+}

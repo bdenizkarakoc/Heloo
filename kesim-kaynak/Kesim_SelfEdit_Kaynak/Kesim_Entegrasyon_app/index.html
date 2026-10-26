@@ -1,0 +1,1140 @@
+<title>Kesim Video</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Bebas+Neue&family=Anton&family=Pacifico&family=Permanent+Marker&family=Bangers&family=Lobster&family=Playfair+Display&family=Orbitron:wght@700&family=Press+Start+2P&display=swap">
+<style>
+/* Yerleşim: üstte araç çubuğu; solda medya, ortada önizleme + zaman çizelgesi, sağda ayarlar.
+   Palet: kömür-mavi nötrler (4), mavi vurgu, kırmızı oynatma çizgisi; klip renkleri parça türünü ayırır. */
+:root{
+  --bg:#0d1015; --panel:#141920; --panel2:#1b212a; --line:#27303b; --fg:#e7ebf1; --mute:#8d99a8;
+  --accent:#4f8cff; --accent-fg:#fff; --danger:#ff5470; --ok:#3ccf91; --playhead:#ff4d6d;
+  --c-video:#27507f; --c-video-b:#4a7fc2; --c-text:#7d5b17; --c-text-b:#e4ac35; --c-audio:#1f6650; --c-audio-b:#3ccf91; --c-fx:#5c2a70; --c-fx-b:#c872e6; --c-ov:#1d5f66; --c-ov-b:#38c9d8;
+  --stage:#06080b; --shadow:0 8px 30px rgba(0,0,0,.45);
+  --ui:"DM Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; --mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+  color-scheme:dark;
+}
+@media (prefers-color-scheme:light){:root:not([data-theme="dark"]){
+  --bg:#e9edf2; --panel:#ffffff; --panel2:#f2f5f9; --line:#d3dae3; --fg:#161b22; --mute:#5d6978;
+  --accent:#2563eb; --danger:#d9264a; --ok:#15915f; --playhead:#e11d48;
+  --c-video:#bcd3f3; --c-video-b:#5b8fd9; --c-text:#f6dfa4; --c-text-b:#c98a0b; --c-audio:#b7e6d3; --c-audio-b:#1c9a6c; --c-fx:#ecd3f6; --c-fx-b:#a24bbd; --c-ov:#c3ecf0; --c-ov-b:#139aa8;
+  --stage:#10141a; --shadow:0 8px 30px rgba(20,30,50,.18); color-scheme:light;}}
+:root[data-theme="light"]{
+  --bg:#e9edf2; --panel:#ffffff; --panel2:#f2f5f9; --line:#d3dae3; --fg:#161b22; --mute:#5d6978;
+  --accent:#2563eb; --danger:#d9264a; --ok:#15915f; --playhead:#e11d48;
+  --c-video:#bcd3f3; --c-video-b:#5b8fd9; --c-text:#f6dfa4; --c-text-b:#c98a0b; --c-audio:#b7e6d3; --c-audio-b:#1c9a6c; --c-fx:#ecd3f6; --c-fx-b:#a24bbd; --c-ov:#c3ecf0; --c-ov-b:#139aa8;
+  --stage:#10141a; --shadow:0 8px 30px rgba(20,30,50,.18); color-scheme:light;}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%}
+body{margin:0;padding-inline:0;font:14px/1.4 var(--ui);background:var(--bg);color:var(--fg);overflow:hidden}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.app{display:grid;grid-template-rows:auto 1fr;height:100%;min-height:0}
+.top{display:flex;align-items:center;gap:10px;padding:8px 16px;background:var(--panel);border-bottom:1px solid var(--line)}
+.logo{font-weight:700;font-size:17px;letter-spacing:.02em;display:flex;align-items:center;gap:8px;margin-right:8px}
+.logo i{width:22px;height:22px;border-radius:6px;background:linear-gradient(135deg,var(--accent) 50%,var(--playhead) 50%);display:inline-block}
+.sp{flex:1}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:1px solid var(--line);background:var(--panel2);border-radius:8px;padding:7px 11px;min-height:34px;white-space:nowrap}
+.btn:hover:not(:disabled){border-color:var(--mute)}
+.btn:disabled{opacity:.4;cursor:default}
+.btn.pri{background:var(--accent);border-color:var(--accent);color:var(--accent-fg);font-weight:600}
+.btn.pri:hover:not(:disabled){filter:brightness(1.1)}
+.btn.dng{color:var(--danger)}
+.btn.ico{padding:7px;min-width:34px}
+.main{display:grid;grid-template-columns:250px minmax(0,1fr) 296px;min-height:0}
+.side{background:var(--panel);overflow:auto;min-height:0;padding:14px 16px;display:flex;flex-direction:column;gap:12px}
+.side.l{border-right:1px solid var(--line)}.side.r{border-left:1px solid var(--line)}
+h2{margin:0;font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--mute);font-weight:600}
+.center{display:grid;grid-template-rows:minmax(180px,1fr) auto auto;min-width:0;min-height:0}
+.stagewrap{min-height:0;min-width:0;background:var(--stage);position:relative;padding:12px;display:flex;flex-direction:column;gap:8px}
+.viewseg{display:flex;gap:4px;justify-content:center}
+.stage{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;gap:16px;position:relative}
+.box{position:relative;flex:none;background:#000;border-radius:4px;overflow:hidden;box-shadow:var(--shadow)}
+.box canvas{width:100%;height:100%;display:block;touch-action:none}
+.box .tag{position:absolute;left:6px;top:6px;font:500 11px var(--mono);background:rgba(0,0,0,.55);color:#fff;padding:2px 6px;border-radius:4px;pointer-events:none}
+.box.v canvas{cursor:ew-resize}
+.empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;color:#c8d0db;padding:16px;pointer-events:none}
+.empty b{font-size:18px;color:#fff}
+.transport{display:flex;align-items:center;gap:8px;padding:8px 16px;background:var(--panel);border-top:1px solid var(--line);flex-wrap:wrap}
+.time{font:500 13px var(--mono);font-variant-numeric:tabular-nums;color:var(--fg);min-width:120px}
+.time span{color:var(--mute)}
+.zoom{display:flex;align-items:center;gap:8px;color:var(--mute);font-size:12px}
+.zoom input{width:110px}
+.tlwrap{display:grid;grid-template-columns:58px minmax(0,1fr);background:var(--panel);border-top:1px solid var(--line);height:282px}
+.labels{display:flex;flex-direction:column;padding-top:24px;border-right:1px solid var(--line);font-size:11px;color:var(--mute);background:var(--panel)}
+.labels div{display:flex;align-items:center;justify-content:center;border-bottom:1px solid var(--line)}
+.tl{overflow:auto;position:relative;min-width:0}
+.tlin{position:relative;height:100%}
+.ruler{height:24px;position:relative;border-bottom:1px solid var(--line);cursor:pointer}
+.ruler span{position:absolute;top:0;height:100%;border-left:1px solid var(--line);padding:5px 0 0 4px;font:11px var(--mono);color:var(--mute)}
+.row{position:relative;border-bottom:1px solid var(--line)}
+.row.o{height:40px}.row.e{height:34px}.row.t{height:34px}.row.v{height:66px}.row.a{height:40px}
+.clip{position:absolute;top:3px;bottom:3px;border-radius:6px;border:1.5px solid;overflow:hidden;font-size:11px;padding:3px 8px;user-select:none;touch-action:none;cursor:grab;white-space:nowrap}
+.clip.v{background-color:var(--c-video);border-color:var(--c-video-b);color:#fff;background-size:auto 100%;background-repeat:repeat-x}
+.clip.v .lb{position:relative;background:rgba(0,0,0,.55);padding:1px 5px;border-radius:4px;display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+.clip.t{background:var(--c-text);border-color:var(--c-text-b);color:var(--fg)}
+.clip.o{background-color:var(--c-ov);border-color:var(--c-ov-b);color:#fff;background-size:auto 100%;background-repeat:repeat-x}
+.clip.o .lb{position:relative;background:rgba(0,0,0,.55);padding:1px 5px;border-radius:4px;display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+.clip.e{background:var(--c-fx);border-color:var(--c-fx-b);color:#fff}
+.clip.a{background:var(--c-audio);border-color:var(--c-audio-b);color:var(--fg)}
+.clip.a canvas{position:absolute;inset:0;width:100%;height:100%;opacity:.7;pointer-events:none}
+.clip .lb2{position:relative;text-overflow:ellipsis;overflow:hidden;display:block}
+.clip.sel{box-shadow:0 0 0 2px var(--fg);z-index:3}
+.clip.drag{opacity:.85;z-index:5;cursor:grabbing}
+.clip .h{position:absolute;top:0;bottom:0;width:9px;cursor:col-resize;z-index:2}
+.clip .h.l{left:0}.clip .h.r{right:0}
+.clip .h::after{content:"";position:absolute;top:22%;bottom:22%;left:3px;width:3px;border-radius:2px;background:rgba(255,255,255,.75);opacity:0}
+.clip:hover .h::after,.clip.sel .h::after{opacity:1}
+.playhead{position:absolute;top:0;bottom:0;width:0;border-left:2px solid var(--playhead);z-index:6;pointer-events:none}
+.playhead::before{content:"";position:absolute;left:-7px;top:0;width:12px;height:12px;background:var(--playhead);clip-path:polygon(0 0,100% 0,50% 100%)}
+.drop{outline:2px dashed var(--accent);outline-offset:-3px}
+.bin{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.item{position:relative;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--panel2);cursor:pointer;padding:0;text-align:left;display:block}
+.item:hover{border-color:var(--accent)}
+.item .th{aspect-ratio:16/10;background:#000 center/cover no-repeat;display:flex;align-items:center;justify-content:center;color:#fff}
+.item .nm{padding:4px 6px 5px;font-size:11px;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.item .nm small{color:var(--mute);display:block}
+.item .add{position:absolute;right:5px;top:5px;background:var(--accent);color:#fff;border-radius:6px;width:22px;height:22px;display:flex;align-items:center;justify-content:center;opacity:0}
+.item:hover .add,.item:focus-visible .add{opacity:1}
+.item .add svg{width:14px;height:14px}
+.import{border:1.5px dashed var(--line);border-radius:10px;padding:16px 12px;text-align:center;color:var(--mute);display:flex;flex-direction:column;align-items:center;gap:8px;font-size:13px}
+.import.over{border-color:var(--accent);color:var(--fg)}
+.fld{display:grid;grid-template-columns:1fr auto;gap:2px 8px;align-items:center}
+.fld span{color:var(--mute);font-size:12px}
+.fld output{font:12px var(--mono);font-variant-numeric:tabular-nums}
+.fld input[type=range]{grid-column:1/-1;width:100%;accent-color:var(--accent)}
+.fld.chk{grid-template-columns:auto 1fr;gap:8px}
+.fld.chk span{color:var(--fg);font-size:13px}
+.grp{display:flex;flex-direction:column;gap:10px;padding-top:12px;border-top:1px solid var(--line)}
+.grp:first-of-type{border-top:0;padding-top:0}
+.seg{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{flex:1;white-space:nowrap;border:0;background:var(--panel2);padding:6px 8px;font-size:12px}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button.on{background:var(--accent);color:var(--accent-fg);font-weight:600}
+.lbl{font-size:12px;color:var(--mute);margin-bottom:4px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border:1px solid var(--line);background:var(--panel2);border-radius:999px;padding:4px 10px;font-size:12px}
+.chip.on{border-color:var(--accent);color:var(--accent)}
+textarea,select,input[type=number]{width:100%;border:1px solid var(--line);background:var(--panel2);border-radius:8px;padding:7px 9px}
+label.lbl{display:block}
+.tabp{display:flex;flex-direction:column;gap:12px}
+#fxList{display:flex;flex-direction:column;gap:10px}
+#fxList .item .th{aspect-ratio:16/9;background:#000}
+
+.tabs{display:grid;grid-template-columns:repeat(4,1fr);gap:4px}
+.aiLog{display:flex;flex-direction:column;gap:6px;max-height:300px;overflow:auto;padding:2px}
+.msg{padding:8px 10px;border-radius:10px;font-size:13px;line-height:1.45;white-space:pre-wrap;word-break:break-word}
+.msg.user{background:var(--accent);color:var(--accent-fg);align-self:flex-end;max-width:90%}
+.msg.ai{background:var(--panel2);border:1px solid var(--line)}
+.msg.act{font-size:12px;color:var(--muted,#8a93a3);padding:2px 6px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}.chips button{border:1px solid var(--line);background:var(--panel2);border-radius:99px;padding:5px 10px;font-size:12px}
+#aiIn{width:100%;min-height:54px;resize:vertical;border:1px solid var(--line);background:var(--panel2);color:inherit;border-radius:8px;padding:8px;font:inherit;font-size:13px}
+.tabs button{border:1px solid var(--line);background:var(--panel2);border-radius:8px;padding:6px 4px;font-size:12px}
+.tabs button.on{background:var(--accent);color:var(--accent-fg);border-color:var(--accent);font-weight:600}
+.item .addov{position:absolute;left:5px;top:5px;background:var(--panel);color:var(--fg);border:1px solid var(--line);border-radius:6px;width:22px;height:22px;display:flex;align-items:center;justify-content:center;opacity:0;font-size:11px}
+.item:hover .addov{opacity:1}
+.item.tsty .th{display:flex;align-items:center;justify-content:center;aspect-ratio:16/8}
+.emo{display:grid;grid-template-columns:repeat(6,1fr);gap:2px}
+.emo button{border:0;background:none;font-size:20px;padding:4px 0;border-radius:6px}
+.emo button:hover{background:var(--panel2)}
+.btns{display:flex;flex-wrap:wrap;gap:6px}
+#draft{border:1px solid var(--accent);border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:6px}
+.bgsel{display:flex;align-items:center;gap:6px;font-size:12px;color:#c8d0db}
+.bgsel select{width:auto;padding:3px 6px;font-size:12px}
+.viewseg{align-items:center;flex-wrap:wrap}
+textarea{resize:vertical;min-height:62px}
+input[type=color]{width:38px;height:30px;padding:0;border:1px solid var(--line);border-radius:6px;background:none}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.row2{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.row2 .btn{flex:1 1 auto;padding-inline:8px}
+.steps{margin:0;padding-left:18px;color:var(--mute);display:flex;flex-direction:column;gap:6px}
+.steps b{color:var(--fg)}
+.kbd{display:grid;grid-template-columns:auto 1fr;gap:4px 10px;font-size:12px;color:var(--mute)}
+.kbd kbd{font:11px var(--mono);border:1px solid var(--line);border-radius:4px;padding:0 5px;background:var(--panel2);color:var(--fg)}
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:50;padding:16px}
+.modal{background:var(--panel);border:1px solid var(--line);border-radius:14px;width:min(520px,100%);max-height:100%;overflow:auto;padding:20px;display:flex;flex-direction:column;gap:14px;box-shadow:var(--shadow)}
+.modal h3{margin:0;font-size:18px}
+.bar{height:10px;border-radius:6px;background:var(--panel2);overflow:hidden;border:1px solid var(--line)}
+.bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .15s}
+.res{border:1px solid var(--line);border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:8px;background:var(--panel2)}
+.res video{max-height:170px;max-width:100%;background:#000;border-radius:6px;align-self:center}
+.res .meta{font-size:12px;color:var(--mute)}
+.toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:9px 14px;border-radius:10px;font-size:13px;z-index:60;max-width:calc(100% - 32px);box-shadow:var(--shadow)}
+.note{font-size:12px;color:var(--mute)}
+.warn{color:var(--danger)}
+@media (max-width:980px){
+  body{overflow:auto}
+  .app{height:auto;display:block}
+  .main{display:flex;flex-direction:column}
+  .side.l{order:3;border-right:0;border-top:1px solid var(--line)}
+  .side.r{order:2;border-left:0;border-top:1px solid var(--line)}
+  .center{order:1;display:block}
+  .stagewrap{height:min(60vh,430px)}
+  .top{flex-wrap:wrap;padding-inline:16px}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="app">
+  <header class="top">
+    <div class="logo"><i></i>Kesim</div>
+    <button class="btn ico" id="bUndo" title="Geri al (Ctrl+Z)" aria-label="Geri al"><svg viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg></button>
+    <button class="btn ico" id="bRedo" title="İleri al (Ctrl+Shift+Z)" aria-label="İleri al"><svg viewBox="0 0 24 24"><path d="m15 14 5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/></svg></button>
+    <div class="sp"></div>
+    <span class="note" id="topInfo"></span>
+    <button class="btn" id="bAi" hidden>✦ AI Asistan</button>
+    <button class="btn pri" id="bExport" disabled><svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>Dışa aktar</button>
+  </header>
+
+  <div class="main">
+    <aside class="side l" id="sideL">
+      <div class="tabs" id="leftTabs" role="group" aria-label="Sol panel"><button data-tab="media" class="on">Medya</button><button data-tab="fx">Efekt</button><button data-tab="tr">Geçiş</button><button data-tab="txt">Metin</button><button data-tab="stk">Çıkartma</button><button data-tab="snd">Ses</button><button data-tab="ai">✦ AI</button><button data-tab="evo">⟳ Gelişim</button></div>
+      <div class="tabp" id="tabMedia">
+      <div id="draft" hidden></div>
+      <label class="import" id="importBox">
+        <svg viewBox="0 0 24 24" style="width:26px;height:26px"><path d="M12 16V4"/><path d="m7 9 5-5 5 5"/><path d="M5 20h14"/></svg>
+        <span>Video, fotoğraf veya müzik sürükle<br>ya da seç</span>
+        <span class="btn pri" style="pointer-events:none">Dosya seç</span>
+        <input id="file" type="file" accept="video/*,image/*,audio/*" multiple hidden>
+      </label>
+      <div class="bin" id="bin"></div>
+      <p class="note" id="binHint">Eklemek için bir medyaya tıkla. Müzik, oynatma çizgisinin olduğu yere girer.</p>
+      </div>
+      <div class="tabp" id="tabFx" hidden>
+        <p class="note">Bir efekte tıkla. Seçili klip varsa onun süresine, yoksa oynatma çizgisinden 2,5 sn eklenir. Sonra “Efekt” parçasından uzat, kısalt, taşı.</p>
+        <div id="fxList"></div>
+      </div>
+      <div class="tabp" id="tabTr" hidden>
+        <p class="note">İki klip arasına geçiş koyar: önce seçili klip, sonra ondan sonra gelen klip animasyonla çıkar ve girer. Önce klibi seç, sonra geçişe tıkla.</p>
+        <div class="btns" id="trList"></div>
+      </div>
+      <div class="tabp" id="tabTxt" hidden>
+        <button class="btn pri" id="btnTxt">Düz metin ekle</button>
+        <h2>Hazır stiller</h2><div class="bin" id="txtList"></div>
+        <h2>Altyazı dosyası</h2>
+        <label class="btn" style="cursor:pointer">.srt altyazı aç<input id="srtFile" type="file" accept=".srt,text/plain" hidden></label>
+        <p class="note">Altyazı dosyası varsa, her satır zamanıyla bir metin parçası olur. Otomatik konuşma tanıma bu sürümde yok.</p>
+      </div>
+      <div class="tabp" id="tabStk" hidden>
+        <p class="note">Bir çıkartmaya tıkla. Oynatma çizgisinden başlar, Metin parçası olarak eklenir; önizlemede sürükleyip taşıyabilirsin.</p>
+        <div id="stkList"></div>
+      </div>
+      <div class="tabp" id="tabAi" hidden>
+        <div id="aiOn" hidden>
+          <p class="note">Ne istediğini yaz; asistan projeyi senin için düzenler (metin, efekt, filtre, geçiş, kesme). Her mesaj senin Claude kullanımından düşer; ilk seferde izin sorar.</p>
+          <div class="aiLog" id="aiLog"></div>
+          <div class="chips" id="aiChips">
+            <button data-q="Videoyu incele ve sinematik bir görünüm ver: uygun filtre, geçişler ve bir başlık ekle.">Sinematik yap</button>
+            <button data-q="Bu videoyu TikTok/Reels için enerjik hale getir: hızlı geçişler, efektler ve dikkat çekici bir başlık.">Enerjik yap</button>
+            <button data-q="Videoya uygun 5 başlık ve hashtag önerisi yaz.">Başlık + hashtag</button>
+            <button data-q="Projeyi incele ve neyi geliştirebileceğimi söyle, sonra en önemli iyileştirmeleri uygula.">Geliştir</button>
+          </div>
+          <textarea id="aiIn" placeholder="Örn: İlk klibe sıcak filtre koy, 2. saniyede “Merhaba” yaz, klipler arasına geçiş ekle."></textarea>
+          <div class="row2"><select id="aiTier" aria-label="Model"><option value="default">Dengeli</option><option value="quick">Hızlı</option><option value="complex">Derin düşünen</option></select>
+            <label class="note"><input type="checkbox" id="aiFrames" checked> Kare gönder</label></div>
+          <div class="row2"><button class="btn pri" id="aiSend">Gönder</button><button class="btn" id="aiStop" hidden>Durdur</button><button class="btn" id="aiUndo" hidden>AI değişikliklerini geri al</button></div>
+        </div>
+        <p class="note" id="aiOff">Yapay zekâ asistanı sadece yayınlanmış sayfada çalışır; indirilen dosyada kapalıdır. Aşağıdaki akıllı araçlar her yerde çalışır.</p>
+        <h2>Akıllı araçlar (internetsiz)</h2>
+        <div class="btns" id="smartBox">
+          <button class="btn" data-sm="scenes">Sahnelere böl</button><button class="btn" data-sm="silence">Sessizliği kes</button><button class="btn" data-sm="reframe">Dikey kadrajı ayarla</button>
+          <button class="btn" data-sm="beatinfo">Tempo bul</button><button class="btn" data-sm="beatcut">Ritme göre kes</button>
+        </div>
+        <p class="note">Önce zaman çizelgesinde klibi (ritim için müziği) seç.</p>
+        <h2>Tek tıkla tarzlar</h2>
+        <div class="btns" id="styleList"></div>
+      </div>
+      <div class="tabp" id="tabSnd" hidden>
+        <p class="note">Ses efektleri tarayıcıda üretilir, telif sorunu yoktur. Oynatma çizgisinin olduğu yere müzik parçası olarak girer.</p>
+        <div class="btns" id="sfxList"></div>
+        <h2>Ses kaydı</h2>
+        <button class="btn" id="recBtn">Mikrofonla kayıt başlat</button>
+      </div>
+      <div class="tabp" id="tabEvo" hidden></div>
+    </aside>
+
+    <section class="center">
+      <div class="stagewrap">
+        <div class="viewseg">
+          <div class="bgsel"><label for="bgSel">Boşluk dolgusu</label><select id="bgSel"><option value="blur">Bulanık</option><option value="black">Siyah</option><option value="white">Beyaz</option><option value="#16324f">Lacivert</option><option value="#5b1a2b">Bordo</option></select></div>
+          <div class="seg" id="viewSeg" role="group" aria-label="Önizleme">
+            <button data-view="both" class="on">İkisi birden</button><button data-view="h">Yatay 16:9</button><button data-view="v">Dikey 9:16</button>
+          </div>
+        </div>
+        <div class="stage" id="stage">
+          <div class="box h" id="boxH"><canvas id="cvH" width="854" height="480"></canvas><span class="tag">YATAY 16:9</span></div>
+          <div class="box v" id="boxV"><canvas id="cvV" width="360" height="640"></canvas><span class="tag">DİKEY 9:16</span></div>
+          <div class="empty" id="empty"><b>Videonu buraya getir</b><span>Soldan dosya ekle, sonra klibe tıkla.<br>Her şey bu cihazda kalır, hiçbir şey yüklenmez.</span></div>
+        </div>
+      </div>
+
+      <div class="transport">
+        <button class="btn ico" id="bStart" title="Başa dön (Home)" aria-label="Başa dön"><svg viewBox="0 0 24 24"><path d="M6 5v14"/><path d="m19 5-9 7 9 7z"/></svg></button>
+        <button class="btn pri ico" id="bPlay" title="Oynat / durdur (Boşluk)" aria-label="Oynat"><svg id="icPlay" viewBox="0 0 24 24"><path d="m7 4 13 8-13 8z"/></svg></button>
+        <div class="time" id="time">00:00.0 <span>/ 00:00.0</span></div>
+        <button class="btn" id="bSplit" title="Oynatma çizgisinden böl (S)"><svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4 8.1 15.9"/><path d="m14.5 14.5 5.5 5.5"/><path d="M8.1 8.1 12 12"/></svg>Böl</button>
+        <button class="btn" id="bText" title="Metin ekle (T)"><svg viewBox="0 0 24 24"><path d="M5 6V4h14v2"/><path d="M12 4v16"/><path d="M9 20h6"/></svg>Metin</button>
+        <button class="btn dng" id="bDel" title="Seçileni sil (Delete)"><svg viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M10 11v6M14 11v6"/><path d="M6 7l1 13h10l1-13"/><path d="M9 7V4h6v3"/></svg>Sil</button>
+        <div class="sp"></div>
+        <div class="zoom"><span>Yakınlık</span><input id="zoom" type="range" min="20" max="320" value="80" aria-label="Zaman çizelgesi yakınlığı"><button class="btn" id="bFit">Sığdır</button></div>
+      </div>
+
+      <div class="tlwrap">
+        <div class="labels"><div id="labE" style="height:34px">Efekt</div><div style="height:34px">Metin</div><div id="labO" style="height:40px">Katman</div><div style="height:66px">Video</div><div style="height:40px">Müzik</div></div>
+        <div class="tl" id="tl"><div class="tlin" id="tlin">
+          <div class="ruler" id="ruler"></div>
+          <div class="row e" id="rowE" data-row="e"></div>
+          <div class="row t" id="rowT" data-row="t"></div>
+          <div class="row o" id="rowO" data-row="ov"></div>
+          <div class="row v" id="rowV" data-row="v"></div>
+          <div class="row a" id="rowA" data-row="a"></div>
+          <div class="playhead" id="ph"></div>
+        </div></div>
+      </div>
+    </section>
+
+    <aside class="side r" id="insp"></aside>
+  </div>
+</div>
+
+<div class="overlay" id="exOv" hidden><div class="modal" id="exModal" role="dialog" aria-modal="true" aria-labelledby="exTitle"></div></div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+"use strict";
+/* ============ yardımcılar ============ */
+const $=(s,r=document)=>r.querySelector(s);
+const uid=()=>Math.random().toString(36).slice(2,9);
+const clamp=(v,a,b)=>Math.min(b,Math.max(a,v));
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const fmtT=(s,d=1)=>{s=Math.max(0,s);const m=Math.floor(s/60);return String(m).padStart(2,"0")+":"+(s-m*60).toFixed(d).padStart(d?3+d:2,"0")};
+const dec=st=>((st+"").split(".")[1]||"").length;
+const getP=(o,p)=>p.split(".").reduce((a,k)=>a&&a[k],o);
+const setP=(o,p,v)=>{const k=p.split(".");const l=k.pop();const t=k.reduce((a,x)=>a[x],o);t[l]=v};
+let toastT;function toast(msg,ms=3200){const e=$("#toast");e.textContent=msg;e.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>e.hidden=true,ms)}
+const IC={
+  plus:'<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>',
+  play:'<path d="m7 4 13 8-13 8z"/>', pause:'<path d="M7 4v16M17 4v16" />',
+  music:'<svg viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>',
+  img:'<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/></svg>'
+};
+
+/* ============ durum ============ */
+const FX0={b:100,c:100,s:100,sep:0,gray:0,hue:0,blur:0,temp:0,vig:0};
+const PF=(b,c,s,sep=0,gray=0,hue=0)=>({b,c,s,sep,gray,hue,blur:0,temp:0,vig:0});
+const PRESETS={none:["Yok",FX0],canli:["Canlı",PF(104,112,140)],sicak:["Sıcak",PF(102,104,115,25,0,-8)],soguk:["Soğuk",PF(100,105,105,0,0,14)],bw:["Siyah-beyaz",PF(100,112,100,0,100)],eski:["Eski film",PF(95,96,85,60)],
+  dramatik:["Dramatik",PF(92,135,110)],soluk:["Soluk",PF(108,85,70)],parlak:["Parlak",PF(115,105,125)],pastel:["Pastel",PF(112,88,75,10)],gunbatimi:["Gün batımı",PF(104,108,130,35,0,-18)],gece:["Gece",PF(80,115,90,0,0,18)]};
+const FONTS={sans:'"Segoe UI","DM Sans",Arial,sans-serif',black:'"Arial Black",Impact,"Segoe UI",sans-serif',serif:'Georgia,"Times New Roman",serif',bebas:'"Bebas Neue",Impact,sans-serif',anton:'Anton,Impact,sans-serif',pacifico:'Pacifico,"Brush Script MT",cursive',marker:'"Permanent Marker","Comic Sans MS",cursive',bangers:'Bangers,Impact,sans-serif',lobster:'Lobster,cursive',playfair:'"Playfair Display",Georgia,serif',orbitron:'Orbitron,"Segoe UI",sans-serif',pixel:'"Press Start 2P",monospace'};
+const FONT_NAMES={sans:"Düz",black:"Kalın",serif:"Klasik",bebas:"Bebas (başlık)",anton:"Anton (kalın)",pacifico:"Pacifico (el yazısı)",marker:"Fırça",bangers:"Çizgi roman",lobster:"Lobster",playfair:"Playfair (şık)",orbitron:"Orbitron (teknik)",pixel:"Piksel (retro oyun)"};
+const S={clips:[],texts:[],audios:[],fxs:[],overlays:[]};
+const PRJ={bg:"blur"};
+const arrOf=k=>k==='clip'?S.clips:k==='text'?S.texts:k==='fx'?S.fxs:k==='ov'?S.overlays:S.audios;
+const media=new Map();
+let sel=null,t=0,playing=false,total=0,pxs=80,view="both",exporting=false,dirty=true,cancelled=false;
+let undoS=[],redoS=[],lastKey="",lastKT=0;
+const snap=()=>JSON.stringify(S);
+function pushUndo(key){scheduleSave();const n=performance.now();if(key&&key===lastKey&&n-lastKT<1200){lastKT=n;return}
+  lastKey=key||"";lastKT=n;undoS.push(snap());if(undoS.length>120)undoS.shift();redoS=[];btns()}
+function restore(s){const o=JSON.parse(s);S.clips=o.clips.filter(c=>media.has(c.mid));S.texts=o.texts;S.fxs=o.fxs||[];S.overlays=(o.overlays||[]).filter(v=>media.has(v.mid));S.audios=o.audios.filter(a=>media.has(a.mid));
+  if(sel&&!findSel())sel=null;layoutAll();renderAll()}
+function undo(){if(!undoS.length)return;redoS.push(snap());restore(undoS.pop());lastKey="";btns()}
+function redo(){if(!redoS.length)return;undoS.push(snap());restore(redoS.pop());lastKey="";btns()}
+const clipDur=c=>(c.out-c.in)/c.speed;
+function layout(){let s=0;for(const c of S.clips){c.start=s;s+=clipDur(c)}total=s}
+function clipAt(tt){for(const c of S.clips)if(tt>=c.start&&tt<c.start+clipDur(c)-1e-6)return c;return null}
+function findSel(){if(!sel)return null;const arr=arrOf(sel.k);return arr.find(x=>x.id===sel.id)||null}
+
+/* ============ ses motoru (önizleme + dışa aktarma aynı grafikten geçer) ============ */
+let actx=null,master=null,dest=null;
+function ensureAudio(){if(actx)return;actx=new (window.AudioContext||window.webkitAudioContext)();master=actx.createGain();master.connect(actx.destination);dest=actx.createMediaStreamDestination()}
+
+/* ============ medya içe aktarma ============ */
+function seekTo(el,x){return new Promise(res=>{let done=false;const f=()=>{if(done)return;done=true;el.removeEventListener("seeked",f);res()};el.addEventListener("seeked",f);el.currentTime=x;setTimeout(f,1500)})}
+function loadEl(kind,url){return new Promise((res,rej)=>{
+  if(kind==="image"){const im=new Image();im.onload=()=>res(im);im.onerror=()=>rej(new Error("img"));im.src=url;return}
+  const el=document.createElement(kind==="video"?"video":"audio");el.preload="auto";el.playsInline=true;
+  const fail=()=>rej(new Error("media"));el.onerror=fail;
+  el.onloadedmetadata=async()=>{
+    if(el.duration===Infinity||isNaN(el.duration)){ // MediaRecorder ile yapılmış dosyalarda süre eksik olur
+      el.currentTime=1e7;await new Promise(r=>{el.ontimeupdate=()=>{el.ontimeupdate=null;r()};setTimeout(r,2500)});el.currentTime=0}
+    res(el)};
+  el.src=url})}
+async function addMedia(file,opt={}){
+  let kind=file.type.startsWith("video/")?"video":file.type.startsWith("image/")?"image":file.type.startsWith("audio/")?"audio":null;
+  if(!kind){const x=file.name.toLowerCase();kind=/\.(mp4|mov|m4v|webm|mkv)$/.test(x)?"video":/\.(png|jpe?g|webp|gif|bmp)$/.test(x)?"image":/\.(mp3|wav|ogg|m4a|aac|flac)$/.test(x)?"audio":null}
+  if(!kind){toast(file.name+": desteklenmeyen dosya türü");return null}
+  if(opt.kind)kind=opt.kind;
+  ensureAudio();
+  const url=URL.createObjectURL(file);let el;
+  try{el=await loadEl(kind,url)}catch(e){toast(file.name+" tarayıcıda açılamadı. MP4 (H.264), WebM, MP3 veya JPG/PNG dene.");URL.revokeObjectURL(url);return null}
+  const m={id:opt.id||uid(),file,kind,name:opt.name||file.name.replace(/\.[^.]+$/,""),url,el,duration:kind==="image"?0:el.duration,w:el.videoWidth||el.naturalWidth||0,h:el.videoHeight||el.naturalHeight||0,thumb:"",peaks:null};
+  if(kind!=="image"){
+    m.srcNode=actx.createMediaElementSource(el);m.gain=actx.createGain();m.gain.gain.value=0;m.srcNode.connect(m.gain);m.gain.connect(master);m.gain.connect(dest);
+    el.addEventListener("seeked",()=>dirty=true)}
+  if(kind==="video"){await seekTo(el,Math.min(.5,m.duration/3));m.thumb=thumbOf(el,m.w,m.h);await seekTo(el,0)}
+  if(kind==="image")m.thumb=thumbOf(el,m.w,m.h);
+  if(kind==="audio"&&file.size<45e6){try{const buf=await actx.decodeAudioData(await file.arrayBuffer());const ch=buf.getChannelData(0),N=400,step=Math.floor(ch.length/N)||1;m.peaks=[];
+    for(let i=0;i<N;i++){let mx=0;for(let j=i*step;j<Math.min(ch.length,(i+1)*step);j+=8)mx=Math.max(mx,Math.abs(ch[j]));m.peaks.push(mx)}}catch(e){}}
+  media.set(m.id,m);if(!opt.noSave)saveMediaBlob(m);renderBin();updateEmpty();return m}
+function thumbOf(src,w,h){const c=document.createElement("canvas");c.width=160;c.height=100;const x=c.getContext("2d");const s=Math.max(160/w,100/h);x.drawImage(src,(160-w*s)/2,(100-h*s)/2,w*s,h*s);try{return c.toDataURL("image/jpeg",.7)}catch(e){return""}}
+async function importFiles(list){const files=[...list];if(!files.length)return;let first=null;
+  for(const f of files){const m=await addMedia(f);if(m&&!first)first=m}
+  if(first&&!S.clips.length&&first.kind!=="audio"){addToTimeline(first)}
+  else if(first)toast("Eklendi. Zaman çizelgesine almak için medyaya tıkla.")}
+
+/* ============ zaman çizelgesine ekleme / düzenleme ============ */
+function newClip(m){return{id:uid(),mid:m.id,in:0,out:m.kind==="image"?4:m.duration,speed:1,volume:1,mute:false,fx:{...FX0},hmode:"fit",vmode:"fill",zoom:1,panX:.5,panY:.5,fade:false,start:0,animIn:"none",animOut:"none",animDur:.6,rot:0,flipH:false,flipV:false,fin:0,fout:0}}
+function addToTimeline(m,at){
+  pushUndo();
+  if(m.kind==="audio"){const a={id:uid(),mid:m.id,start:at!=null?at:t,in:0,out:m.duration,volume:.8};S.audios.push(a);sel={k:"audio",id:a.id}}
+  else{const c=newClip(m);if(at!=null&&at<=S.clips.length)S.clips.splice(at,0,c);else S.clips.push(c);sel={k:"clip",id:c.id};layout();t=c.start}
+  layoutAll();renderAll();if(m.kind!=="audio")syncMedia(t,false)}
+function splitAt(){
+  layout();const cur=findSel();let c=cur&&sel.k==="clip"?cur:null;
+  if(!c||!(t>c.start+.1&&t<c.start+clipDur(c)-.1))c=clipAt(t);
+  if(c&&t>c.start+.1&&t<c.start+clipDur(c)-.1){pushUndo();const st=c.in+(t-c.start)*c.speed;
+    const n=JSON.parse(JSON.stringify(c));n.id=uid();n.in=st;c.out=st;n.fade=c.fade;S.clips.splice(S.clips.indexOf(c)+1,0,n);sel={k:"clip",id:n.id};layoutAll();renderAll();return}
+  const a=cur&&sel.k==="audio"?cur:null;
+  if(a&&t>a.start+.1&&t<a.start+(a.out-a.in)-.1){pushUndo();const st=a.in+(t-a.start);const n={...a,id:uid(),start:t,in:st};a.out=st;S.audios.push(n);sel={k:"audio",id:n.id};layoutAll();renderAll();return}
+  toast("Bölmek için oynatma çizgisini bir klibin ortasına getir.")}
+function delSel(){const o=findSel();if(!o)return toast("Önce silinecek parçayı seç.");pushUndo();
+  const arr=arrOf(sel.k);arr.splice(arr.indexOf(o),1);sel=null;layoutAll();renderAll();setT(Math.min(t,total))}
+function dupSel(){const o=findSel();if(!o)return;pushUndo();const n=JSON.parse(JSON.stringify(o));n.id=uid();if(sel.k==="ov")n.start=o.start+(o.out-o.in);
+  if(sel.k==="clip"){S.clips.splice(S.clips.indexOf(o)+1,0,n)}else if(sel.k==="text"||sel.k==="fx"){n.start=o.start+o.dur;arrOf(sel.k).push(n)}else if(sel.k==="ov"){S.overlays.push(n)}else{n.start=o.start+(o.out-o.in);S.audios.push(n)}
+  sel={k:sel.k,id:n.id};layoutAll();renderAll()}
+function addText(pre){pre=pre&&pre.text!==undefined||pre&&pre.font?pre:{};pushUndo();const x={id:uid(),text:"Yeni metin",start:t,dur:Math.min(3,Math.max(1,(total||3)-t)),x:.5,y:.82,size:7,color:"#ffffff",font:"sans",bg:false,bgColor:"#000000",outline:true,glow:false,shadow:false,animIn:"fade",animOut:"fade",animDur:.5,loop:"none",...pre};
+  S.texts.push(x);sel={k:"text",id:x.id};layoutAll();renderAll();const ta=$("#insp textarea");if(ta){ta.focus();ta.select()}}
+function layoutAll(){layout();$("#bExport").disabled=!total;updateEmpty();btns()}
+
+/* ============ çalma / eşitleme ============ */
+const fadeF=(lt,d,fi,fo)=>{let f=1;if(fi>0)f=Math.min(f,lt/fi);if(fo>0)f=Math.min(f,(d-lt)/fo);return clamp(f,0,1)};
+function syncMedia(tt,play){
+  const act=new Map();const c=clipAt(Math.min(tt,Math.max(0,total-1e-3)));
+  if(c){const m=media.get(c.mid);if(m&&m.kind==="video")act.set(m.id,{time:c.in+(tt-c.start)*c.speed,rate:c.speed,vol:(c.mute?0:c.volume)*fadeF(tt-c.start,clipDur(c),c.fin,c.fout)})}
+  for(const a of S.audios){const m=media.get(a.mid);if(m&&tt>=a.start&&tt<a.start+(a.out-a.in))act.set(m.id,{time:a.in+(tt-a.start),rate:1,vol:a.volume*fadeF(tt-a.start,a.out-a.in,a.fin,a.fout)})}
+  for(const v of S.overlays){const m=media.get(v.mid);if(m&&m.kind==='video'&&!act.has(m.id)&&tt>=v.start&&tt<v.start+(v.out-v.in))act.set(m.id,{time:v.in+(tt-v.start),rate:1,vol:v.volume})}
+  for(const m of media.values()){if(m.kind==="image")continue;const el=m.el,a=act.get(m.id);
+    if(!a){if(!el.paused)el.pause();m.gain.gain.value=0;continue}
+    m.gain.gain.value=a.vol;if(el.playbackRate!==a.rate)el.playbackRate=a.rate;
+    if(play){
+      if(el.paused){el.currentTime=a.time;el.play().catch(()=>{})}
+      else if(!el.seeking&&Math.abs(el.currentTime-a.time)>.3)el.currentTime=a.time;
+    }else{if(!el.paused)el.pause();if(!el.seeking&&Math.abs(el.currentTime-a.time)>.04)el.currentTime=a.time}}
+  if(play&&c){ // sıradaki klibi önceden hazırla
+    const n=S.clips[S.clips.indexOf(c)+1];
+    if(n&&n.start-tt<.7){const m=media.get(n.mid);if(m&&m.kind==="video"&&!act.has(m.id)&&m.el.paused&&Math.abs(m.el.currentTime-n.in)>.05&&!m.el.seeking)m.el.currentTime=n.in}}}
+function setT(nt,keep){if(!keep&&playing)pause();t=clamp(nt,0,Math.max(0,total-1e-3));syncMedia(t,false);dirty=true;updateTime()}
+function play(){if(!total)return;ensureAudio();actx.resume();if(t>=total-.05)t=0;playing=true;last=performance.now();$("#icPlay").innerHTML=IC.pause}
+function pause(){playing=false;$("#icPlay").innerHTML=IC.play;syncMedia(t,false)}
+function updateTime(){$("#time").innerHTML=fmtT(t)+" <span>/ "+fmtT(total)+"</span>";$("#ph").style.left=(t*pxs)+"px"}
+
+/* ============ çizim ============ */
+const tiny=document.createElement("canvas");tiny.width=40;tiny.height=40;const tctx=tiny.getContext("2d");
+function srcReady(m){const e=m.el;if(m.kind==="image")return e.complete;return e.readyState>=2&&!e.seeking}
+function fxStr(f,W){return(f.blur?`blur(${f.blur/1000*W}px) `:"")+`brightness(${f.b}%) contrast(${f.c}%) saturate(${f.s}%) sepia(${f.sep}%) grayscale(${f.gray}%) hue-rotate(${f.hue}deg)`}
+const fxIsDefault=f=>f.b===100&&f.c===100&&f.s===100&&!f.sep&&!f.gray&&!f.hue&&!f.blur;
+
+/* ---------- efekt kütüphanesi ---------- */
+const ease=u=>1-Math.pow(1-clamp(u,0,1),3);
+const easeBack=u=>{const c1=1.70158,c3=c1+1;return 1+c3*Math.pow(u-1,3)+c1*Math.pow(u-1,2)};
+const hs=n=>{const h=Math.sin(n*127.1+311.7)*43758.5453;return h-Math.floor(h)};
+const scr=new Map();
+function scratch(W,H,n){const k=W+"x"+H+"x"+n;let c=scr.get(k);if(!c){c=document.createElement("canvas");c.width=W;c.height=H;c._g=c.getContext("2d");scr.set(k,c);if(scr.size>18)scr.delete(scr.keys().next().value)}return c}
+function snap2(ctx,W,H,n=0){const c=scratch(W,H,n),g=c._g;g.setTransform(1,0,0,1,0,0);g.globalCompositeOperation="source-over";g.globalAlpha=1;g.filter="none";g.clearRect(0,0,W,H);g.drawImage(ctx.canvas,0,0,W,H);return c}
+function zoomDraw(c,W,H,k,dx=0,dy=0,rot=0){const s=snap2(c,W,H);c.fillStyle="#000";c.fillRect(0,0,W,H);c.translate(W/2+dx,H/2+dy);if(rot)c.rotate(rot);c.scale(k,k);c.drawImage(s,-W/2,-H/2)}
+function rgbShift(c,W,H,off){const s=snap2(c,W,H,0),cols=["#f00","#0f0","#00f"],dx=[-off,0,off];
+  const chs=cols.map((col,i)=>{const t=scratch(W,H,1+i),g=t._g;g.setTransform(1,0,0,1,0,0);g.globalAlpha=1;g.filter="none";g.globalCompositeOperation="source-over";g.clearRect(0,0,W,H);g.drawImage(s,0,0);g.globalCompositeOperation="multiply";g.fillStyle=col;g.fillRect(0,0,W,H);g.globalCompositeOperation="source-over";return t});
+  c.globalCompositeOperation="source-over";c.fillStyle="#000";c.fillRect(0,0,W,H);c.globalCompositeOperation="lighter";chs.forEach((t,i)=>c.drawImage(t,dx[i],0));c.globalCompositeOperation="source-over"}
+let noisePat=null,scanPat=null;
+function getNoise(){if(!noisePat){const n=document.createElement("canvas");n.width=n.height=256;const g=n.getContext("2d"),d=g.createImageData(256,256);for(let i=0;i<d.data.length;i+=4){const v=Math.random()*255;d.data[i]=d.data[i+1]=d.data[i+2]=v;d.data[i+3]=255}g.putImageData(d,0,0);noisePat=g.createPattern(n,"repeat")}return noisePat}
+function getScan(){if(!scanPat){const n=document.createElement("canvas");n.width=4;n.height=4;const g=n.getContext("2d");g.fillStyle="rgba(0,0,0,.75)";g.fillRect(0,0,4,2);scanPat=g.createPattern(n,"repeat")}return scanPat}
+const sub=(fn,c,W,H,o)=>{c.save();fn(c,W,H,o);c.restore()};
+const FXLIB={
+ blur:{n:"Bulanıklık",g:"Odak",f:(c,W,H,o)=>{const s=snap2(c,W,H);c.filter=`blur(${o.i*W*.02}px)`;c.translate(W/2,H/2);c.scale(1.06,1.06);c.drawImage(s,-W/2,-H/2)}},
+ blurin:{n:"Netleşen odak",g:"Odak",f:(c,W,H,o)=>{const s=snap2(c,W,H);c.filter=`blur(${o.i*W*.035*(1-ease(o.p))}px)`;c.translate(W/2,H/2);c.scale(1.06,1.06);c.drawImage(s,-W/2,-H/2)}},
+ glow:{n:"Parıltı",g:"Odak",f:(c,W,H,o)=>{const s=snap2(c,W,H);c.globalCompositeOperation="screen";c.filter=`blur(${W*.012}px) brightness(1.3)`;c.globalAlpha=clamp(o.i*.9,0,1);c.drawImage(s,0,0)}},
+ shake:{n:"Sallanma",g:"Hareket",f:(c,W,H,o)=>{const k=Math.floor(o.tt*o.sp*30);zoomDraw(c,W,H,1.04+o.i*.07,(hs(k)-.5)*2*o.i*W*.03,(hs(k+50)-.5)*2*o.i*H*.03,(hs(k+99)-.5)*o.i*.03)}},
+ tilt:{n:"Sallanan kamera",g:"Hareket",f:(c,W,H,o)=>{const a=Math.sin(o.tt*o.sp*2)*o.i*.12,k=Math.cos(a)+Math.abs(Math.sin(a))*Math.max(W/H,H/W)+.01;zoomDraw(c,W,H,k,0,0,a)}},
+ pulse:{n:"Nabız",g:"Hareket",f:(c,W,H,o)=>zoomDraw(c,W,H,1+o.i*.12*(.5+.5*Math.sin(o.lt*o.sp*9)))},
+ beat:{n:"Ritim zıplaması",g:"Hareket",f:(c,W,H,o)=>zoomDraw(c,W,H,1+o.i*.14*Math.pow(1-((o.lt*o.sp*2)%1),3))},
+ zoomin:{n:"Yavaş yakınlaşma",g:"Hareket",f:(c,W,H,o)=>zoomDraw(c,W,H,1+o.i*.35*o.p)},
+ zoomburst:{n:"Zoom patlaması",g:"Hareket",f:(c,W,H,o)=>zoomDraw(c,W,H,1+o.i*.4*Math.pow(1-o.p,2))},
+ wave:{n:"Dalga",g:"Hareket",f:(c,W,H,o)=>{const s=snap2(c,W,H),st=Math.max(2,Math.round(H/110));c.fillStyle="#000";c.fillRect(0,0,W,H);for(let y=0;y<H;y+=st){const dx=Math.sin(y/H*12+o.tt*o.sp*4)*o.i*W*.025;c.drawImage(s,0,y,W,st,dx,y,W,st)}}},
+ echo:{n:"İz bırakma",g:"Hareket",f:(c,W,H,o)=>{const s=snap2(c,W,H),d=o.i*W*.035*(.6+.4*Math.sin(o.tt*o.sp*5));c.globalAlpha=.45;c.drawImage(s,-d,0);c.globalAlpha=.3;c.drawImage(s,d*2,0)}},
+ flash:{n:"Flaş",g:"Işık",di:1,f:(c,W,H,o)=>{c.fillStyle=`rgba(255,255,255,${clamp(o.i*1.1*Math.pow(1-clamp(o.p,0,1),2),0,1)})`;c.fillRect(0,0,W,H)}},
+ strobe:{n:"Strobo",g:"Işık",f:(c,W,H,o)=>{if(Math.floor(o.lt*o.sp*8)%2===0){c.fillStyle=`rgba(255,255,255,${clamp(o.i*.8,0,1)})`;c.fillRect(0,0,W,H)}}},
+ flicker:{n:"Titreyen ışık",g:"Işık",f:(c,W,H,o)=>{c.fillStyle=`rgba(0,0,0,${hs(Math.floor(o.tt*o.sp*24))*o.i*.55})`;c.fillRect(0,0,W,H)}},
+ leak:{n:"Işık sızıntısı",g:"Işık",f:(c,W,H,o)=>{const x=(.2+.6*(.5+.5*Math.sin(o.tt*o.sp*.9)))*W,r=Math.max(W,H)*.75,g=c.createRadialGradient(x,H*.25,0,x,H*.25,r);
+   g.addColorStop(0,"rgba(255,160,50,.95)");g.addColorStop(.45,"rgba(255,50,120,.45)");g.addColorStop(1,"rgba(255,50,120,0)");c.globalCompositeOperation="screen";c.globalAlpha=clamp(o.i,0,1);c.fillStyle=g;c.fillRect(0,0,W,H)}},
+ vignette:{n:"Vinyet",g:"Işık",f:(c,W,H,o)=>{const g=c.createRadialGradient(W/2,H/2,Math.min(W,H)*.2,W/2,H/2,Math.hypot(W,H)*.55);g.addColorStop(0,"rgba(0,0,0,0)");g.addColorStop(1,`rgba(0,0,0,${clamp(o.i*.9,0,1)})`);c.fillStyle=g;c.fillRect(0,0,W,H)}},
+ cinema:{n:"Sinema bantları",g:"Işık",di:.9,f:(c,W,H,o)=>{const h=H*.14*o.i*Math.min(1,o.lt/.4+.001);c.fillStyle="#000";c.fillRect(0,0,W,h);c.fillRect(0,H-h,W,h)}},
+ grain:{n:"Film greni",g:"Retro",f:(c,W,H,o)=>{const k=Math.max(1,Math.min(W,H)/540),n=Math.floor(o.tt*24);c.globalCompositeOperation="overlay";c.globalAlpha=clamp(o.i,0,1);c.translate(-hs(n)*256*k,-hs(n+9)*256*k);c.scale(k,k);c.fillStyle=getNoise();c.fillRect(0,0,(W+520*k)/k,(H+520*k)/k)}},
+ scan:{n:"Tarama çizgileri",g:"Retro",f:(c,W,H,o)=>{const k=Math.max(1,Math.min(W,H)/540);c.globalAlpha=clamp(o.i*.9,0,1);c.scale(k,k);c.fillStyle=getScan();c.fillRect(0,0,W/k,H/k)}},
+ vhs:{n:"VHS kaset",g:"Retro",f:(c,W,H,o)=>{rgbShift(c,W,H,o.i*W*.006*(1+.5*Math.sin(o.tt*5)));const s=snap2(c,W,H),by=((o.tt*o.sp*.25)%1)*H,bh=H*.07;c.drawImage(s,0,by,W,bh,o.i*W*.02,by,W,bh);
+   sub(FXLIB.scan.f,c,W,H,{...o,i:o.i*.8});sub(FXLIB.grain.f,c,W,H,{...o,i:o.i*.5})}},
+ sepia:{n:"Sepya",g:"Retro",f:(c,W,H,o)=>{const s=snap2(c,W,H);c.filter=`sepia(${clamp(o.i,0,1)*100}%) contrast(1.05)`;c.drawImage(s,0,0)}},
+ night:{n:"Gece görüşü",g:"Retro",f:(c,W,H,o)=>{const s=snap2(c,W,H);c.filter="grayscale(1) brightness(1.25) contrast(1.1)";c.drawImage(s,0,0);c.filter="none";c.globalCompositeOperation="multiply";c.globalAlpha=clamp(o.i+.2,0,1);c.fillStyle="#3dff6b";c.fillRect(0,0,W,H)}},
+ glitch:{n:"Glitch",g:"Bozulma",di:.7,f:(c,W,H,o)=>{const s=snap2(c,W,H),seed=Math.floor(o.tt*10*o.sp);if(hs(seed*3.1)<.35)return;const n=4+Math.floor(hs(seed)*6);
+   for(let k=0;k<n;k++){const y=hs(seed+k*7.7)*H,h=hs(seed+k*3.3)*H*.12+H*.01,dx=(hs(seed+k*5.1)-.5)*W*.22*o.i;c.drawImage(s,0,y,W,h,dx,y,W,h)}sub((cc,w,h,oo)=>rgbShift(cc,w,h,o.i*W*.012),c,W,H,o)}},
+ rgb:{n:"RGB kayması",g:"Bozulma",f:(c,W,H,o)=>rgbShift(c,W,H,o.i*W*.015*(.6+.4*Math.sin(o.tt*o.sp*7)))},
+ pixel:{n:"Piksel (mozaik)",g:"Bozulma",di:.5,f:(c,W,H,o)=>{const sz=Math.max(2,Math.round(o.i*W/26)),w=Math.max(1,Math.ceil(W/sz)),h=Math.max(1,Math.ceil(H/sz)),s=snap2(c,W,H),sm=scratch(w,h,5);sm._g.setTransform(1,0,0,1,0,0);sm._g.globalAlpha=1;sm._g.clearRect(0,0,w,h);sm._g.drawImage(s,0,0,w,h);c.imageSmoothingEnabled=false;c.drawImage(sm,0,0,w,h,0,0,w*sz,h*sz)}},
+ mirrorH:{n:"Ayna (sağ-sol)",g:"Bozulma",f:(c,W,H)=>{const s=snap2(c,W,H);c.translate(W,0);c.scale(-1,1);c.drawImage(s,0,0,W/2,H,0,0,W/2,H)}},
+ mirrorV:{n:"Ayna (alt-üst)",g:"Bozulma",f:(c,W,H)=>{const s=snap2(c,W,H);c.translate(0,H);c.scale(1,-1);c.drawImage(s,0,0,W,H/2,0,0,W,H/2)}},
+ bw:{n:"Siyah-beyaz",g:"Renk",di:1,f:(c,W,H,o)=>{const s=snap2(c,W,H);c.filter=`grayscale(${clamp(o.i,0,1)*100}%) contrast(1.1)`;c.drawImage(s,0,0)}},
+ invert:{n:"Negatif",g:"Renk",di:1,f:(c,W,H,o)=>{c.globalCompositeOperation="difference";c.globalAlpha=clamp(o.i,0,1);c.fillStyle="#fff";c.fillRect(0,0,W,H)}},
+ rainbow:{n:"Renk döngüsü",g:"Renk",f:(c,W,H,o)=>{const s=snap2(c,W,H);c.filter=`hue-rotate(${o.tt*o.sp*120}deg) saturate(${1+o.i})`;c.drawImage(s,0,0)}}
+};
+function applyFx(ctx,W,H,tt){for(const e of S.fxs){if(tt<e.start||tt>=e.start+e.dur)continue;const d=FXLIB[e.type];if(!d)continue;
+  ctx.save();ctx.globalAlpha=1;ctx.filter="none";ctx.globalCompositeOperation="source-over";ctx.imageSmoothingEnabled=true;
+  try{d.f(ctx,W,H,{lt:tt-e.start,p:clamp((tt-e.start)/e.dur,0,1),i:e.i,sp:e.sp,tt})}catch(err){}ctx.restore()}}
+
+/* ---------- klip giriş / çıkış animasyonları ---------- */
+const ANIM_IN={none:"Yok",fade:"Belirme",slideL:"Soldan gir",slideR:"Sağdan gir",slideU:"Yukarıdan gir",slideD:"Aşağıdan gir",zoomIn:"Yakından gel",zoomOut:"Uzaktan gel",spin:"Dönerek gir",bounce:"Zıplayarak gir",wipe:"Soldan aç (silme)",blur:"Bulanıktan netleş",flash:"Flaşla gir",pixel:"Pikselden netleş",glitch:"Glitch ile gir"};
+const ANIM_OUT={none:"Yok",fade:"Kaybolma",slideL:"Sola çık",slideR:"Sağa çık",slideU:"Yukarı çık",slideD:"Aşağı çık",zoomIn:"Yaklaşarak çık",zoomOut:"Uzaklaşarak çık",spin:"Dönerek çık",bounce:"Küçülerek çık",wipe:"Sola kapan (silme)",blur:"Bulanıklaş",flash:"Flaşla çık",pixel:"Piksellen",glitch:"Glitch ile çık"};
+const TANIM_IN={none:"Yok",fade:"Belirme",rise:"Aşağıdan yüksel",drop:"Yukarıdan düş",slide:"Soldan kay",pop:"Büyüyerek çık",type:"Daktilo",blur:"Bulanıktan netleş"};
+const TANIM_OUT={none:"Yok",fade:"Kaybolma",sink:"Aşağı çök",pop:"Küçülerek kaybol",slide:"Sola kay",type:"Silinerek git",blur:"Bulanıklaş"};
+const TLOOP={none:"Yok",pulse:"Nabız",shake:"Titreme",float:"Süzülme",blink:"Yanıp sönme",rainbow:"Gökkuşağı renk"};
+function cs(ctx,W,H,s,r){ctx.translate(W/2,H/2);if(r)ctx.rotate(r);ctx.scale(s,s);ctx.translate(-W/2,-H/2)}
+function preAnim(ctx,W,H,A){const a=A.a;
+  switch(A.t){
+    case"fade":ctx.globalAlpha=1-a;break;
+    case"slideL":ctx.translate(-a*W,0);break;case"slideR":ctx.translate(a*W,0);break;case"slideU":ctx.translate(0,-a*H);break;case"slideD":ctx.translate(0,a*H);break;
+    case"zoomIn":cs(ctx,W,H,1+.7*a,0);ctx.globalAlpha=1-a;break;
+    case"zoomOut":cs(ctx,W,H,1-.5*a,0);ctx.globalAlpha=1-a;break;
+    case"spin":cs(ctx,W,H,1-.35*a,(A.io==="in"?-1:1)*a*.9);ctx.globalAlpha=1-a;break;
+    case"bounce":{const u=1-a;cs(ctx,W,H,A.io==="in"?Math.max(.02,easeBack(u)):1-.9*a,0);ctx.globalAlpha=clamp(u*3,0,1);break}
+    case"wipe":ctx.beginPath();ctx.rect(0,0,W*(1-a),H);ctx.clip();break}}
+
+/* ---------- kare çizimi ---------- */
+function drawClipImage(ctx,W,H,c,m,fmt,xb){
+  const r90=(c.rot||0)%2===1,sw=r90?m.h:m.w,sh=r90?m.w:m.h,mode=fmt==="h"?c.hmode:c.vmode;
+  const fill=Math.max(W/sw,H/sh),fit=Math.min(W/sw,H/sh),sc=(mode==="fill"?fill:fit)*c.zoom,dw=sw*sc,dh=sh*sc;
+  const x=dw>=W?(W-dw)*c.panX:(W-dw)/2, y=dh>=H?(H-dh)*c.panY:(H-dh)/2;
+  if(dw<W-1||dh<H-1){
+    if(PRJ.bg==="blur"){tiny.height=Math.max(8,Math.round(40*H/W));const k=Math.max(40/m.w,tiny.height/m.h);tctx.drawImage(m.el,(40-m.w*k)/2,(tiny.height-m.h*k)/2,m.w*k,m.h*k);
+      ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality="high";ctx.drawImage(tiny,0,0,W,H);ctx.fillStyle="rgba(0,0,0,.4)";ctx.fillRect(0,0,W,H)}
+    else{ctx.fillStyle=PRJ.bg==="white"?"#fff":PRJ.bg==="black"?"#000":PRJ.bg;ctx.fillRect(0,0,W,H)}}
+  let f=fxIsDefault(c.fx)?"":fxStr(c.fx,W);if(xb)f=`blur(${xb}px) `+f;
+  ctx.filter=f||"none";ctx.save();ctx.translate(x+dw/2,y+dh/2);ctx.rotate((c.rot||0)*Math.PI/2);ctx.scale(c.flipH?-1:1,c.flipV?-1:1);
+  const uw=r90?dh:dw,uh=r90?dw:dh;ctx.drawImage(m.el,-uw/2,-uh/2,uw,uh);ctx.restore();ctx.filter="none";
+  const fx=c.fx,rx=Math.max(0,x),ry=Math.max(0,y),rw=Math.min(W,x+dw)-rx,rh=Math.min(H,y+dh)-ry;
+  if(fx.temp){ctx.save();ctx.globalCompositeOperation="soft-light";ctx.fillStyle=fx.temp>0?"rgb(255,150,40)":"rgb(60,140,255)";ctx.globalAlpha=Math.min(1,Math.abs(fx.temp)/100*.9);ctx.fillRect(rx,ry,rw,rh);ctx.restore()}
+  if(fx.vig){const g=ctx.createRadialGradient(W/2,H/2,Math.min(W,H)*.25,W/2,H/2,Math.hypot(W,H)*.55);g.addColorStop(0,"rgba(0,0,0,0)");g.addColorStop(1,`rgba(0,0,0,${Math.min(1,fx.vig/100*.9)})`);ctx.fillStyle=g;ctx.fillRect(rx,ry,rw,rh)}}
+function drawFrame(ctx,W,H,tt,fmt){
+  const c=clipAt(Math.min(tt,Math.max(0,total-1e-3)));const m=c&&media.get(c.mid);
+  if(c&&m&&!srcReady(m))return false;
+  ctx.setTransform(1,0,0,1,0,0);ctx.globalAlpha=1;ctx.filter="none";ctx.globalCompositeOperation="source-over";ctx.fillStyle="#000";ctx.fillRect(0,0,W,H);
+  if(c&&m){
+    const lt=tt-c.start,d=clipDur(c),ad=Math.min(c.animDur||.6,d/2);let A=null;
+    if(c.animIn&&c.animIn!=="none"&&lt<ad)A={t:c.animIn,a:1-ease(lt/ad),io:"in"};
+    else if(c.animOut&&c.animOut!=="none"&&d-lt<ad)A={t:c.animOut,a:Math.pow(clamp(1-(d-lt)/ad,0,1),2.2),io:"out"};
+    ctx.save();if(A)preAnim(ctx,W,H,A);
+    drawClipImage(ctx,W,H,c,m,fmt,A&&A.t==="blur"?A.a*W*.035:0);ctx.restore();
+    if(A){if(A.t==="flash"){ctx.fillStyle=`rgba(255,255,255,${A.a*.95})`;ctx.fillRect(0,0,W,H)}
+      else if(A.t==="pixel"){ctx.save();FXLIB.pixel.f(ctx,W,H,{i:A.a*.9,tt,lt:0,p:0,sp:1});ctx.restore()}
+      else if(A.t==="glitch"){ctx.save();FXLIB.glitch.f(ctx,W,H,{i:Math.min(1,A.a*1.5),tt,lt:tt,p:0,sp:2});ctx.restore()}}
+    if(c.fade){const f=.35;let a=1;if(lt<f)a=lt/f;if(d-lt<f)a=Math.min(a,(d-lt)/f);if(a<1){ctx.fillStyle=`rgba(0,0,0,${clamp(1-a,0,1)})`;ctx.fillRect(0,0,W,H)}}
+  }
+  for(const v of S.overlays)if(tt>=v.start&&tt<v.start+(v.out-v.in))drawOverlay(ctx,W,H,v,tt);
+  applyFx(ctx,W,H,tt);
+  for(const x of S.texts)if(tt>=x.start&&tt<x.start+x.dur)drawText(ctx,W,H,x,tt);
+  return true}
+function drawText(ctx,W,H,x,tt){
+  const px=x.size/100*Math.min(W,H),lt=tt-x.start,ad=Math.max(.05,Math.min(x.animDur||.5,x.dur/2));
+  let aI=0,aO=0;if(x.animIn&&x.animIn!=="none"&&lt<ad)aI=1-ease(lt/ad);if(x.animOut&&x.animOut!=="none"&&x.dur-lt<ad)aO=Math.pow(clamp(1-(x.dur-lt)/ad,0,1),2);
+  const A=aI>0?[x.animIn,aI]:aO>0?[x.animOut,aO]:null;
+  let al=1,ox=0,oy=0,sc=1,bl=0,chars=1,col=x.color;
+  if(A){const [ty,a]=A;al=1-a;
+    if(ty==="rise")oy=a*px*1.6;else if(ty==="drop")oy=-a*px*1.6;else if(ty==="sink")oy=a*px*1.6;else if(ty==="slide")ox=-a*W*.35;
+    else if(ty==="pop")sc=Math.max(.02,1-a*.9);else if(ty==="blur"){bl=a*px*.6;al=1-a*.5}else if(ty==="type"){chars=1-a;al=1}}
+  const k=tt;
+  if(x.loop==="pulse")sc*=1+.07*Math.sin(k*6);else if(x.loop==="shake"){ox+=(hs(Math.floor(k*30))-.5)*px*.14;oy+=(hs(Math.floor(k*30)+7)-.5)*px*.14}
+  else if(x.loop==="float")oy+=Math.sin(k*2.5)*px*.16;else if(x.loop==="blink")al*=Math.floor(k*3)%2?.25:1;else if(x.loop==="rainbow")col=`hsl(${(k*140)%360},100%,62%)`;
+  ctx.save();ctx.font=`${x.font==="sans"?700:400} ${px}px ${FONTS[x.font]}`;ctx.textBaseline="middle";ctx.textAlign="left";
+  const maxW=W*.88,lines=[];
+  for(const para of x.text.split("\n")){let line="";for(const w of para.split(" ")){const test=line?line+" "+w:w;if(ctx.measureText(test).width>maxW&&line){lines.push(line);line=w}else line=test}lines.push(line)}
+  const lh=px*1.22,bh=lines.length*lh,widths=lines.map(l=>ctx.measureText(l).width);
+  ctx.globalAlpha=clamp(al,0,1);ctx.translate(x.x*W+ox,x.y*H+oy);ctx.scale(sc,sc);if(bl>.3)ctx.filter=`blur(${bl}px)`;
+  if(x.bg){const bw=Math.max(...widths)+px*.8;ctx.fillStyle=x.bgColor;ctx.beginPath();
+    if(ctx.roundRect)ctx.roundRect(-bw/2,-bh/2-px*.15,bw,bh+px*.3,px*.25);else ctx.rect(-bw/2,-bh/2-px*.15,bw,bh+px*.3);ctx.fill()}
+  if(x.glow){ctx.shadowColor=col;ctx.shadowBlur=px*.55}else if(x.shadow){ctx.shadowColor="rgba(0,0,0,.65)";ctx.shadowBlur=px*.16;ctx.shadowOffsetX=px*.05;ctx.shadowOffsetY=px*.06}
+  let left=Math.ceil(lines.join("").length*clamp(chars,0,1));
+  lines.forEach((l,i)=>{if(left<=0)return;const vis=l.slice(0,left);left-=l.length;const y=-bh/2+lh*(i+.5),x0=-widths[i]/2;
+    if(x.outline){ctx.lineWidth=px*.14;ctx.lineJoin="round";ctx.strokeStyle="#000";ctx.strokeText(vis,x0,y)}ctx.fillStyle=col;ctx.fillText(vis,x0,y)});
+  ctx.restore()}
+const cvH=$("#cvH"),cvV=$("#cvV"),cxH=cvH.getContext("2d"),cxV=cvV.getContext("2d");
+function renderPreview(){const tt=t;if(view!=="v")drawFrame(cxH,cvH.width,cvH.height,tt,"h");if(view!=="h")drawFrame(cxV,cvV.width,cvV.height,tt,"v")}
+let last=performance.now();
+function frame(now){requestAnimationFrame(frame);
+  if(playing&&!exporting){t+=(now-last)/1000;
+    if(t>=total){t=Math.max(0,total-1e-3);pause();updateTime();dirty=true}else{syncMedia(t,true);updateTime();dirty=true;
+      const x=t*pxs,tl=$("#tl");if(x>tl.scrollLeft+tl.clientWidth-30||x<tl.scrollLeft)tl.scrollLeft=Math.max(0,x-40)}}
+  last=now;if(dirty&&!exporting){dirty=false;renderPreview()}}
+requestAnimationFrame(frame);
+
+/* ============ sahne boyutu ============ */
+function fitStage(){const st=$("#stage"),aw=st.clientWidth,ah=st.clientHeight,g=16,R=16/9;if(aw<20||ah<20)return;
+  const bh=$("#boxH"),bv=$("#boxV");let hh=0,hv=0;
+  if(view==="both"){const h=Math.min(ah,(aw-g)/(R+1/R));hv=h;hh=h}else if(view==="h"){hh=Math.min(ah,aw/R)}else{hv=Math.min(ah,aw*R)}
+  bh.hidden=view==="v";bv.hidden=view==="h";
+  bh.style.width=(hh*R)+"px";bh.style.height=hh+"px";bv.style.width=(hv/R)+"px";bv.style.height=hv+"px";dirty=true}
+new ResizeObserver(fitStage).observe($("#stage"));
+$("#viewSeg").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;view=b.dataset.view;for(const x of $("#viewSeg").children)x.classList.toggle("on",x===b);fitStage()});
+function updateEmpty(){$("#empty").hidden=S.clips.length>0;$("#topInfo").textContent=total?`Toplam ${fmtT(total)}`:""}
+
+/* önizlemede sürükleme: metin taşı / dikey kadrajı kaydır */
+for(const [cv,fmt] of [[cvH,"h"],[cvV,"v"]]){
+  cv.addEventListener("pointerdown",e=>{const o=findSel();if(!o||exporting)return;
+    if(sel.k==="text"||sel.k==="ov"){e.preventDefault();pushUndo("mv"+o.id);const r=cv.getBoundingClientRect(),ox=o.x,oy=o.y,sx=e.clientX,sy=e.clientY;
+      const mv=ev=>{o.x=clamp(ox+(ev.clientX-sx)/r.width,0,1);o.y=clamp(oy+(ev.clientY-sy)/r.height,0,1);dirty=true};
+      const up=()=>{removeEventListener("pointermove",mv);removeEventListener("pointerup",up);renderInspector()};addEventListener("pointermove",mv);addEventListener("pointerup",up)}
+    else if(sel.k==="clip"){const m=media.get(o.mid);if(!m)return;e.preventDefault();pushUndo("pan"+o.id);const r=cv.getBoundingClientRect(),W=cv.width,H=cv.height;
+      const sw=(o.rot||0)%2?m.h:m.w,sh=(o.rot||0)%2?m.w:m.h;const mode=fmt==="v"?o.vmode:o.hmode,sc=(mode==="fill"?Math.max(W/sw,H/sh):Math.min(W/sw,H/sh))*o.zoom;
+      const ovx=sw*sc-W,ovy=sh*sc-H,px0=o.panX,py0=o.panY,sx=e.clientX,sy=e.clientY,k=W/r.width;
+      const mv=ev=>{if(ovx>1)o.panX=clamp(px0-((ev.clientX-sx)*k)/ovx,0,1);if(ovy>1)o.panY=clamp(py0-((ev.clientY-sy)*k)/ovy,0,1);dirty=true};
+      const up=()=>{removeEventListener("pointermove",mv);removeEventListener("pointerup",up);renderInspector()};addEventListener("pointermove",mv);addEventListener("pointerup",up)}})}
+
+/* ============ medya listesi ============ */
+function renderBin(){const b=$("#bin");b.innerHTML="";
+  for(const m of media.values()){const it=document.createElement("button");it.className="item";it.draggable=true;it.dataset.id=m.id;it.title="Zaman çizelgesine ekle";
+    const th=m.thumb?`style="background-image:url('${m.thumb}')"`:"";
+    it.innerHTML=`<div class="th" ${th}>${m.thumb?"":IC.music}</div><div class="nm">${esc(m.name)}<small>${m.kind==="video"?"Video":m.kind==="image"?"Fotoğraf":"Müzik"}${m.duration?" · "+fmtT(m.duration):""}</small></div>${m.kind==="audio"?"":`<span class="addov" data-ov="1" title="Üst katman olarak ekle">▣</span>`}<span class="add">${IC.plus}</span>`;
+    b.appendChild(it)}
+  $("#binHint").hidden=!media.size}
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+$("#bin").addEventListener("click",e=>{const it=e.target.closest(".item");if(!it)return;const m=media.get(it.dataset.id);if(e.target.closest("[data-ov]"))addOverlay(m);else addToTimeline(m)});
+$("#bin").addEventListener("dragstart",e=>{const it=e.target.closest(".item");if(it){e.dataTransfer.setData("text/x-kesim",it.dataset.id);e.dataTransfer.effectAllowed="copy"}});
+$("#file").addEventListener("change",e=>{importFiles(e.target.files);e.target.value=""});
+const ib=$("#importBox");
+addEventListener("dragover",e=>{e.preventDefault()});
+addEventListener("drop",e=>{e.preventDefault();ib.classList.remove("over");if(e.dataTransfer.files&&e.dataTransfer.files.length)importFiles(e.dataTransfer.files)});
+
+/* ============ zaman çizelgesi ============ */
+function renderTimeline(){
+  layout();const tin=$("#tlin");tin.style.width=(Math.max(total,12)*pxs+260)+"px";
+  // cetvel
+  const steps=[.5,1,2,5,10,15,30,60,120,300];let st=steps.find(s=>s*pxs>=84)||600;const end=Math.max(total,12)+4;let h="";
+  for(let x=0;x<=end;x+=st)h+=`<span style="left:${x*pxs}px">${fmtT(x,st<1?1:0).replace(/^00:/,"0:")}</span>`;
+  $("#ruler").innerHTML=h;
+  const re=$("#rowE"),rt=$("#rowT"),ro=$("#rowO"),rv=$("#rowV"),ra=$("#rowA");re.innerHTML=rt.innerHTML=ro.innerHTML=rv.innerHTML=ra.innerHTML="";
+  for(const c of S.clips){const m=media.get(c.mid);if(!m)continue;const el=document.createElement("div");el.className="clip v"+(sel&&sel.id===c.id?" sel":"");el.dataset.id=c.id;el.dataset.k="clip";
+    el.style.left=c.start*pxs+"px";el.style.width=Math.max(8,clipDur(c)*pxs-2)+"px";if(m.thumb)el.style.backgroundImage=`url('${m.thumb}')`;
+    el.innerHTML=`<i class="h l"></i><span class="lb">${esc(m.name)}${c.speed!==1?" · "+c.speed+"×":""}</span><i class="h r"></i>`;rv.appendChild(el)}
+  for(const x of S.texts){const el=document.createElement("div");el.className="clip t"+(sel&&sel.id===x.id?" sel":"");el.dataset.id=x.id;el.dataset.k="text";
+    el.style.left=x.start*pxs+"px";el.style.width=Math.max(8,x.dur*pxs)+"px";el.innerHTML=`<i class="h l"></i><span class="lb2">${esc(x.text.replace(/\n/g," "))}</span><i class="h r"></i>`;rt.appendChild(el)}
+  const ends=[],lane=new Map();for(const x of [...S.fxs].sort((a,b)=>a.start-b.start)){let l=ends.findIndex(e=>e<=x.start+1e-6);if(l<0){l=ends.length;ends.push(0)}ends[l]=x.start+x.dur;lane.set(x.id,l)}
+  const nl=Math.max(1,ends.length);re.style.height=(nl*30+4)+"px";$("#labE").style.height=(nl*30+4)+"px";const ol=[],olane=new Map();for(const x of [...S.overlays].sort((a,b)=>a.start-b.start)){let l=ol.findIndex(e=>e<=x.start+1e-6);if(l<0){l=ol.length;ol.push(0)}ol[l]=x.start+(x.out-x.in);olane.set(x.id,l)}
+  const no=Math.max(1,ol.length);ro.style.height=(no*38+2)+"px";$("#labO").style.height=(no*38+2)+"px";$(".tlwrap").style.height=(282+(nl-1)*30+(no-1)*38)+"px";
+  for(const x of S.overlays){const m=media.get(x.mid);if(!m)continue;const el=document.createElement("div");el.className="clip o"+(sel&&sel.id===x.id?" sel":"");el.dataset.id=x.id;el.dataset.k="ov";
+    el.style.top=(3+olane.get(x.id)*38)+"px";el.style.bottom="auto";el.style.height="32px";el.style.left=x.start*pxs+"px";el.style.width=Math.max(8,(x.out-x.in)*pxs-2)+"px";if(m.thumb)el.style.backgroundImage=`url('${m.thumb}')`;
+    el.innerHTML=`<i class="h l"></i><span class="lb">${esc(m.name)}</span><i class="h r"></i>`;ro.appendChild(el)}
+  for(const x of S.fxs){const el=document.createElement("div");el.className="clip e"+(sel&&sel.id===x.id?" sel":"");el.dataset.id=x.id;el.dataset.k="fx";
+    el.style.top=(3+lane.get(x.id)*30)+"px";el.style.bottom="auto";el.style.height="26px";el.style.left=x.start*pxs+"px";el.style.width=Math.max(8,x.dur*pxs)+"px";el.innerHTML=`<i class="h l"></i><span class="lb2">${esc((FXLIB[x.type]||{n:"Efekt"}).n)}</span><i class="h r"></i>`;re.appendChild(el)}
+  for(const a of S.audios){const m=media.get(a.mid);if(!m)continue;const d=a.out-a.in,el=document.createElement("div");el.className="clip a"+(sel&&sel.id===a.id?" sel":"");el.dataset.id=a.id;el.dataset.k="audio";
+    el.style.left=a.start*pxs+"px";el.style.width=Math.max(8,d*pxs)+"px";el.innerHTML=`<canvas></canvas><i class="h l"></i><span class="lb2">${esc(m.name)}</span><i class="h r"></i>`;ra.appendChild(el);
+    if(m.peaks){const cv=el.querySelector("canvas");const w=Math.min(4000,Math.max(8,Math.round(d*pxs)));cv.width=w;cv.height=40;const g=cv.getContext("2d");g.fillStyle=getComputedStyle(document.documentElement).getPropertyValue("--c-audio-b");
+      for(let i=0;i<w;i+=2){const p=m.peaks[Math.min(m.peaks.length-1,Math.floor((a.in+i/w*d)/m.duration*m.peaks.length))]||0;const hh=Math.max(1,p*34);g.fillRect(i,20-hh/2,1.4,hh)}}}
+  updateTime()}
+
+const tlin=$("#tlin");
+const xToT=e=>(e.clientX-tlin.getBoundingClientRect().left)/pxs;
+function dragger(e,mv,up){e.preventDefault();const sx=e.clientX,sy=e.clientY;let moved=false;
+  const m=ev=>{const dx=ev.clientX-sx,dy=ev.clientY-sy;if(!moved&&Math.hypot(dx,dy)<4)return;moved=true;mv(dx,dy,ev)};
+  const u=ev=>{removeEventListener("pointermove",m);removeEventListener("pointerup",u);removeEventListener("pointercancel",u);up&&up(moved,ev)};
+  addEventListener("pointermove",m);addEventListener("pointerup",u);addEventListener("pointercancel",u)}
+tlin.addEventListener("pointerdown",e=>{
+  if(exporting)return;
+  const el=e.target.closest(".clip");
+  if(!el){ // boş alan: oynatma çizgisini taşı
+    if(!e.target.closest(".ruler")){sel=null;renderInspector();renderTimeline()}
+    pause();setT(xToT(e));dragger(e,(dx,dy,ev)=>setT(xToT(ev)));return}
+  const k=el.dataset.k,id=el.dataset.id,arr=arrOf(k),o=arr.find(x=>x.id===id);if(!o)return;
+  const wasSel=sel&&sel.id===id;sel={k,id};if(!wasSel){renderInspector()}
+  for(const x of tlin.querySelectorAll(".clip"))x.classList.toggle("sel",x.dataset.id===id);
+  const handle=e.target.classList.contains("h")?(e.target.classList.contains("l")?"l":"r"):null;
+  if(playing)pause();
+  if(handle){pushUndo();const o0=JSON.parse(JSON.stringify(o));
+    dragger(e,dx=>{const d=dx/pxs;
+      if(k==="clip"){const m=media.get(o.mid),img=m.kind==="image",ds=d*o0.speed,max=img?120:m.duration;
+        if(handle==="r")o.out=clamp(o0.out+ds,o0.in+.1*o0.speed,max);
+        else if(img)o.out=clamp(o0.out-ds,.3,120);else o.in=clamp(o0.in+ds,0,o0.out-.1*o0.speed);layout()}
+      else if(k==="text"||k==="fx"){if(handle==="r")o.dur=Math.max(.2,o0.dur+d);else{const nd=Math.max(.2,o0.dur-d);o.start=Math.max(0,o0.start+o0.dur-nd);o.dur=nd}}
+      else if(k==="ov"){const m=media.get(o.mid),img=m.kind==="image",mx=img?120:m.duration;
+        if(handle==="r")o.out=clamp(o0.out+d,o0.in+.2,mx);
+        else if(img){const nd=clamp(o0.out-d,.3,120);o.start=Math.max(0,o0.start+(o0.out-nd));o.out=nd}else{const ni=clamp(o0.in+d,0,o0.out-.2);o.start=Math.max(0,o0.start+(ni-o0.in));o.in=ni}}
+      else{const m=media.get(o.mid);if(handle==="r")o.out=clamp(o0.out+d,o0.in+.2,m.duration);else{const ni=clamp(o0.in+d,0,o0.out-.2);o.start=Math.max(0,o0.start+(ni-o0.in));o.in=ni}}
+      renderTimeline();dirty=true},()=>{layoutAll();renderInspector();setT(t,true)});return}
+  if(k==="clip"){ // sırayı değiştirmek için sürükle
+    const idx=S.clips.indexOf(o);const w=clipDur(o)*pxs;let ni=idx;
+    dragger(e,dx=>{el.classList.add("drag");el.style.transform=`translateX(${dx}px)`;
+      const c=o.start*pxs+w/2+dx;let n=0;for(const x of S.clips){if(x===o)continue;if(x.start*pxs+clipDur(x)*pxs/2<c)n++}ni=n},
+      (moved)=>{if(moved&&ni!==idx){pushUndo();S.clips.splice(idx,1);S.clips.splice(ni,0,o);layout();t=o.start}else if(!moved){setT(Math.min(Math.max(t,o.start),o.start+clipDur(o)-.01),true);if(t<o.start||t>=o.start+clipDur(o))setT(o.start)}
+        renderAll();syncMedia(t,false)});return}
+  const s0=o.start;let pushed=false;
+  dragger(e,dx=>{if(!pushed){pushUndo();pushed=true}o.start=Math.max(0,s0+dx/pxs);el.style.left=o.start*pxs+"px";dirty=true},(moved)=>{if(moved)renderAll()})});
+// medya listesinden zaman çizelgesine bırakma
+tlin.addEventListener("dragover",e=>{if(e.dataTransfer.types.includes("text/x-kesim")){e.preventDefault();const r=e.target.closest(".row");if(r)r.classList.add("drop")}});
+tlin.addEventListener("dragleave",e=>{const r=e.target.closest(".row");if(r)r.classList.remove("drop")});
+tlin.addEventListener("drop",e=>{const id=e.dataTransfer.getData("text/x-kesim");if(!id)return;e.preventDefault();e.stopPropagation();
+  for(const r of tlin.querySelectorAll(".row"))r.classList.remove("drop");const m=media.get(id);if(!m)return;const x=xToT(e);
+  const rowK=e.target.closest(".row");if(rowK&&rowK.dataset.row==="ov"&&m.kind!=="audio")addOverlay(m,Math.max(0,x));else if(m.kind==="audio")addToTimeline(m,Math.max(0,x));else{layout();let n=0;for(const c of S.clips)if(c.start+clipDur(c)/2<x)n++;addToTimeline(m,n)}});
+$("#zoom").addEventListener("input",e=>{const tl=$("#tl"),c=(tl.scrollLeft+tl.clientWidth/2)/pxs;pxs=+e.target.value;renderTimeline();tl.scrollLeft=c*pxs-tl.clientWidth/2});
+$("#bFit").addEventListener("click",()=>{pxs=clamp(($("#tl").clientWidth-60)/Math.max(total,5),20,320);$("#zoom").value=pxs;renderTimeline();$("#tl").scrollLeft=0});
+
+/* ============ ayar paneli ============ */
+let cur=null;
+const rng=(label,p,min,max,step,o={})=>{const sc=o.scale||1,v=(getP(cur,p)??0)*sc,dd=dec(step*sc);return`<label class="fld"><span>${label}</span><output>${v.toFixed(dd)}${o.unit||""}</output><input type="range" data-p="${p}" data-scale="${sc}" data-unit="${o.unit||""}" data-step="${step*sc}" min="${min}" max="${max}" step="${step}" value="${v}"></label>`};
+const chk=(label,p)=>`<label class="fld chk"><input type="checkbox" data-p="${p}" ${getP(cur,p)?"checked":""}><span>${label}</span></label>`;
+const sel2=(label,p,opts)=>`<label class="lbl">${label}<select data-p="${p}">${opts.map(([v,n])=>`<option value="${v}" ${getP(cur,p)===v?"selected":""}>${n}</option>`).join("")}</select></label>`;
+const seg=(label,p,opts)=>`<div><div class="lbl">${label}</div><div class="seg">${opts.map(([v,tx])=>`<button data-set="${p}|${v}" class="${getP(cur,p)===v?"on":""}">${tx}</button>`).join("")}</div></div>`;
+function renderInspector(){
+  const o=findSel();cur=o;const el=$("#insp");
+  if(!o){el.innerHTML=`<h2>Başlarken</h2><ol class="steps"><li><b>Medya ekle:</b> soldan video, fotoğraf veya müzik seç.</li><li><b>Düzenle:</b> klibi seç, uçlarından kırp, <b>Böl</b> ile kes, sürükleyip sırala.</li><li><b>Dikey kadraj:</b> “İkisi birden” görünümünde klibi seç, dikey ekranda sola-sağa sürükle.</li><li><b>Dışa aktar:</b> yatay ve dikey video tek seferde hazırlanır.</li></ol>
+    <div class="grp"><h2>Kısayollar</h2><div class="kbd"><kbd>Boşluk</kbd><span>Oynat / durdur</span><kbd>S</kbd><span>Oynatma çizgisinden böl</span><kbd>T</kbd><span>Metin ekle</span><kbd>Delete</kbd><span>Seçileni sil</span><kbd>← →</kbd><span>Kare kare git (Shift: 1 sn)</span><kbd>Ctrl+Z</kbd><span>Geri al</span></div></div>
+    <p class="note">Proje bu sayfada tutulur. Sayfayı kapatmadan önce videoları dışa aktar.</p>`;return}
+  if(sel.k==="clip"){const m=media.get(o.mid),img=m.kind==="image";
+    el.innerHTML=`<h2>${img?"Fotoğraf":"Video"} klibi</h2><div class="note">${esc(m.name)} · ${fmtT(clipDur(o))}</div>
+    <div class="row2"><button class="btn" data-act="split">Böl</button><button class="btn" data-act="dup">Kopyala</button><button class="btn dng" data-act="del">Sil</button></div>
+    <div class="grp">${img?rng("Süre","dur",.5,30,.1,{unit:" sn"}):rng("Hız","speed",.25,4,.05,{unit:"×"})}
+      ${img?"":`<div class="chips">${[.5,1,1.5,2].map(v=>`<button class="chip ${o.speed===v?"on":""}" data-set="speed|${v}">${v}×</button>`).join("")}</div>
+      ${rng("Ses","volume",0,2,.05,{scale:100,unit:"%"})}${chk("Sesi kapat","mute")}${rng("Ses belirme","fin",0,5,.1,{unit:" sn"})}${rng("Ses solma","fout",0,5,.1,{unit:" sn"})}
+      <div class="row2"><button class="btn" data-act="detach">Sesi ayır</button><button class="btn" data-act="freeze">Kareyi dondur</button></div>`}</div>
+    <div class="grp"><h2>Kadraj</h2>
+      ${seg("Yatay 16:9","hmode",[["fit","Sığdır"],["fill","Doldur"]])}${seg("Dikey 9:16","vmode",[["fill","Doldur"],["fit","Sığdır"]])}
+      ${rng("Yakınlaştır","zoom",1,3,.05,{scale:100,unit:"%"})}${rng("Kadraj sola ↔ sağa","panX",0,1,.01,{scale:100,unit:"%"})}${rng("Kadraj yukarı ↕ aşağı","panY",0,1,.01,{scale:100,unit:"%"})}
+      <div class="row2"><button class="btn" data-act="rot">Döndür</button><button class="btn ${o.flipH?"pri":""}" data-act="flipH">Ayna ↔</button><button class="btn ${o.flipV?"pri":""}" data-act="flipV">Ayna ↕</button></div>
+      <p class="note">Önizlemede klibi sürükleyerek de kaydırabilirsin.</p></div>
+    <div class="grp"><h2>Animasyon</h2>${sel2("Giriş","animIn",Object.entries(ANIM_IN))}${sel2("Çıkış","animOut",Object.entries(ANIM_OUT))}${rng("Animasyon süresi","animDur",.2,2,.05,{unit:" sn"})}</div>
+    <div class="grp"><h2>Renk</h2><div class="chips">${Object.entries(PRESETS).map(([k,[n]])=>`<button class="chip" data-preset="${k}">${n}</button>`).join("")}</div>
+      ${rng("Parlaklık","fx.b",50,150,1,{unit:"%"})}${rng("Kontrast","fx.c",50,150,1,{unit:"%"})}${rng("Doygunluk","fx.s",0,200,1,{unit:"%"})}${rng("Ton","fx.hue",-180,180,1,{unit:"°"})}${rng("Sepya","fx.sep",0,100,1,{unit:"%"})}${rng("Siyah-beyaz","fx.gray",0,100,1,{unit:"%"})}${rng("Bulanıklık","fx.blur",0,30,1)}${rng("Sıcaklık (soğuk ↔ sıcak)","fx.temp",-100,100,1)}${rng("Vinyet","fx.vig",0,100,1,{unit:"%"})}</div>
+    <div class="grp"><h2>Geçiş</h2>${chk("Başta ve sonda karartma","fade")}</div>`;
+    if(img){} return}
+  if(sel.k==="text"){
+    el.innerHTML=`<h2>Metin</h2><textarea data-p="text" aria-label="Metin">${esc(o.text)}</textarea>
+    <div class="row2"><button class="btn" data-act="dup">Kopyala</button><button class="btn dng" data-act="del">Sil</button></div>
+    <div class="grp">${sel2("Yazı tipi","font",Object.entries(FONT_NAMES))}
+      ${rng("Boyut","size",2,24,.5)}
+      <div class="row2"><label class="lbl" style="margin:0">Renk</label><input type="color" data-p="color" value="${o.color}" aria-label="Yazı rengi"></div>
+      ${chk("Kenar çizgisi","outline")}${chk("Arka plan kutusu","bg")}
+      <div class="row2"><label class="lbl" style="margin:0">Kutu rengi</label><input type="color" data-p="bgColor" value="${o.bgColor}" aria-label="Kutu rengi"></div>${chk("Parıltı (glow)","glow")}${chk("Gölge","shadow")}</div>
+    <div class="grp"><h2>Animasyon</h2>${sel2("Giriş","animIn",Object.entries(TANIM_IN))}${sel2("Çıkış","animOut",Object.entries(TANIM_OUT))}${rng("Animasyon süresi","animDur",.1,2,.05,{unit:" sn"})}${sel2("Sürekli hareket","loop",Object.entries(TLOOP))}</div>
+    <div class="grp"><h2>Yer ve süre</h2>${rng("Yatay yer","x",0,1,.01,{scale:100,unit:"%"})}${rng("Dikey yer","y",0,1,.01,{scale:100,unit:"%"})}
+      <div class="two"><label class="lbl">Başlangıç (sn)<input type="number" data-p="start" min="0" step="0.1" value="${o.start.toFixed(1)}"></label><label class="lbl">Süre (sn)<input type="number" data-p="dur" min="0.2" step="0.1" value="${o.dur.toFixed(1)}"></label></div>
+      <p class="note">Metin seçiliyken önizlemede sürükleyip taşıyabilirsin.</p></div>`;return}
+  if(sel.k==="ov"){const m=media.get(o.mid);
+    el.innerHTML=`<h2>Üst katman</h2><div class="note">${esc(m.name)} · ${fmtT(o.out-o.in)}</div>
+    <div class="row2"><button class="btn" data-act="dup">Kopyala</button><button class="btn dng" data-act="del">Sil</button></div>
+    <div class="grp">${rng("Boyut","w",.05,1,.01,{scale:100,unit:"%"})}${rng("Saydamlık","opacity",0,1,.01,{scale:100,unit:"%"})}${rng("Döndür","rot",-180,180,1,{unit:"°"})}
+      ${rng("Yatay yer","x",0,1,.01,{scale:100,unit:"%"})}${rng("Dikey yer","y",0,1,.01,{scale:100,unit:"%"})}
+      <p class="note">Katman seçiliyken önizlemede sürükleyip taşıyabilirsin.</p></div>
+    <div class="grp"><h2>Görünüm</h2>${seg("Şekil","shape",[["rect","Kare"],["round","Yuvarlak köşe"],["circle","Daire"]])}${chk("Gölge","shadow")}${chk("Aynala","flip")}
+      ${rng("Kenar çizgisi","border",0,10,.5)}<div class="row2"><label class="lbl" style="margin:0">Kenar rengi</label><input type="color" data-p="borderColor" value="${o.borderColor}" aria-label="Kenar rengi"></div>
+      ${m.kind==="video"?rng("Ses","volume",0,2,.05,{scale:100,unit:"%"})+rng("Ses belirme","fin",0,5,.1,{unit:" sn"})+rng("Ses solma","fout",0,5,.1,{unit:" sn"}):""}</div>
+    <div class="grp"><h2>Animasyon</h2>${sel2("Giriş","animIn",Object.entries(ANIM_IN).filter(([k])=>OV_ANIMS.includes(k)))}${sel2("Çıkış","animOut",Object.entries(ANIM_OUT).filter(([k])=>OV_ANIMS.includes(k)))}${rng("Animasyon süresi","animDur",.2,2,.05,{unit:" sn"})}</div>
+    <div class="grp"><label class="lbl">Başlangıç (sn)<input type="number" data-p="start" min="0" step="0.1" value="${o.start.toFixed(1)}"></label><p class="note">Süreyi katmanın kenarından uzatıp kısaltırsın.</p></div>`;return}
+  if(sel.k==="fx"){const d=FXLIB[o.type]||{n:"Efekt",g:""};const cats=[...new Set(Object.values(FXLIB).map(z=>z.g))];
+    el.innerHTML=`<h2>Efekt</h2><label class="lbl">Efekt türü<select data-p="type">${cats.map(g=>`<optgroup label="${g}">${Object.entries(FXLIB).filter(([k,z])=>z.g===g).map(([k,z])=>`<option value="${k}" ${o.type===k?"selected":""}>${z.n}</option>`).join("")}</optgroup>`).join("")}</select></label>
+    <div class="row2"><button class="btn" data-act="dup">Kopyala</button><button class="btn dng" data-act="del">Sil</button></div>
+    <div class="grp">${rng("Şiddet","i",0,1,.01,{scale:100,unit:"%"})}${rng("Hız","sp",.25,4,.05,{unit:"×"})}
+      <div class="two"><label class="lbl">Başlangıç (sn)<input type="number" data-p="start" min="0" step="0.1" value="${o.start.toFixed(1)}"></label><label class="lbl">Süre (sn)<input type="number" data-p="dur" min="0.2" step="0.1" value="${o.dur.toFixed(1)}"></label></div>
+      <button class="btn" data-act="fxfit">Oynatma çizgisindeki klibe uydur</button>
+      <p class="note">Efekt, altındaki görüntünün tamamına uygulanır. Metinler efektin üstünde kalır. Aynı yere birden çok efekt koyabilirsin.</p></div>`;return}
+  const m=media.get(o.mid);
+  el.innerHTML=`<h2>Müzik</h2><div class="note">${esc(m.name)} · ${fmtT(o.out-o.in)}</div>
+    <div class="row2"><button class="btn" data-act="split">Böl</button><button class="btn" data-act="dup">Kopyala</button><button class="btn dng" data-act="del">Sil</button></div>
+    <div class="grp">${rng("Ses","volume",0,1.5,.05,{scale:100,unit:"%"})}${rng("Belirme","fin",0,5,.1,{unit:" sn"})}${rng("Solma","fout",0,5,.1,{unit:" sn"})}<p class="note">Klibi sürükleyerek zamanını, uçlarından kırparak uzunluğunu değiştir.</p></div>`}
+const insp=$("#insp");
+function afterEdit(p){scheduleSave();const structural=["speed","dur","in","out","start","text","size","type"].includes(p);
+  if(p==="dur"&&sel.k==="clip"){} layout();if(structural||p==="speed")renderTimeline();dirty=true;if(!playing)syncMedia(t,false);btns();updateEmpty()}
+insp.addEventListener("input",e=>{const el=e.target,p=el.dataset.p;if(!p)return;const o=findSel();if(!o)return;pushUndo(p);
+  let v=el.type==="checkbox"?el.checked:el.type==="range"||el.type==="number"?parseFloat(el.value):el.value;
+  if(typeof v==="number"){if(isNaN(v))return;v=v/(parseFloat(el.dataset.scale)||1)}
+  if(p==="dur"&&sel.k==="clip"){o.out=o.in+v*o.speed}else setP(o,p,v);
+  if(el.type==="range"){const out=el.parentNode.querySelector("output");if(out)out.textContent=(v*(parseFloat(el.dataset.scale)||1)).toFixed(dec(el.dataset.step))+el.dataset.unit}
+  if(sel.k==="clip"&&p.startsWith("fx"))for(const c of insp.querySelectorAll("[data-preset]"))c.classList.remove("on");
+  afterEdit(p)});
+insp.addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;const o=findSel();
+  if(b.dataset.act==="split")splitAt();else if(b.dataset.act==="dup")dupSel();else if(b.dataset.act==="del")delSel();
+  else if(b.dataset.act==="rot"&&o){pushUndo();o.rot=((o.rot||0)+1)%4;renderInspector();dirty=true}
+  else if((b.dataset.act==="flipH"||b.dataset.act==="flipV")&&o){pushUndo();o[b.dataset.act]=!o[b.dataset.act];renderInspector();dirty=true}
+  else if(b.dataset.act==="freeze")freezeFrame();else if(b.dataset.act==="detach")detachAudio();
+  else if(b.dataset.act==="fxfit"&&o){const c=clipAt(t);if(c){pushUndo();o.start=c.start;o.dur=clipDur(c);renderAll()}}
+  else if(b.dataset.preset&&o){pushUndo();o.fx={...PRESETS[b.dataset.preset][1]};renderInspector();dirty=true}
+  else if(b.dataset.set&&o){pushUndo();const [p,v]=b.dataset.set.split("|");setP(o,p,isNaN(+v)?v:+v);renderInspector();afterEdit(p);renderTimeline()}});
+
+/* ============ üst çubuk, kısayollar ============ */
+function btns(){$("#bUndo").disabled=!undoS.length;$("#bRedo").disabled=!redoS.length}
+function renderAll(){renderTimeline();renderInspector();dirty=true;updateTime()}
+$("#bUndo").onclick=undo;$("#bRedo").onclick=redo;$("#bPlay").onclick=()=>playing?pause():play();
+$("#bStart").onclick=()=>{setT(0);$("#tl").scrollLeft=0};$("#bSplit").onclick=splitAt;$("#bText").onclick=()=>addText();$("#bDel").onclick=delSel;
+addEventListener("keydown",e=>{if(exporting){if(e.key==="Escape")return;return}
+  const tg=e.target;if(tg&&(tg.tagName==="TEXTAREA"||tg.tagName==="SELECT"||(tg.tagName==="INPUT"&&tg.type!=="range"&&tg.type!=="checkbox")))return;
+  const k=e.key.toLowerCase();
+  if((e.ctrlKey||e.metaKey)&&k==="z"){e.preventDefault();e.shiftKey?redo():undo()}
+  else if((e.ctrlKey||e.metaKey)&&k==="y"){e.preventDefault();redo()}
+  else if(k===" "){e.preventDefault();playing?pause():play()}
+  else if(k==="s"&&!e.ctrlKey&&!e.metaKey){splitAt()}
+  else if(k==="t"&&!e.ctrlKey&&!e.metaKey){e.preventDefault();addText()}
+  else if(k==="delete"||k==="backspace"){e.preventDefault();delSel()}
+  else if(k==="home"){setT(0)}
+  else if(k==="arrowleft"){e.preventDefault();setT(t-(e.shiftKey?1:1/30))}
+  else if(k==="arrowright"){e.preventDefault();setT(t+(e.shiftKey?1:1/30))}});
+
+/* ============ dışa aktarma ============ */
+let dl=null;try{if(window.claude&&window.claude.use)window.claude.use("downloads").then(d=>dl=d,()=>{})}catch(e){}
+async function saveBlob(blob,name){
+  if(dl){try{await dl.save({filename:name,data:blob});toast("Kaydedildi: "+name);return}catch(e){if(e&&e.code==="declined")return}}
+  const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();a.remove();toast("İndiriliyor: "+name)}
+function pickMime(){const c=["video/mp4;codecs=avc1.640028,mp4a.40.2","video/mp4;codecs=avc1,mp4a.40.2","video/webm;codecs=vp9,opus","video/webm;codecs=vp8,opus","video/webm"];
+  if(!window.MediaRecorder)return null;return c.find(x=>MediaRecorder.isTypeSupported(x))||null}
+const ov=$("#exOv"),mod=$("#exModal");
+const FMTS={h:["Yatay 16:9","yatay",16,9],v:["Dikey 9:16","dikey",9,16],sq:["Kare 1:1","kare",1,1],p45:["Dikey 4:5","dikey-4x5",4,5]};
+function fmtDims(f,short){const [,,a,b]=FMTS[f],r=Math.min(a,b);const w=Math.round(short*a/r/2)*2,h=Math.round(short*b/r/2)*2;return[w,h]}
+function openExport(){if(!total)return;pause();const mime=pickMime();
+  mod.innerHTML=`<h3 id="exTitle">Dışa aktar</h3>
+  <p class="note" style="margin:0">Videolar gerçek zamanlı hazırlanır: ${fmtT(total)} uzunluğundaki proje için yaklaşık ${fmtT(total)} beklersin. Seçtiğin tüm biçimler aynı geçişte kaydedilir. Bu sırada bu sekmeyi açık ve görünür tut.</p>
+  <label class="fld chk"><input type="checkbox" id="exH" checked><span>Yatay 16:9 (YouTube, bilgisayar)</span></label>
+  <label class="fld chk"><input type="checkbox" id="exV" checked><span>Dikey 9:16 (Reels, TikTok, Shorts)</span></label>
+  <label class="fld chk"><input type="checkbox" id="exSq"><span>Kare 1:1 (Instagram gönderi)</span></label>
+  <label class="fld chk"><input type="checkbox" id="exP"><span>Dikey 4:5 (Instagram, Facebook)</span></label>
+  <div class="two"><label class="lbl">Kalite<select id="exRes"><option value="1080">Full HD (1080p)</option><option value="720">HD (720p)</option><option value="480">SD (480p, en hızlı)</option></select></label>
+  <label class="lbl">Akıcılık<select id="exFps"><option value="30">30 kare/sn</option><option value="60">60 kare/sn</option><option value="24">24 kare/sn</option></select></label></div>
+  ${mime?`<p class="note" style="margin:0">Dosya türü: ${mime.startsWith("video/mp4")?"MP4":"WebM"}</p>`:`<p class="note warn" style="margin:0">Bu tarayıcı video kaydını desteklemiyor. Chrome veya Edge kullan.</p>`}
+  <div class="row2" style="justify-content:flex-end"><button class="btn" id="exCancel">Vazgeç</button><button class="btn pri" id="exGo" ${mime?"":"disabled"}>Hazırla</button></div>`;
+  ov.hidden=false;$("#exCancel").onclick=()=>ov.hidden=true;$("#exGo").onclick=runExport;$("#exGo").focus()}
+$("#bExport").onclick=openExport;
+ov.addEventListener("pointerdown",e=>{if(e.target===ov&&!exporting)ov.hidden=true});
+addEventListener("keydown",e=>{if(e.key==="Escape"&&!ov.hidden&&!exporting)ov.hidden=true});
+async function runExport(){
+  const want=["h","v","sq","p45"].filter(f=>$("#"+{h:"exH",v:"exV",sq:"exSq",p45:"exP"}[f]).checked);if(!want.length)return toast("En az bir biçim seç.");
+  const short=+$("#exRes").value,fps=+$("#exFps").value,mime=pickMime(),ext=mime.startsWith("video/mp4")?"mp4":"webm";
+  ensureAudio();await actx.resume();exporting=true;cancelled=false;playing=false;
+  master.gain.value=0; // hoparlörü kıs; kayda gitmeye devam eder
+  mod.innerHTML=`<h3 id="exTitle">Hazırlanıyor…</h3><div class="bar"><i id="exBar"></i></div><div class="note" id="exMsg">Başlıyor</div><p class="note" style="margin:0">Bu sekmeyi kapatma, başka sekmeye geçme.</p><div class="row2" style="justify-content:flex-end"><button class="btn dng" id="exStop">İptal</button></div>`;
+  $("#exStop").onclick=()=>cancelled=true;
+  const aTrack=dest.stream.getAudioTracks()[0],outs=[];
+  for(const f of want){const [W,H]=fmtDims(f,short),cv=document.createElement("canvas");cv.width=W;cv.height=H;const ctx=cv.getContext("2d");
+    const stream=cv.captureStream(fps);if(aTrack)stream.addTrack(aTrack);
+    const rec=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:Math.round(W*H*fps*.12),audioBitsPerSecond:192e3});const chunks=[];
+    rec.ondataavailable=e=>{if(e.data&&e.data.size)chunks.push(e.data)};
+    outs.push({f,W,H,cv,ctx,rec,chunks,done:new Promise(r=>rec.onstop=r)})}
+  const finish=()=>{exporting=false;master.gain.value=1;for(const m of media.values())if(m.kind!=="image"){m.el.pause();m.gain.gain.value=0}};
+  t=0;syncMedia(0,false);await sleep(500);
+  for(const o of outs)drawFrame(o.ctx,o.W,o.H,0,o.f);
+  outs.forEach(o=>o.rec.start(1000));
+  const t0=performance.now();
+  await new Promise(resolve=>{const step=()=>{if(cancelled)return resolve();
+    const el=(performance.now()-t0)/1000;t=Math.min(el,total);syncMedia(Math.min(t,total-.001),true);
+    for(const o of outs)drawFrame(o.ctx,o.W,o.H,Math.min(t,total-.001),o.f);
+    const pr=clamp(el/total,0,1);$("#exBar").style.width=(pr*100)+"%";$("#exMsg").textContent=`${Math.round(pr*100)}% · ${fmtT(Math.min(el,total))} / ${fmtT(total)}`;
+    updateTime();if(el>=total+.25)return resolve();requestAnimationFrame(step)};step()});
+  for(const o of outs)if(o.rec.state!=="inactive")o.rec.stop();
+  await Promise.all(outs.map(o=>o.done));finish();pause();setT(0);
+  if(cancelled){ov.hidden=true;toast("Dışa aktarma iptal edildi.");return}
+  const base=(prompt0()||"video");
+  mod.innerHTML=`<h3 id="exTitle">Hazır</h3>${outs.map(o=>{const blob=new Blob(o.chunks,{type:mime.split(";")[0]});o.blob=blob;o.name=`${base}-${FMTS[o.f][1]}-${short}p.${ext}`;
+    return`<div class="res"><div><b>${FMTS[o.f][0]}</b><div class="meta">${o.W}×${o.H} · ${fps} fps · ${(blob.size/1048576).toFixed(1)} MB · ${ext.toUpperCase()}</div></div><video controls preload="metadata" src="${URL.createObjectURL(blob)}"></video><button class="btn pri" data-save="${o.f}">Kaydet</button></div>`}).join("")}
+    <div class="row2" style="justify-content:flex-end"><button class="btn" id="exClose">Kapat</button></div>`;
+  mod.querySelectorAll("[data-save]").forEach(b=>b.onclick=()=>{const o=outs.find(x=>x.f===b.dataset.save);saveBlob(o.blob,o.name)});
+  $("#exClose").onclick=()=>ov.hidden=true}
+function prompt0(){const f=S.clips[0]&&media.get(S.clips[0].mid);return f?f.name.replace(/[^\w\-.ğüşöçıİĞÜŞÖÇ ]+/g,"").trim().slice(0,40)||"video":"video"}
+
+/* ============ efekt sekmesi ============ */
+let fxSig="";
+
+async function renderFxLib(){
+  const first=[...media.values()].find(m=>m.thumb),sig=first?first.id:"none",list=$("#fxList");
+  if(fxSig===sig&&list.children.length)return;fxSig=sig;
+  let img=null;if(first)img=await new Promise(r=>{const i=new Image();i.onload=()=>r(i);i.onerror=()=>r(null);i.src=first.thumb});
+  const scene=document.createElement("canvas");scene.width=160;scene.height=90;const g=scene.getContext("2d");
+  if(img)g.drawImage(img,0,0,160,90);else{const gr=g.createLinearGradient(0,0,160,90);gr.addColorStop(0,"#2b5cff");gr.addColorStop(.5,"#d63fa6");gr.addColorStop(1,"#ffb347");g.fillStyle=gr;g.fillRect(0,0,160,90);
+    g.fillStyle="rgba(255,255,255,.85)";g.beginPath();g.arc(55,48,20,0,7);g.fill();g.fillStyle="rgba(0,0,0,.35)";g.fillRect(92,20,48,50)}
+  list.innerHTML="";
+  for(const cat of [...new Set(Object.values(FXLIB).map(d=>d.g))]){
+    const hd=document.createElement("h2");hd.textContent=cat;list.appendChild(hd);const grid=document.createElement("div");grid.className="bin";
+    for(const [id,d] of Object.entries(FXLIB)){if(d.g!==cat)continue;
+      const b=document.createElement("button");b.className="item";b.dataset.fx=id;b.title=d.n+" efektini ekle";
+      const th=document.createElement("div");th.className="th";const cv=document.createElement("canvas");cv.width=160;cv.height=90;cv.style.cssText="width:100%;height:100%;display:block";
+      const cx=cv.getContext("2d");cx.drawImage(scene,0,0);try{cx.save();d.f(cx,160,90,{lt:.35,p:.35,i:.75,sp:1,tt:.35});cx.restore()}catch(e){}
+      th.appendChild(cv);b.appendChild(th);const nm=document.createElement("div");nm.className="nm";nm.textContent=d.n;b.appendChild(nm);
+      const ad=document.createElement("span");ad.className="add";ad.innerHTML=IC.plus;b.appendChild(ad);grid.appendChild(b)}
+    list.appendChild(grid)}}
+function addFx(type){
+  if(!total)return toast("Önce zaman çizelgesine bir video veya fotoğraf ekle.");
+  pushUndo();layout();let st=t,du=Math.min(2.5,Math.max(.5,total-t));const o=findSel();
+  if(o&&sel.k==="clip"){st=o.start;du=clipDur(o)}else if(total-t<.5){st=Math.max(0,total-2);du=Math.min(2.5,total-st)}
+  const e={id:uid(),type,start:st,dur:du,i:FXLIB[type].di||.6,sp:1};S.fxs.push(e);sel={k:"fx",id:e.id};layoutAll();renderAll()}
+$("#fxList").addEventListener("click",e=>{const b=e.target.closest("[data-fx]");if(b)addFx(b.dataset.fx)});
+
+/* ============ üst katman (görüntü içinde görüntü) ============ */
+function newOverlay(m,at){return{id:uid(),mid:m.id,start:at!=null?at:t,in:0,out:m.kind==="image"?4:Math.min(m.duration,60),x:.72,y:.28,w:.38,rot:0,opacity:1,shape:"round",border:0,borderColor:"#ffffff",shadow:true,flip:false,volume:1,fin:0,fout:0,animIn:"fade",animOut:"fade",animDur:.4}}
+function addOverlay(m,at){if(m.kind==="audio")return toast("Müzik üst katmana eklenmez. Video veya fotoğraf seç.");
+  if(!total)return toast("Önce ana zaman çizelgesine bir video veya fotoğraf ekle.");
+  pushUndo();const o=newOverlay(m,at);S.overlays.push(o);sel={k:"ov",id:o.id};layoutAll();renderAll();setT(t,true)}
+const OV_ANIMS=["none","fade","slideL","slideR","slideU","slideD","zoomIn","zoomOut","spin","bounce","wipe"];
+function drawOverlay(ctx,W,H,o,tt){
+  const m=media.get(o.mid);if(!m||!srcReady(m)||!m.w)return;
+  const lt=tt-o.start,d=o.out-o.in,ad=Math.min(o.animDur||.4,d/2);let A=null;
+  if(o.animIn&&o.animIn!=="none"&&lt<ad)A={t:o.animIn,a:1-ease(lt/ad),io:"in"};else if(o.animOut&&o.animOut!=="none"&&d-lt<ad)A={t:o.animOut,a:Math.pow(clamp(1-(d-lt)/ad,0,1),2.2),io:"out"};
+  if(A&&!OV_ANIMS.includes(A.t))A.t="fade";
+  ctx.save();ctx.globalAlpha=1;ctx.filter="none";if(A)preAnim(ctx,W,H,A);
+  ctx.globalAlpha*=clamp(o.opacity,0,1);
+  const dw=o.w*W,dh=dw*m.h/m.w;ctx.translate(o.x*W,o.y*H);if(o.rot)ctx.rotate(o.rot*Math.PI/180);if(o.flip)ctx.scale(-1,1);
+  const path=()=>{ctx.beginPath();if(o.shape==="circle")ctx.arc(0,0,Math.min(dw,dh)/2,0,7);else if(o.shape==="round"&&ctx.roundRect)ctx.roundRect(-dw/2,-dh/2,dw,dh,Math.min(dw,dh)*.14);else ctx.rect(-dw/2,-dh/2,dw,dh)};
+  if(o.shadow){ctx.save();ctx.shadowColor="rgba(0,0,0,.55)";ctx.shadowBlur=dw*.05;ctx.shadowOffsetY=dw*.02;path();ctx.fillStyle="#000";ctx.fill();ctx.restore()}
+  ctx.save();path();ctx.clip();ctx.drawImage(m.el,-dw/2,-dh/2,dw,dh);ctx.restore();
+  if(o.border>0){path();ctx.lineWidth=Math.max(1,o.border/100*dw);ctx.strokeStyle=o.borderColor;ctx.stroke()}
+  ctx.restore()}
+
+/* ============ kare dondurma, ses ayırma ============ */
+async function freezeFrame(){
+  const o=findSel(),c=o&&sel.k==="clip"?o:clipAt(t);if(!c)return toast("Önce bir klip seç.");const m=media.get(c.mid);if(m.kind!=="video")return toast("Kare dondurma sadece videolarda çalışır.");
+  if(playing)pause();const st=c.in+(t-c.start)*c.speed;
+  const cv=document.createElement("canvas");cv.width=m.w;cv.height=m.h;cv.getContext("2d").drawImage(m.el,0,0);
+  const blob=await new Promise(r=>cv.toBlob(r,"image/png"));const im=await addMedia(new File([blob],m.name+" (donuk).png",{type:"image/png"}));if(!im)return;
+  pushUndo();const rel=t-c.start,d=clipDur(c),idx=S.clips.indexOf(c),fc=newClip(im);fc.out=2;
+  if(rel>.1&&rel<d-.1){const n=JSON.parse(JSON.stringify(c));n.id=uid();n.in=st;c.out=st;S.clips.splice(idx+1,0,fc,n)}else if(rel<=.1)S.clips.splice(idx,0,fc);else S.clips.splice(idx+1,0,fc);
+  sel={k:"clip",id:fc.id};layoutAll();renderAll();toast("Kare donduruldu (2 sn). Süresini kenarından uzatıp kısaltabilirsin.")}
+async function detachAudio(){const o=findSel();if(!o||sel.k!=="clip")return;const m=media.get(o.mid);
+  if(m.kind!=="video"||!m.file)return toast("Bu klipten ses ayrılamaz.");if(o.speed!==1)return toast("Hız 1× değilken ses ayrılamaz. Önce hızı 1× yap.");
+  const am=await addMedia(m.file,{kind:"audio",name:m.name+" (ses)"});if(!am)return;pushUndo();
+  const a={id:uid(),mid:am.id,start:o.start,in:o.in,out:o.out,volume:o.volume,fin:0,fout:0};S.audios.push(a);o.mute=true;sel={k:"audio",id:a.id};layoutAll();renderAll();toast("Ses ayrı parçaya alındı. Klibi sonradan taşırsan sesi de taşı.")}
+
+/* ============ geçişler ============ */
+const TRANS=[["Karartma","fade","fade"],["Sola kaydır","slideL","slideR"],["Sağa kaydır","slideR","slideL"],["Yukarı kaydır","slideU","slideD"],["Aşağı kaydır","slideD","slideU"],["Yakınlaş","zoomIn","zoomOut"],["Uzaklaş","zoomOut","zoomIn"],["Döndür","spin","spin"],["Silme","wipe","wipe"],["Zıplama","bounce","bounce"],["Flaş","flash","flash"],["Bulanık","blur","blur"],["Piksel","pixel","pixel"],["Glitch","glitch","glitch"]];
+function buildTr(){const el=$("#trList");el.innerHTML="";TRANS.forEach(([n,o,i],k)=>{const b=document.createElement("button");b.className="btn";b.dataset.tr=k;b.textContent=n;el.appendChild(b)})}
+function addTransition(k){layout();const cur=findSel();let c=cur&&sel.k==="clip"?cur:clipAt(t);if(!c)return toast("Önce bir klip seç.");
+  const i=S.clips.indexOf(c),nx=S.clips[i+1];if(!nx)return toast("Geçiş iki klip arasına girer. Seçili klibin arkasında başka klip yok.");
+  const [n,o,inn]=TRANS[k];pushUndo();c.animOut=o;nx.animIn=inn;c.animDur=Math.max(c.animDur||.6,.5);nx.animDur=c.animDur;c.fade=false;renderAll();toast(`“${n}” geçişi eklendi.`)}
+$("#trList").addEventListener("click",e=>{const b=e.target.closest("[data-tr]");if(b)addTransition(+b.dataset.tr)});
+
+/* ============ metin şablonları, çıkartmalar, altyazı ============ */
+const TSTYLES=[["Başlık",{font:"bebas",size:14,y:.5,color:"#ffffff",outline:true,shadow:true,animIn:"pop",animOut:"fade"}],
+ ["Altyazı",{font:"sans",size:5,y:.88,color:"#ffffff",bg:true,bgColor:"#000000",outline:false,animIn:"fade",animOut:"fade"}],
+ ["Neon",{font:"orbitron",size:8,y:.5,color:"#7df9ff",glow:true,outline:false,loop:"pulse",animIn:"blur"}],
+ ["Retro oyun",{font:"pixel",size:5.5,y:.5,color:"#ffd23f",outline:true,loop:"float",animIn:"type"}],
+ ["Çizgi roman",{font:"bangers",size:12,y:.5,color:"#ffe14d",outline:true,loop:"pulse",animIn:"pop"}],
+ ["El yazısı",{font:"pacifico",size:9,y:.5,color:"#ffffff",shadow:true,outline:false,animIn:"type"}],
+ ["Fırça",{font:"marker",size:9,y:.5,color:"#ff4d6d",shadow:true,outline:false,animIn:"rise"}],
+ ["Şık",{font:"playfair",size:7,y:.5,color:"#f5e9d3",shadow:true,outline:false,animIn:"fade"}],
+ ["Kutulu",{font:"anton",size:8,y:.5,color:"#000000",bg:true,bgColor:"#ffcc00",outline:false,animIn:"slide"}],
+ ["Parıltılı",{font:"lobster",size:10,y:.5,color:"#ff9de6",glow:true,outline:false,loop:"rainbow",animIn:"pop"}]];
+const EMOJI={"Yüzler":"😀😂😍😎🥳😭😡🤯🥺😴🤔🙄😱🤩😘","Eller":"👍👎👏🙌✌️🤞💪🙏👀🔥👉👈","Kalp ve yıldız":"❤️🧡💛💚💙💜🖤💔⭐🌟✨💫","Kutlama":"🎉🎊🎁🏆🎬🎵🎶📸💡💰🚀⚡","Doğa":"☀️🌙🌈☁️❄️🌸🌹🍀🐶🐱🦋🌊","İşaret":"✅❌⚠️❗❓💯🆕🔴🟢➡️⬅️⬆️⬇️","Yiyecek":"🍕🍔🍟🍿🍦🍰☕🍻🍓🍉"};
+function buildTxt(){const el=$("#txtList");el.innerHTML="";TSTYLES.forEach(([n,p],k)=>{const b=document.createElement("button");b.className="item tsty";b.dataset.ts=k;b.title=n+" stilinde metin ekle";
+  b.innerHTML=`<div class="th" style="aspect-ratio:16/8;background:#14181f"><span style="font-family:${FONTS[p.font]};color:${p.color};font-size:${Math.min(22,6+p.size*1.2)}px;${p.bg?`background:${p.bgColor};padding:2px 8px;border-radius:4px;`:""}${p.glow?`text-shadow:0 0 8px ${p.color};`:p.shadow?"text-shadow:1px 2px 3px #000;":""}${p.outline?"-webkit-text-stroke:.6px #000;":""}">Örnek</span></div><div class="nm">${n}</div>`;el.appendChild(b)})}
+function buildStk(){const el=$("#stkList");el.innerHTML="";for(const [cat,str] of Object.entries(EMOJI)){const h=document.createElement("h2");h.textContent=cat;el.appendChild(h);const g=document.createElement("div");g.className="emo";
+  for(const ch of str.match(/\p{Extended_Pictographic}️?/gu)){const b=document.createElement("button");b.textContent=ch;b.dataset.em=ch;g.appendChild(b)}el.appendChild(g)}}
+function addStyled(preset){if(!total&&!S.texts.length)toast("İpucu: önce video ekleyince metin kadrajda görünür.");addText(preset)}
+$("#txtList").addEventListener("click",e=>{const b=e.target.closest("[data-ts]");if(b){const [n,p]=TSTYLES[+b.dataset.ts];addStyled({...p,text:n==="Altyazı"?"Altyazı metni":"Yeni metin"})}});
+$("#stkList").addEventListener("click",e=>{const b=e.target.closest("[data-em]");if(b)addStyled({text:b.dataset.em,size:16,y:.4,font:"sans",outline:false,shadow:false,animIn:"pop",animOut:"fade",loop:"none"})});
+$("#btnTxt").onclick=()=>addText();
+function parseSRT(txt){const out=[];for(const b of txt.replace(/\r/g,"").split(/\n\n+/)){const l=b.split("\n").filter(Boolean),i=l.findIndex(x=>x.includes("-->"));if(i<0)continue;
+  const m=l[i].match(/(\d+):(\d+):(\d+)[,.](\d+)\s*-->\s*(\d+):(\d+):(\d+)[,.](\d+)/);if(!m)continue;
+  const a=+m[1]*3600+ +m[2]*60+ +m[3]+ +m[4]/1000,e=+m[5]*3600+ +m[6]*60+ +m[7]+ +m[8]/1000;out.push({start:a,dur:Math.max(.3,e-a),text:l.slice(i+1).join("\n").replace(/<[^>]+>/g,"")})}return out}
+$("#srtFile").addEventListener("change",async e=>{const f=e.target.files[0];e.target.value="";if(!f)return;const items=parseSRT(await f.text()).slice(0,800);
+  if(!items.length)return toast("Altyazı dosyası okunamadı. .srt biçiminde olmalı.");pushUndo();
+  for(const it of items)S.texts.push({id:uid(),text:it.text,start:it.start,dur:it.dur,x:.5,y:.88,size:5,color:"#ffffff",font:"sans",bg:true,bgColor:"#000000",outline:false,glow:false,shadow:false,animIn:"fade",animOut:"fade",animDur:.15,loop:"none"});
+  layoutAll();renderAll();toast(items.length+" altyazı eklendi. Metin parçasından düzenleyebilirsin.")});
+
+/* ============ ses efektleri ve kayıt ============ */
+const noiseBuf=(c,d)=>{const b=c.createBuffer(1,Math.ceil(c.sampleRate*d),c.sampleRate),a=b.getChannelData(0);for(let i=0;i<a.length;i++)a[i]=Math.random()*2-1;return b};
+const SFX={
+ whoosh:["Vınlama",.9,(c,d)=>{const s=c.createBufferSource();s.buffer=noiseBuf(c,d);const f=c.createBiquadFilter();f.type="bandpass";f.Q.value=1.2;f.frequency.setValueAtTime(300,0);f.frequency.exponentialRampToValueAtTime(3500,d*.5);f.frequency.exponentialRampToValueAtTime(300,d);
+   const g=c.createGain();g.gain.setValueAtTime(0,0);g.gain.linearRampToValueAtTime(.9,d*.5);g.gain.linearRampToValueAtTime(0,d);s.connect(f).connect(g).connect(c.destination);s.start()}],
+ pop:["Pop",.25,(c,d)=>{const o=c.createOscillator();o.frequency.setValueAtTime(700,0);o.frequency.exponentialRampToValueAtTime(120,.12);const g=c.createGain();g.gain.setValueAtTime(.9,0);g.gain.exponentialRampToValueAtTime(.001,.17);o.connect(g).connect(c.destination);o.start();o.stop(d)}],
+ ding:["Zil",1.5,(c,d)=>{for(const [fr,v] of [[1318.5,.5],[2637,.25],[3951,.1]]){const o=c.createOscillator();o.frequency.value=fr;const g=c.createGain();g.gain.setValueAtTime(v,0);g.gain.exponentialRampToValueAtTime(.001,d-.05);o.connect(g).connect(c.destination);o.start();o.stop(d)}}],
+ impact:["Darbe",1.2,(c,d)=>{const o=c.createOscillator();o.frequency.setValueAtTime(95,0);o.frequency.exponentialRampToValueAtTime(32,.6);const g=c.createGain();g.gain.setValueAtTime(1,0);g.gain.exponentialRampToValueAtTime(.001,d-.1);o.connect(g).connect(c.destination);o.start();o.stop(d);
+   const s=c.createBufferSource();s.buffer=noiseBuf(c,.4);const lp=c.createBiquadFilter();lp.type="lowpass";lp.frequency.value=500;const g2=c.createGain();g2.gain.setValueAtTime(.8,0);g2.gain.exponentialRampToValueAtTime(.001,.3);s.connect(lp).connect(g2).connect(c.destination);s.start()}],
+ bip:["Bip",.2,(c,d)=>{const o=c.createOscillator();o.type="square";o.frequency.value=1000;const g=c.createGain();g.gain.setValueAtTime(.25,0);g.gain.setValueAtTime(.25,d-.03);g.gain.linearRampToValueAtTime(0,d);o.connect(g).connect(c.destination);o.start();o.stop(d)}],
+ rise:["Yükseliş",.9,(c,d)=>{const o=c.createOscillator();o.type="sawtooth";o.frequency.setValueAtTime(200,0);o.frequency.exponentialRampToValueAtTime(2200,d-.05);const f=c.createBiquadFilter();f.type="lowpass";f.frequency.setValueAtTime(400,0);f.frequency.exponentialRampToValueAtTime(5000,d);
+   const g=c.createGain();g.gain.setValueAtTime(.02,0);g.gain.linearRampToValueAtTime(.35,d-.05);g.gain.linearRampToValueAtTime(0,d);o.connect(f).connect(g).connect(c.destination);o.start();o.stop(d)}],
+ glitch:["Bozuk sinyal",.5,(c,d)=>{const s=c.createBufferSource();s.buffer=noiseBuf(c,d);const g=c.createGain();let tt=0;while(tt<d){g.gain.setValueAtTime(Math.random()<.55?.7:0,tt);tt+=.02+Math.random()*.06}g.gain.setValueAtTime(0,d-.01);
+   const f=c.createBiquadFilter();f.type="highpass";f.frequency.value=1500;s.connect(f).connect(g).connect(c.destination);s.start()}],
+ sparkle:["Parıltı",1,(c,d)=>{for(let i=0;i<9;i++){const st=i*.09+Math.random()*.03,o=c.createOscillator();o.frequency.value=2000+Math.random()*3500;const g=c.createGain();g.gain.setValueAtTime(0,st);g.gain.linearRampToValueAtTime(.25,st+.01);g.gain.exponentialRampToValueAtTime(.001,st+.35);o.connect(g).connect(c.destination);o.start(st);o.stop(st+.4)}}]
+};
+function wavBlob(buf){const ch=buf.getChannelData(0),n=ch.length,sr=buf.sampleRate,ab=new ArrayBuffer(44+n*2),v=new DataView(ab);const w=(o,s)=>{for(let i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i))};
+  w(0,"RIFF");v.setUint32(4,36+n*2,true);w(8,"WAVEfmt ");v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);v.setUint32(24,sr,true);v.setUint32(28,sr*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);w(36,"data");v.setUint32(40,n*2,true);
+  for(let i=0;i<n;i++)v.setInt16(44+i*2,clamp(ch[i],-1,1)*32767,true);return new Blob([ab],{type:"audio/wav"})}
+const sfxCache=new Map();
+async function makeSfx(id,at){const [name,dur,fn]=SFX[id];let m=sfxCache.get(id);
+  if(!m||!media.has(m.id)){const sr=44100,oc=new OfflineAudioContext(1,Math.ceil(sr*dur),sr);fn(oc,dur);const buf=await oc.startRendering();m=await addMedia(new File([wavBlob(buf)],name+".wav",{type:"audio/wav"}));if(!m)return;sfxCache.set(id,m)}
+  addToTimeline(m,at)}
+function buildSnd(){const el=$("#sfxList");el.innerHTML="";for(const [id,[n]] of Object.entries(SFX)){const b=document.createElement("button");b.className="btn";b.dataset.sfx=id;b.textContent=n;el.appendChild(b)}}
+$("#sfxList").addEventListener("click",e=>{const b=e.target.closest("[data-sfx]");if(b)makeSfx(b.dataset.sfx)});
+let recorder=null,recAt=0;
+$("#recBtn").onclick=async()=>{const b=$("#recBtn");if(recorder){recorder.stop();return}
+  try{const st=await navigator.mediaDevices.getUserMedia({audio:true}),chunks=[];recAt=t;recorder=new MediaRecorder(st);recorder.ondataavailable=e=>chunks.push(e.data);
+    recorder.onstop=async()=>{st.getTracks().forEach(x=>x.stop());recorder=null;b.textContent="Mikrofonla kayıt başlat";const blob=new Blob(chunks,{type:chunks[0]&&chunks[0].type||"audio/webm"});
+      const m=await addMedia(new File([blob],"Ses kaydı "+new Date().toLocaleTimeString("tr")+".webm",{type:blob.type}));if(m)addToTimeline(m,recAt)};
+    recorder.start();b.textContent="Kaydı durdur"}catch(e){toast("Mikrofon açılamadı. Tarayıcı izni gerekir; yayınlanmış sayfada mikrofon kapalı olabilir. İndirdiğin dosyayı kendi bilgisayarında açarsan çalışır.",5000)}};
+
+/* ============ proje taslağı (bu tarayıcıda saklanır) ============ */
+const IDB={db:null,open(){return new Promise((res,rej)=>{try{const r=indexedDB.open("kesim",1);r.onupgradeneeded=()=>{r.result.createObjectStore("files");r.result.createObjectStore("meta")};r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)}catch(e){rej(e)}})},
+  async tx(store,mode,fn){if(!this.db)this.db=await this.open();return new Promise((res,rej)=>{const tr=this.db.transaction(store,mode),rq=fn(tr.objectStore(store));tr.oncomplete=()=>res(rq&&rq.result);tr.onerror=()=>rej(tr.error);tr.onabort=()=>rej(tr.error)})}};
+function saveMediaBlob(m){if(!m.file)return;IDB.tx("files","readwrite",s=>s.put({blob:m.file,name:m.file.name,type:m.file.type},m.id)).catch(()=>{})}
+let saveT=0;function scheduleSave(){clearTimeout(saveT);saveT=setTimeout(saveProject,2500)}
+function saveProject(){if(!S.clips.length)return;const meta={S:JSON.parse(snap()),PRJ,media:[...media.values()].map(m=>({id:m.id,kind:m.kind,name:m.name}))};IDB.tx("meta","readwrite",s=>s.put(meta,"project")).catch(()=>{})}
+async function checkDraft(){try{const meta=await IDB.tx("meta","readonly",s=>s.get("project"));if(meta&&meta.S&&meta.S.clips&&meta.S.clips.length&&!S.clips.length){
+  const d=$("#draft");d.hidden=false;d.innerHTML=`<b>Kaydedilmiş projen var</b><span class="note">${meta.S.clips.length} klip · ${meta.media.length} medya</span><div class="row2"><button class="btn pri" id="draftOpen">Aç</button><button class="btn" id="draftDel">Sil</button></div>`;
+  $("#draftOpen").onclick=async()=>{d.textContent="Açılıyor…";await loadDraft(meta);d.hidden=true};$("#draftDel").onclick=()=>{IDB.tx("meta","readwrite",s=>s.delete("project")).catch(()=>{});d.hidden=true}}}catch(e){}}
+async function loadDraft(meta){for(const mm of meta.media){try{const rec=await IDB.tx("files","readonly",s=>s.get(mm.id));if(!rec)continue;await addMedia(new File([rec.blob],rec.name,{type:rec.type}),{id:mm.id,kind:mm.kind,name:mm.name,noSave:true})}catch(e){}}
+  const o=meta.S;S.clips=o.clips.filter(c=>media.has(c.mid));S.texts=o.texts||[];S.audios=(o.audios||[]).filter(a=>media.has(a.mid));S.fxs=o.fxs||[];S.overlays=(o.overlays||[]).filter(v=>media.has(v.mid));
+  Object.assign(PRJ,meta.PRJ||{});$("#bgSel").value=PRJ.bg;sel=null;undoS=[];redoS=[];layoutAll();renderAll();setT(0)}
+$("#bgSel").addEventListener("change",e=>{PRJ.bg=e.target.value;dirty=true;scheduleSave()});
+
+/* ============ sol sekmeler ============ */
+const TABN={media:"Media",fx:"Fx",tr:"Tr",txt:"Txt",stk:"Stk",snd:"Snd",ai:"Ai"};
+$("#leftTabs").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;for(const x of $("#leftTabs").children)x.classList.toggle("on",x===b);
+  for(const k in TABN)$("#tab"+TABN[k]).hidden=b.dataset.tab!==k;if(b.dataset.tab==="fx")renderFxLib()});
+buildTr();buildTxt();buildStk();buildSnd();checkDraft();
+for(const f of ["Bebas Neue","Anton","Pacifico","Permanent Marker","Bangers","Lobster","Playfair Display","Orbitron","Press Start 2P"]){try{document.fonts.load(`32px "${f}"`).then(()=>dirty=true).catch(()=>{})}catch(e){}}
+
+
+/* ============ başlat ============ */
+renderBin();layoutAll();renderAll();fitStage();
+/* ===== AI ===== */
+/* ============ akıllı araçlar (yapay zekâ servisi gerektirmez) ============ */
+const num=(v,d)=>{v=Number(v);return isFinite(v)?v:d};
+async function openAnalysis(m){const v=document.createElement("video");v.muted=true;v.preload="auto";v.src=m.url;await new Promise(r=>{v.onloadeddata=r;v.onerror=r;setTimeout(r,4000)});return v}
+const gcv=document.createElement("canvas");
+function grabFrom(el,w=48,h=27){gcv.width=w;gcv.height=h;const g=gcv.getContext("2d",{willReadFrequently:true});g.drawImage(el,0,0,w,h);const d=g.getImageData(0,0,w,h).data,a=new Float32Array(w*h);for(let i=0;i<w*h;i++)a[i]=.299*d[i*4]+.587*d[i*4+1]+.114*d[i*4+2];return a}
+function splitSrc(c,times){const pts=[...new Set(times.map(x=>+x.toFixed(3)))].filter(x=>x>c.in+.25&&x<c.out-.25).sort((a,b)=>a-b);if(!pts.length)return 0;
+  const idx=S.clips.indexOf(c),bounds=[c.in,...pts,c.out],pieces=[],ao=c.animOut,ai=c.animIn;
+  for(let k=0;k<bounds.length-1;k++){const n=k===0?c:JSON.parse(JSON.stringify(c));if(k)n.id=uid();n.in=bounds[k];n.out=bounds[k+1];if(k>0)n.animIn="none";if(k<bounds.length-2)n.animOut="none";else n.animOut=ao;pieces.push(n)}
+  c.animIn=ai;S.clips.splice(idx,1,...pieces);return pts.length}
+function splitClipTL(time){layout();const c=clipAt(time);if(!c)return false;if(time<c.start+.25||time>c.start+clipDur(c)-.25)return false;return splitSrc(c,[c.in+(time-c.start)*c.speed])>0}
+async function detectScenes(c){const m=media.get(c.mid);if(m.kind!=="video")throw new Error("Sahne algılama sadece videoda çalışır.");
+  const v=await openAnalysis(m),d=c.out-c.in,n=Math.min(150,Math.max(8,Math.ceil(d/.25)));let prev=null;const diffs=[];
+  for(let k=0;k<=n;k++){const tm=Math.min(c.in+d*k/n,m.duration-.05);await seekTo(v,tm);const f=grabFrom(v);if(prev){let s=0;for(let i=0;i<f.length;i++)s+=Math.abs(f[i]-prev[i]);diffs.push([tm-d/n/2,s/f.length])}prev=f}
+  v.removeAttribute("src");v.load();if(!diffs.length)return[];
+  const mean=diffs.reduce((a,b)=>a+b[1],0)/diffs.length,sd=Math.sqrt(diffs.reduce((a,b)=>a+(b[1]-mean)**2,0)/diffs.length),thr=Math.max(22,mean+3*sd);
+  const cuts=[];for(const [tm,x] of diffs)if(x>thr&&(!cuts.length||tm-cuts[cuts.length-1]>.5))cuts.push(tm);return cuts}
+async function decodeFile(m){if(!m.file)throw new Error("Bu medyanın dosyası yok.");if(m.file.size>250e6)throw new Error("Dosya çok büyük (250 MB üstü), ses analizi yapılamıyor.");ensureAudio();return actx.decodeAudioData(await m.file.arrayBuffer())}
+async function cutSilences(c){const m=media.get(c.mid);const buf=await decodeFile(m),ch=buf.getChannelData(0),sr=buf.sampleRate,win=Math.floor(sr*.04),rms=[];
+  for(let i=0;i+win<=ch.length;i+=win){let s=0;for(let j=i;j<i+win;j+=4)s+=ch[j]*ch[j];rms.push(Math.sqrt(s/(win/4)))}
+  const sorted=[...rms].sort((a,b)=>a-b),p90=sorted[Math.floor(sorted.length*.9)]||0,thr=Math.max(.004,Math.min(.02,p90*.12)),dt=win/sr;let segs=[],st=null;
+  for(let k=0;k<rms.length;k++){const q=rms[k]<thr;if(q&&st===null)st=k*dt;if((!q||k===rms.length-1)&&st!==null){const en=q?(k+1)*dt:k*dt;if(en-st>=.5)segs.push([st+.12,en-.12]);st=null}}
+  segs=segs.map(s=>[Math.max(s[0],c.in),Math.min(s[1],c.out)]).filter(s=>s[1]-s[0]>.2);if(!segs.length)return 0;
+  const keep=[];let cur=c.in;for(const [a,b] of segs){if(a-cur>.15)keep.push([cur,a]);cur=b}if(c.out-cur>.15)keep.push([cur,c.out]);if(!keep.length)return 0;
+  const idx=S.clips.indexOf(c),ao=c.animOut,ai=c.animIn,pcs=keep.map((k,i)=>{const n=i===0?c:JSON.parse(JSON.stringify(c));if(i)n.id=uid();n.in=k[0];n.out=k[1];if(i>0)n.animIn="none";if(i<keep.length-1)n.animOut="none";else n.animOut=ao;return n});
+  c.animIn=ai;S.clips.splice(idx,1,...pcs);return segs.reduce((a,s)=>a+(s[1]-s[0]),0)}
+async function autoReframe(c){const m=media.get(c.mid);let frames=[];
+  if(m.kind==="image")frames=[grabFrom(m.el)];else{const v=await openAnalysis(m),d=c.out-c.in,n=12;for(let k=0;k<n;k++){await seekTo(v,Math.min(c.in+d*(k+.5)/n,m.duration-.05));frames.push(grabFrom(v))}v.removeAttribute("src");v.load()}
+  const w=48,h=27,cxs=[],cys=[];let prev=null;
+  for(const f of frames){let sx=0,sy=0,sw=0;for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++){const i=y*w+x;let g=Math.abs(f[i+1]-f[i-1])+Math.abs(f[i+w]-f[i-w]);if(prev)g+=1.5*Math.abs(f[i]-prev[i]);g=g*g;sx+=g*x;sy+=g*y;sw+=g}
+    if(sw>0){cxs.push(sx/sw/w);cys.push(sy/sw/h)}prev=f}
+  if(!cxs.length)return null;const med=a=>a.sort((x,y)=>x-y)[Math.floor(a.length/2)],cx=med(cxs),cy=med(cys);
+  const vf=(9/16*m.h)/m.w;c.vmode="fill";c.zoom=Math.max(1,c.zoom);c.panX=vf<1?clamp((cx-vf/2)/(1-vf),0,1):.5;
+  const hf=(16/9*m.w)/m.h;c.panY=hf<1?clamp((cy-hf/2)/(1-hf),0,1):c.panY;return cx}
+async function detectBeats(a){const m=media.get(a.mid),buf=await decodeFile(m),ch=buf.getChannelData(0),sr=buf.sampleRate,hop=Math.floor(sr*.01),e=[];
+  for(let i=0;i+hop<=ch.length;i+=hop){let s=0;for(let j=i;j<i+hop;j+=2)s+=ch[j]*ch[j];e.push(Math.sqrt(s/(hop/2)))}
+  const o=e.map((v,i)=>i?Math.max(0,v-e[i-1]):0);let best=0,bl=0;
+  for(let lag=Math.round(60/175/.01);lag<=Math.round(60/65/.01);lag++){let s=0;for(let i=0;i+lag<o.length;i++)s+=o[i]*o[i+lag];if(s>best){best=s;bl=lag}}
+  if(!bl)return null;let bp=0,bph=0;for(let ph=0;ph<bl;ph++){let s=0;for(let k=ph;k<o.length;k+=bl)s+=o[k];if(s>bp){bp=s;bph=ph}}
+  const P=bl*.01,beats=[];for(let tm=bph*.01;tm<buf.duration;tm+=P)beats.push(tm);return{bpm:60/P,beats}}
+async function cutToBeats(a,every){const r=await detectBeats(a);if(!r)return null;layout();const tl=r.beats.filter((b,i)=>i%every===0&&b>=a.in&&b<=a.out).map(b=>a.start+(b-a.in)).filter(x=>x<total-.3).sort((x,y)=>x-y);let n=0;
+  for(const x of tl)if(splitClipTL(x))n++;return{bpm:r.bpm,n}}
+async function smartRun(kind){const o=findSel();const busy=$("#toast");
+  try{
+    if(kind==="scenes"){if(!o||sel.k!=="clip")return toast("Önce bir video klibi seç.");toast("Sahneler aranıyor…",60000);const cuts=await detectScenes(o);pushUndo();const n=splitSrc(o,cuts);layoutAll();renderAll();toast(n?`${n} sahne geçişinde bölündü.`:"Belirgin bir sahne değişimi bulunamadı.")}
+    else if(kind==="silence"){if(!o||sel.k!=="clip")return toast("Önce bir video klibi seç.");if(o.speed!==1)return toast("Önce hızı 1× yap.");toast("Ses analiz ediliyor…",60000);pushUndo();const r=await cutSilences(o);if(!r){undoS.pop();btns();return toast("Kesilecek uzun sessizlik bulunamadı.")}layoutAll();renderAll();toast(`${r.toFixed(1)} sn sessizlik kesildi.`)}
+    else if(kind==="reframe"){if(!o||sel.k!=="clip")return toast("Önce bir klip seç.");toast("Kadraj analiz ediliyor…",60000);pushUndo();const r=await autoReframe(o);if(r==null){undoS.pop();btns();return toast("Kadraj hesaplanamadı.")}renderAll();toast("Dikey kadraj hareketli bölgeye göre ayarlandı. Beğenmezsen kaydırıcıdan değiştir.")}
+    else if(kind==="beatinfo"||kind==="beatcut"){if(!o||sel.k!=="audio")return toast("Önce bir müzik parçası seç.");toast("Ritim aranıyor…",60000);
+      if(kind==="beatinfo"){const r=await detectBeats(o);toast(r?`Tahmini tempo: ${r.bpm.toFixed(0)} BPM`:"Ritim bulunamadı.")}
+      else{pushUndo();const r=await cutToBeats(o,2);if(!r){undoS.pop();btns();return toast("Ritim bulunamadı.")}layoutAll();renderAll();toast(`${r.bpm.toFixed(0)} BPM bulundu, video ${r.n} yerden ritme göre bölündü.`)}}
+  }catch(err){toast(err&&err.message?err.message:"Analiz yapılamadı.",5000)}}
+
+/* ============ tek tıkla tarzlar ============ */
+const STYLES={sinematik:["Sinematik",()=>{for(const c of S.clips)c.fx={...PRESETS.dramatik[1]};fxAdd("cinema",0,total,.9);fxAdd("vignette",0,total,.6);fxAdd("grain",0,total,.3)}],
+  enerjik:["Enerjik (TikTok)",()=>{for(const c of S.clips){c.fx={...PRESETS.canli[1]};c.animIn="zoomIn";c.animDur=.35}fxAdd("beat",0,total,.5);for(const c of S.clips)fxAdd("flash",c.start,.35,.8)}],
+  vlog:["Vlog sıcak",()=>{for(const c of S.clips){c.fx={...PRESETS.sicak[1]};c.animIn="fade";c.animOut="fade";c.animDur=.4}fxAdd("vignette",0,total,.35);fxAdd("glow",0,total,.3)}],
+  retro:["Retro kaset",()=>{for(const c of S.clips)c.fx={...PRESETS.eski[1]};fxAdd("vhs",0,total,.7)}],
+  gece:["Gece / neon",()=>{for(const c of S.clips)c.fx={...PRESETS.gece[1],s:130};fxAdd("rgb",0,total,.25);fxAdd("vignette",0,total,.6);fxAdd("glow",0,total,.5)}]};
+function fxAdd(type,start,dur,i){S.fxs.push({id:uid(),type,start:Math.max(0,start),dur:Math.max(.2,Math.min(dur,Math.max(.2,total-start))),i,sp:1})}
+function applyStyle(k){if(!total)return toast("Önce zaman çizelgesine video ekle.");pushUndo();S.fxs=S.fxs.filter(e=>!e._st);const before=S.fxs.length;STYLES[k][1]();for(let i=before;i<S.fxs.length;i++)S.fxs[i]._st=1;layoutAll();renderAll();toast(`“${STYLES[k][0]}” tarzı uygulandı. Efektleri çizelgeden tek tek düzenleyebilir veya silebilirsin.`)}
+$("#styleList").innerHTML=Object.entries(STYLES).map(([k,[n]])=>`<button class="btn" data-style="${k}">${n}</button>`).join("");
+$("#styleList").addEventListener("click",e=>{const b=e.target.closest("[data-style]");if(b)applyStyle(b.dataset.style)});
+
+/* ============ yapay zekâ asistanı ============ */
+const AI={fn:null,busy:false,ctl:null,turns:[],limits:null,base:null};
+(async()=>{try{if(window.claude&&window.claude.use){const f=await window.claude.use("sample");if(f){AI.fn=f;AI.limits=await f.limits().catch(()=>null)}}}catch(e){}$("#aiOn").hidden=!AI.fn;$("#aiOff").hidden=!!AI.fn;$("#bAi").hidden=false})();
+const presetKey=n=>{n=String(n||"").toLowerCase();for(const [k,[nm]] of Object.entries(PRESETS))if(k===n||nm.toLowerCase()===n)return k;return null};
+const fxKey=n=>{n=String(n||"").toLowerCase();for(const [k,d] of Object.entries(FXLIB))if(k.toLowerCase()===n||d.n.toLowerCase()===n)return k;return null};
+const clipI=i=>{const c=S.clips[Math.round(num(i,-1))];if(!c)throw new Error("Böyle bir klip yok. İndeks 0 ile "+(S.clips.length-1)+" arasında olmalı.");return c};
+function projectState(){layout();return{toplam_sn:+total.toFixed(2),oynatma_cizgisi:+t.toFixed(2),
+  klipler:S.clips.map((c,i)=>{const m=media.get(c.mid);return{i,ad:m.name,tur:m.kind,bas:+c.start.toFixed(2),sure:+clipDur(c).toFixed(2),hiz:c.speed,ses:c.volume,giris:c.animIn,cikis:c.animOut,yakin:c.zoom}}),
+  metinler:S.texts.map((x,i)=>({i,metin:x.text.slice(0,50),bas:+x.start.toFixed(2),sure:+x.dur.toFixed(2)})),
+  efektler:S.fxs.map((e,i)=>({i,tur:e.type,bas:+e.start.toFixed(2),sure:+e.dur.toFixed(2),siddet:e.i})),
+  muzik:S.audios.map((a,i)=>({i,ad:(media.get(a.mid)||{}).name,bas:+a.start.toFixed(2),sure:+(a.out-a.in).toFixed(2)})),
+  katmanlar:S.overlays.length}}
+function aiRules(){return`Sen "Kesim" adlı video editörünün yerleşik montaj asistanısın. Kullanıcı Türkçe konuşur, sen de Türkçe yanıt ver. Kullanıcının isteğini araçlarla (tools) projeye uygula. Zamanlar zaman çizelgesi saniyesidir. Klip indeksleri 0'dan başlar.
+Kullanabileceğin değerler:
+- Efekt türleri: ${Object.entries(FXLIB).map(([k,d])=>k+" ("+d.n+")").join(", ")}
+- Filtreler: ${Object.entries(PRESETS).map(([k,[n]])=>k+" ("+n+")").join(", ")}
+- Metin stilleri: ${TSTYLES.map(s=>s[0]).join(", ")}
+- Geçişler: ${TRANS.map(s=>s[0]).join(", ")}
+- Klip animasyonları: ${Object.keys(ANIM_IN).join(", ")}
+- Ses efektleri: ${Object.keys(SFX).join(", ")}
+Kurallar: İstek bir düzenleme ise ilgili araçları çağır (en çok 12 çağrı), sonunda ne yaptığını 2-4 cümleyle özetle. İstek bir soru, başlık, açıklama, hashtag veya fikir ise araç çağırmadan yaz. Verilen karelere bakarak içeriğe uygun karar ver (ör. karanlık sahnede parlaklık artır, metni boş bir bölgeye koy). Aşırıya kaçma: bir klibe en fazla 2-3 efekt. Olmayan bir özelliği yapmış gibi davranma, yapamayacağın şeyi açıkça söyle (ör. otomatik konuşma yazıya çevirme yoktur).`}
+function aiTools(log){const T=(name,description,properties,required,execute)=>({name,description,inputSchema:{type:"object",properties,required:required||[]},execute:async(a)=>{const r=await execute(a||{});return r===undefined?"Tamam":r}});
+  const needTotal=()=>{if(!total)throw new Error("Proje boş, önce klip ekle.")};
+  return[
+   T("get_project","Projenin şu anki durumunu döndürür (klipler, metinler, efektler, müzik).",{},[],()=>projectState()),
+   T("add_text","Zaman çizelgesine metin ekler. style: Başlık, Altyazı, Neon, Retro oyun, Çizgi roman, El yazısı, Fırça, Şık, Kutulu, Parıltılı.",{text:{type:"string"},start:{type:"number"},dur:{type:"number"},style:{type:"string"},y:{type:"number",description:"0 üst, 1 alt"}},["text"],a=>{
+     needTotal();const st=TSTYLES.find(([n])=>n.toLowerCase()===String(a.style||"").toLowerCase());const x={id:uid(),text:String(a.text).slice(0,200),start:clamp(num(a.start,t),0,Math.max(0,total-.3)),dur:clamp(num(a.dur,3),.3,60),x:.5,y:.82,size:7,color:"#ffffff",font:"sans",bg:false,bgColor:"#000000",outline:true,glow:false,shadow:false,animIn:"fade",animOut:"fade",animDur:.5,loop:"none",...(st?st[1]:{})};
+     if(a.y!==undefined)x.y=clamp(num(a.y,.82),0,1);S.texts.push(x);layoutAll();renderAll();log(`Metin: “${x.text}” (${x.start.toFixed(1)}–${(x.start+x.dur).toFixed(1)} sn)`)}),
+   T("add_effect","Seçilen aralığa görüntü efekti ekler.",{type:{type:"string"},start:{type:"number"},dur:{type:"number"},intensity:{type:"number",description:"0-1"}},["type"],a=>{needTotal();const k=fxKey(a.type);if(!k)throw new Error("Bilinmeyen efekt. Kullanılabilir: "+Object.keys(FXLIB).join(", "));
+     const st=clamp(num(a.start,0),0,Math.max(0,total-.2));fxAdd(k,st,num(a.dur,Math.min(2.5,total-st)),clamp(num(a.intensity,FXLIB[k].di||.6),0,1));layoutAll();renderAll();log(`Efekt: ${FXLIB[k].n} (${st.toFixed(1)} sn)`)}),
+   T("edit_clip","Bir klibin ayarlarını değiştirir. Verdiğin alanlar uygulanır: speed(0.25-4), filter(filtre anahtarı), anim_in, anim_out, anim_dur, zoom(1-3), volume(0-2), mute, fade(karartma), temp(-100..100), vignette(0-100), blur(0-30), brightness/contrast/saturation(%), trim_start, trim_end (kaynak saniyesi), pan_x(0-1), h_mode/v_mode (fit|fill).",
+     {index:{type:"number"},speed:{type:"number"},filter:{type:"string"},anim_in:{type:"string"},anim_out:{type:"string"},anim_dur:{type:"number"},zoom:{type:"number"},volume:{type:"number"},mute:{type:"boolean"},fade:{type:"boolean"},temp:{type:"number"},vignette:{type:"number"},blur:{type:"number"},brightness:{type:"number"},contrast:{type:"number"},saturation:{type:"number"},trim_start:{type:"number"},trim_end:{type:"number"},pan_x:{type:"number"},h_mode:{type:"string"},v_mode:{type:"string"}},["index"],a=>{
+     const c=clipI(a.index),m=media.get(c.mid);const done=[];
+     if(a.speed!==undefined&&m.kind==="video"){c.speed=clamp(num(a.speed,1),.25,4);done.push("hız "+c.speed+"×")}
+     if(a.filter!==undefined){const k=presetKey(a.filter);if(!k)throw new Error("Bilinmeyen filtre. Kullanılabilir: "+Object.keys(PRESETS).join(", "));c.fx={...PRESETS[k][1]};done.push("filtre "+PRESETS[k][0])}
+     for(const [key,fk] of [["brightness","b"],["contrast","c"],["saturation","s"]])if(a[key]!==undefined){c.fx[fk]=clamp(num(a[key],100),0,200);done.push(key)}
+     if(a.temp!==undefined)c.fx.temp=clamp(num(a.temp,0),-100,100);if(a.vignette!==undefined)c.fx.vig=clamp(num(a.vignette,0),0,100);if(a.blur!==undefined)c.fx.blur=clamp(num(a.blur,0),0,30);
+     if(a.anim_in!==undefined&&ANIM_IN[a.anim_in]){c.animIn=a.anim_in;done.push("giriş "+ANIM_IN[a.anim_in])}if(a.anim_out!==undefined&&ANIM_OUT[a.anim_out]){c.animOut=a.anim_out;done.push("çıkış "+ANIM_OUT[a.anim_out])}
+     if(a.anim_dur!==undefined)c.animDur=clamp(num(a.anim_dur,.6),.2,2);if(a.zoom!==undefined)c.zoom=clamp(num(a.zoom,1),1,3);if(a.volume!==undefined)c.volume=clamp(num(a.volume,1),0,2);
+     if(a.mute!==undefined)c.mute=!!a.mute;if(a.fade!==undefined)c.fade=!!a.fade;if(a.pan_x!==undefined)c.panX=clamp(num(a.pan_x,.5),0,1);
+     if(a.h_mode==="fit"||a.h_mode==="fill")c.hmode=a.h_mode;if(a.v_mode==="fit"||a.v_mode==="fill")c.vmode=a.v_mode;
+     if(m.kind==="video"){if(a.trim_start!==undefined)c.in=clamp(num(a.trim_start,0),0,c.out-.2);if(a.trim_end!==undefined)c.out=clamp(num(a.trim_end,c.out),c.in+.2,m.duration)}
+     layoutAll();renderAll();log(`Klip ${a.index}: ${done.join(", ")||"güncellendi"}`)}),
+   T("add_transition","İki klip arasına geçiş koyar (index ile bunu izleyen klip arasına).",{index:{type:"number"},kind:{type:"string"}},["index","kind"],a=>{const c=clipI(a.index),k=TRANS.findIndex(x=>x[0].toLowerCase()===String(a.kind).toLowerCase()||x[1]===a.kind);if(k<0)throw new Error("Bilinmeyen geçiş. Kullanılabilir: "+TRANS.map(x=>x[0]).join(", "));
+     const nx=S.clips[S.clips.indexOf(c)+1];if(!nx)throw new Error("Bu klibin arkasında klip yok.");c.animOut=TRANS[k][1];nx.animIn=TRANS[k][2];c.animDur=nx.animDur=Math.max(c.animDur||.6,.5);renderAll();log(`Geçiş: ${TRANS[k][0]} (klip ${a.index} → ${a.index+1})`)}),
+   T("split_at","Ana video parçasını verilen zaman çizelgesi saniyesinden böler.",{time:{type:"number"}},["time"],a=>{if(!splitClipTL(num(a.time,-1)))throw new Error("Orada bölünemez (klip kenarına çok yakın ya da klip yok).");layoutAll();renderAll();log(`Bölündü: ${num(a.time,0).toFixed(1)} sn`)}),
+   T("remove_item","Bir öğeyi siler. kind: clip, text, effect, audio, overlay. Sildikten sonra indeksler kayar, get_project ile tekrar bak.",{kind:{type:"string"},index:{type:"number"}},["kind","index"],a=>{const arr={clip:S.clips,text:S.texts,effect:S.fxs,audio:S.audios,overlay:S.overlays}[a.kind];if(!arr)throw new Error("kind clip, text, effect, audio veya overlay olmalı.");const i=Math.round(num(a.index,-1));if(!arr[i])throw new Error("Böyle bir öğe yok.");arr.splice(i,1);sel=null;layoutAll();renderAll();log(`Silindi: ${a.kind} ${i}`)}),
+   T("add_sound","Ses efekti ekler.",{id:{type:"string"},at:{type:"number"}},["id"],async a=>{if(!SFX[a.id])throw new Error("Ses efektleri: "+Object.keys(SFX).join(", "));await makeSfx(a.id,clamp(num(a.at,t),0,Math.max(0,total)));log(`Ses efekti: ${SFX[a.id][0]}`)}),
+   T("smart_tool","Yerel analiz araçları. tool: scenes (sahne değişimlerinden böl), silence (sessizlikleri kes), reframe (dikey kadraj için hareketli bölgeyi bul). index: klip indeksi.",{tool:{type:"string"},index:{type:"number"}},["tool","index"],async a=>{const c=clipI(a.index);const kind=a.tool;
+     if(kind==="scenes"){const n=splitSrc(c,await detectScenes(c));layoutAll();renderAll();log(`Sahne algılama: ${n} bölüm`);return n+" yerden bölündü"}
+     if(kind==="silence"){const r=await cutSilences(c);layoutAll();renderAll();log(`Sessizlik kesme: ${(r||0).toFixed(1)} sn`);return(r||0).toFixed(1)+" sn kesildi"}
+     if(kind==="reframe"){const r=await autoReframe(c);renderAll();log("Otomatik dikey kadraj");return r==null?"hesaplanamadı":"tamam"}throw new Error("tool scenes, silence veya reframe olmalı.")})
+  ]}
+async function captureFrames(n){const out=[],c=document.createElement("canvas");c.width=640;c.height=360;const g=c.getContext("2d"),t0=t;
+  for(let k=0;k<n;k++){t=Math.min(total*(k+.5)/n,total-.01);syncMedia(t,false);for(let w=0;w<20;w++){await sleep(100);const cl=clipAt(t),m=cl&&media.get(cl.mid);if(!m||srcReady(m))break}drawFrame(g,640,360,t,"h");out.push(await new Promise(r=>c.toBlob(r,"image/jpeg",.7)))}
+  setT(t0,true);await sleep(300);dirty=true;return out}
+function addMsg(cls,text){const d=document.createElement("div");d.className="msg "+cls;d.textContent=text;const l=$("#aiLog");l.appendChild(d);l.scrollTop=l.scrollHeight;return d}
+const AI_ERR={not_granted:"Claude kullanımına izin verilmedi. Sayfayı yenileyip izin ver.",rate_limited:"Çok sık istek gönderildi ya da kullanım sınırına ulaşıldı. Biraz sonra tekrar dene.",sampling_disabled:"Bu hesapta Claude kullanılamıyor.",session_expired:"Oturum süresi doldu, yeniden giriş yap.",images_unavailable:"Bu görünümde kare gönderilemiyor. “Kare gönder” kutusunu kapatıp dene.",tools_unavailable:"Bu görünümde AI düzenleme araçları çalışmıyor.",image_rejected:"Kareler kabul edilmedi.",prompt_too_large:"İstek çok uzun.",refused:"Claude bu isteği reddetti.",empty_completion:"Yanıt boş geldi. İsteği biraz değiştirip tekrar dene.",upstream_error:"Bağlantı sorunu oldu. Tekrar dene."};
+async function aiSend(text){text=(text||"").trim();if(!AI.fn||AI.busy||!text)return;AI.busy=true;AI.ctl=new AbortController();pushUndo("ai"+Date.now());AI.base=snap();
+  $("#aiSend").disabled=true;$("#aiStop").hidden=false;$("#aiIn").value="";addMsg("user",text);const bub=addMsg("ai","Düşünüyor…");
+  const useTools=!AI.limits||!!AI.limits.tools;const opts={signal:AI.ctl.signal,modelTier:$("#aiTier").value,onText:({text})=>{bub.textContent=text;$("#aiLog").scrollTop=1e9}};
+  if(useTools)opts.tools=aiTools(m=>addMsg("act","✓ "+m));
+  try{if($("#aiFrames").checked&&AI.limits&&AI.limits.images&&S.clips.length){bub.textContent="Kareler hazırlanıyor…";opts.images=await captureFrames(Math.min(4,AI.limits.images.maxCount||4));bub.textContent="Düşünüyor…"}}catch(e){}
+  AI.turns.push({role:"user",content:text});
+  try{const r=await AI.fn([{role:"user",content:aiRules()+"\n\nProjenin şu anki durumu:\n"+JSON.stringify(projectState())},...AI.turns.slice(-8)],opts);
+    bub.textContent=r.text;AI.turns.push({role:"assistant",content:r.text})}
+  catch(e){AI.turns.pop();if(e&&e.code==="cancelled"){bub.textContent=(e.text||"")+"\n(Durduruldu)"}else{bub.textContent=(e&&e.text?e.text+"\n":"")+(AI_ERR[e&&e.code]||"Bir sorun oldu.")}}
+  finally{AI.busy=false;AI.ctl=null;$("#aiSend").disabled=false;$("#aiStop").hidden=true;$("#aiUndo").hidden=snap()===AI.base;renderAll()}}
+$("#aiSend").onclick=()=>aiSend($("#aiIn").value);
+$("#aiIn").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();aiSend($("#aiIn").value)}});
+$("#aiStop").onclick=()=>{if(AI.ctl)AI.ctl.abort()};
+$("#aiUndo").onclick=()=>{if(AI.base){redoS.push(snap());restore(AI.base);$("#aiUndo").hidden=true;toast("AI değişiklikleri geri alındı.")}};
+$("#aiChips").addEventListener("click",e=>{const b=e.target.closest("[data-q]");if(b)aiSend(b.dataset.q)});
+$("#bAi").onclick=()=>$('#leftTabs [data-tab="ai"]').click();
+
+$("#smartBox").addEventListener("click",e=>{const b=e.target.closest("[data-sm]");if(b)smartRun(b.dataset.sm)});
+
+window.__kesim={AI,smartRun,applyStyle,aiSend,S,media,get total(){return total},get t(){return t},addMedia,addToTimeline,setT,play,pause,splitAt,openExport,get playing(){return playing}};
+</script>
+<script src="selfedit/recipe-core.js"></script>
+<script src="selfedit/recipe-runtime.js"></script>
+<script src="selfedit/check.js"></script>
+<script src="selfedit/ui.js"></script>

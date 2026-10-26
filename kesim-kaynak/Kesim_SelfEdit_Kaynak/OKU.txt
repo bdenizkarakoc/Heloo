@@ -1,0 +1,45 @@
+KESIM + SELFEDIT (kendini geliştiren efekt motoru)
+=================================================
+
+KURULUM
+1) Bu klasörü (Kesim_SelfEdit_Yama), Kesim_Windows.zip ile aynı yerde (İndirilenler) bırak.
+2) Uygula.bat dosyasına çift tıkla.
+   - Kesim_Windows.zip, yanında "Kesim_SelfEdit" klasörüne açılır (özgün zip'e dokunulmaz).
+   - Özgün main.js ve index.html dosyaları .orig uzantısıyla yedeklenir.
+   - SelfEdit dosyaları Kesim_SelfEdit\resources\app içine kopyalanır.
+3) Kesim_SelfEdit\Kesim.exe ile aç. Sol paneldeki "Gelişim" sekmesi yeni.
+
+NE YAPAR
+- Kesim açıkken arka planda belirli aralıklarla (varsayılan: saatte bir) kullanımını izler:
+  hangi efektleri eklediğini ve "Dilek" kutusuna yazdıklarını.
+- Buna göre yeni bir EFEKT TARİFİ önerir. Tarif kod değil, sınırlı bir JSON'dur; keyfi kod çalışmaz.
+- Öneriyi gizli bir pencerede gerçek canvas ile sınar: hatasız çiziyor mu, görünür etki yapıyor mu,
+  görüntüyü karartmıyor mu, yoğunluk ayarı çalışıyor mu, yeterince hızlı mı.
+- Sağlam çıkarsa "Gelişim" sekmesinde önizlemesiyle birlikte onayını bekler. Onaylarsan
+  Efekt sekmesinde "✦ Yeni eklenenler" altına eklenir. Her ekleme "Geri al" ile kaldırılabilir.
+- Modu "Doğrulananı otomatik ekle" yaparsan onay beklemeden ekler (yine de sınamayı geçmesi şart).
+
+ARKA PLANDA SÜREKLİ ÇALIŞMA
+- Gelişim sekmesinde "Pencereyi kapatınca arka planda çalışmaya devam et" kutusunu işaretle.
+  Kesim kapatılınca tepsiye (saatin yanına) gizlenir, Windows açılınca kendiliğinden başlar.
+  Tamamen kapatmak için tepsi simgesine sağ tık > Çıkış.
+- Bu kutu varsayılan olarak KAPALI; pencere kapanınca uygulama normal şekilde kapanır.
+
+CLAUDE İLE (isteğe bağlı)
+- Gelişim sekmesine Anthropic API anahtarı girersen öneriler hazır şablonlar yerine Claude'dan gelir.
+  Anahtar bu bilgisayarda Windows tarafından şifreli saklanır.
+- Claude'a yalnızca efekt adları, kullanım sayıları ve dileklerin gider. Videon, görüntülerin
+  ve dosya adların gönderilmez. Anahtar girmezsen hiçbir şey internete gitmez.
+- Anahtar yoksa 19 hazır şablon sırayla/dileklerine göre önerilir; bitince yeni öneri çıkmaz.
+
+SINIRLAR (dürüst not)
+- Motor yalnızca yeni görüntü efekti ekleyebilir. Editörün kodunu, arayüzünü veya dışa aktarma
+  hattını kendiliğinden değiştirmez.
+- Efektler, tarif dilinin ifade ettiği canvas işlemleriyle sınırlıdır (renk, ışık, yakınlaştırma,
+  mozaik, gren, şerit, ayna...). Glitch gibi karmaşık efektler tarifle yazılamaz.
+- Claude'dan gelen öneri yoluna Kesim'de gerçek bir API anahtarıyla denenmedi; sahte yanıtlarla
+  test edildi. Şablon yolu gerçek Electron'da uçtan uca denendi.
+
+VERİLER NEREDE
+- %APPDATA%\kesim\selfedit\  (config.json, telemetry.jsonl, proposals\, plugins\, changelog.jsonl)
+- Silmek istersen bu klasörü sil; kaldırmak için Kesim_SelfEdit klasörünü sil. Özgün zip değişmez.

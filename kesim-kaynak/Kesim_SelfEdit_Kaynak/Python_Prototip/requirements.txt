@@ -1,0 +1,3 @@
+# Çekirdek için ek paket gerekmez (yalnızca standart kütüphane + FFmpeg).
+# İsteğe bağlı: Claude ile yeni eklenti üretimi için
+anthropic>=0.40

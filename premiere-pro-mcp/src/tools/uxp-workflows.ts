@@ -1,0 +1,679 @@
+import type { UxpWebSocketBridge } from "../bridge/uxp-websocket-bridge.js";
+import { withApplyGuards, withApplySnapshot } from "./uxp-apply-snapshot.js";
+
+type WorkflowArgs = {
+  action?: string;
+  media_type?: string;
+  track_index?: number;
+  clip_index?: number;
+  expected_sequence_guid?: string;
+  effect_id?: string;
+  insertion_index?: number;
+  component_index?: number;
+  expected_effect_id?: string;
+  mode?: string;
+  project_item_id?: string;
+  project_item_name?: string;
+  media_path?: string;
+  is_high_resolution?: boolean;
+  make_alternate_link_in_team_projects?: boolean;
+  replace_existing_proxy?: boolean;
+  enabled?: boolean;
+  confirm_non_undoable?: boolean;
+  new_path?: string;
+  expected_current_path?: string;
+  override_compatibility_check?: boolean;
+  require_offline?: boolean;
+  project_metadata?: string;
+  xmp_metadata?: string;
+  updated_fields?: string[];
+  expected_project_guid?: string;
+  expected_project_panel_metadata?: string;
+  project_panel_metadata?: string;
+  confirm_update?: boolean;
+  field_name?: string;
+  field_label?: string;
+  field_namespace?: string;
+  packet?: string;
+  include_sensitive?: boolean;
+  namespaces?: string[];
+  packets?: string[];
+  expected_value?: string;
+  value?: string;
+  schema_field_type?: string;
+  confirm_create?: boolean;
+  frame_rate?: number;
+  pixel_aspect_ratio?: number;
+  field_type?: number;
+  remove_pulldown?: boolean;
+  alpha_usage?: number;
+  ignore_alpha?: boolean;
+  invert_alpha?: boolean;
+  vr_conform?: number;
+  vr_layout?: number;
+  vr_horizontal_view?: number;
+  vr_vertical_view?: number;
+  input_lut_id?: string;
+  file_path?: string;
+  seconds?: number;
+  speed?: number;
+  folder_types?: string[];
+  destination?: string;
+  operation_id?: string;
+  selection_items?: TimelineSelectionItemArgs[];
+  selection_targets?: TimelineSelectionTargetArgs[];
+};
+
+type TimelineSelectionTargetArgs = {
+  media_type?: string;
+  track_index?: number;
+  clip_index?: number;
+};
+
+type TimelineSelectionItemArgs = {
+  media_type?: string;
+  track_index?: number;
+  clip_index?: number;
+  expected_project_item_id?: string;
+  expected_start_seconds?: number;
+  expected_end_seconds?: number;
+};
+
+function invoke(
+  bridge: UxpWebSocketBridge,
+  command: string,
+  args: Record<string, unknown> = {},
+) {
+  return bridge.request(command, args)
+    .then((result) => ({ success: true, data: { backend: "uxp", result } }))
+    .catch((error: unknown) => ({
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    }));
+}
+
+function target(args: WorkflowArgs): Record<string, unknown> {
+  return {
+    ...(args.project_item_id !== undefined ? { projectItemId: args.project_item_id } : {}),
+    ...(args.project_item_name !== undefined ? { projectItemName: args.project_item_name } : {}),
+  };
+}
+
+function operation(args: WorkflowArgs): Record<string, unknown> {
+  return args.operation_id ? { operationId: args.operation_id } : {};
+}
+
+function invalidAction(value: unknown) {
+  return { success: false, error: `Unsupported workflow action: ${String(value)}` };
+}
+
+const projectItemProperties = {
+  project_item_id: { type: "string", minLength: 1, maxLength: 512, description: "Stable project-item ID. Omit with project_item_name to use exactly one Project panel selection." },
+  project_item_name: { type: "string", minLength: 1, maxLength: 255, description: "Unique media-clip name. Not allowed together with project_item_id." },
+};
+
+const operationId = {
+  type: "string",
+  pattern: "^[A-Za-z0-9._:-]{1,128}$",
+  description: "Optional idempotency key for mutating operations.",
+};
+
+export function getUxpWorkflowTools(bridge: UxpWebSocketBridge) {
+  const effectIdentityGuardSchema = { type: "string", minLength: 1, maxLength: 256 };
+  const projectGuidGuardSchema = { type: "string", minLength: 1, maxLength: 512 };
+  const panelMetadataGuardSchema = { type: "string", maxLength: 12288 };
+  const schemaMetadataGuardSchema = { type: "string", maxLength: 350000 };
+  const selectionItemSnapshotSchema = {
+    type: "array", minItems: 1, maxItems: 64,
+    items: { type: "object", additionalProperties: false, properties: {
+      media_type: { type: "string", enum: ["video", "audio"] },
+      track_index: { type: "integer", minimum: 0 }, clip_index: { type: "integer", minimum: 0 },
+      expected_project_item_id: { type: "string", minLength: 1, maxLength: 512, sourceKey: "projectItem.id" },
+      expected_start_seconds: { type: "number", minimum: 0, sourceKey: "startSeconds" },
+      expected_end_seconds: { type: "number", minimum: 0, sourceKey: "endSeconds" },
+    }, required: ["media_type", "track_index", "clip_index", "expected_project_item_id", "expected_start_seconds", "expected_end_seconds"] },
+  };
+  return {
+    manage_clip_effects_uxp: {
+      description: "List native audio/video effects, inspect one clip's component chain, or add/remove one effect in a locked Premiere UXP transaction. Mutation verification covers the component chain only; inspect playback or exported output to confirm rendering.",
+      parameters: {
+        type: "object" as const,
+        additionalProperties: false,
+        properties: {
+          action: { type: "string", enum: ["catalog", "inspect", "add", "remove"] },
+          media_type: { type: "string", enum: ["video", "audio", "all"] },
+          track_index: { type: "integer", minimum: 0 },
+          clip_index: { type: "integer", minimum: 0 },
+          effect_id: { type: "string", minLength: 1, maxLength: 256, description: "Video match name or audio display name returned by catalog." },
+          insertion_index: { type: "integer", minimum: 0 },
+          component_index: { type: "integer", minimum: 0 },
+          expected_effect_id: { ...effectIdentityGuardSchema, description: "Required for removal; the expected_effect_id returned by inspect with component_index, passed unchanged." },
+          operation_id: operationId,
+        },
+        required: ["action"],
+      },
+      handler: async (args: WorkflowArgs) => {
+        if (args.action === "catalog") return invoke(bridge, "effects.catalog", args.media_type ? { mediaType: args.media_type } : {});
+        const coordinates = {
+          mediaType: args.media_type, trackIndex: args.track_index, clipIndex: args.clip_index,
+        };
+        if (args.action === "inspect") return withApplyGuards(invoke(bridge, "effects.chain.get", coordinates), args.component_index !== undefined ? {
+          expected_effect_id: {
+            schema: effectIdentityGuardSchema,
+            sourceValue: (record) => {
+              if (!Array.isArray(record.components)) return undefined;
+              const component = record.components.find((value) => value && typeof value === "object" && (value as Record<string, unknown>).index === args.component_index) as Record<string, unknown> | undefined;
+              return component?.matchName || component?.displayName;
+            },
+          },
+        } : {});
+        if (args.action === "add") return invoke(bridge, "effects.chain.add", {
+          ...coordinates, effectId: args.effect_id,
+          ...(args.insertion_index === undefined ? {} : { insertionIndex: args.insertion_index }),
+          ...operation(args),
+        });
+        if (args.action === "remove") return invoke(bridge, "effects.chain.remove", {
+          ...coordinates, componentIndex: args.component_index, expectedEffectId: args.expected_effect_id, ...operation(args),
+        });
+        return invalidAction(args.action);
+      },
+    },
+
+    inspect_track_item_identity_uxp: {
+      description: "Inspect one active-sequence clip's native match name, item type, media UUID, reported track index, and selection state through documented UXP APIs. It rechecks the active sequence identity before returning and does not expose media paths, effect parameters, or rendered output.",
+      parameters: {
+        type: "object" as const,
+        additionalProperties: false,
+        properties: {
+          media_type: { type: "string", enum: ["video", "audio"] },
+          track_index: { type: "integer", minimum: 0 },
+          clip_index: { type: "integer", minimum: 0 },
+          expected_sequence_guid: { type: "string", minLength: 1, maxLength: 512, description: "Optional stale-snapshot guard from a recent identity inspection." },
+        },
+        required: ["media_type", "track_index", "clip_index"],
+      },
+      handler: async (args: WorkflowArgs) => invoke(bridge, "trackItem.identity.inspect", {
+        mediaType: args.media_type, trackIndex: args.track_index, clipIndex: args.clip_index,
+        ...(args.expected_sequence_guid === undefined ? {} : { expectedSequenceGuid: args.expected_sequence_guid }),
+      }),
+    },
+
+    batch_selected_clips_uxp: {
+      description: "Inspect the current timeline selection or apply one native effect add/remove across up to 64 same-type selected clips as a single compound transaction. Effect readback verifies component-chain changes only, not rendered output.",
+      parameters: {
+        type: "object" as const,
+        additionalProperties: false,
+        properties: {
+          action: { type: "string", enum: ["inspect", "add_effect", "remove_effect"] },
+          media_type: { type: "string", enum: ["video", "audio"] },
+          effect_id: { type: "string", minLength: 1, maxLength: 256 },
+          insertion_index: { type: "integer", minimum: 0 },
+          component_index: { type: "integer", minimum: 0 },
+          expected_effect_id: effectIdentityGuardSchema,
+          operation_id: operationId,
+        },
+        required: ["action"],
+      },
+      handler: async (args: WorkflowArgs) => {
+        if (args.action === "inspect") return invoke(bridge, "selection.inspect");
+        if (args.action === "add_effect") return invoke(bridge, "effects.selection.add", {
+          mediaType: args.media_type, effectId: args.effect_id,
+          ...(args.insertion_index === undefined ? {} : { insertionIndex: args.insertion_index }),
+          ...operation(args),
+        });
+        if (args.action === "remove_effect") return invoke(bridge, "effects.selection.remove", {
+          mediaType: args.media_type, componentIndex: args.component_index, expectedEffectId: args.expected_effect_id, ...operation(args),
+        });
+        return invalidAction(args.action);
+      },
+    },
+
+    manage_timeline_selection_uxp: {
+      description: "Inspect, replace, add to, remove from, or clear the active sequence's native UXP clip selection with sequence and clip fingerprint stale-state guards.",
+      parameters: {
+        type: "object" as const,
+        additionalProperties: false,
+        properties: {
+          action: { type: "string", enum: ["inspect", "inspect_targets", "replace", "add", "remove", "clear"] },
+          selection_targets: {
+            type: "array", minItems: 1, maxItems: 64,
+            description: "Required for inspect_targets; returns the project-item and timeline-time fingerprints needed by mutation actions.",
+            items: {
+              type: "object", additionalProperties: false,
+              properties: {
+                media_type: { type: "string", enum: ["video", "audio"] },
+                track_index: { type: "integer", minimum: 0 },
+                clip_index: { type: "integer", minimum: 0 },
+              },
+              required: ["media_type", "track_index", "clip_index"],
+            },
+          },
+          expected_sequence_guid: {
+            type: "string", minLength: 1, maxLength: 512,
+            description: "Required for mutations; the expected_sequence_guid returned by inspect or inspect_targets, passed unchanged.",
+          },
+          selection_items: {
+            ...selectionItemSnapshotSchema,
+            description: "Required for replace/add/remove; the selection_items array returned by inspect or inspect_targets, passed unchanged.",
+          },
+          operation_id: operationId,
+        },
+        required: ["action"],
+      },
+      handler: async (args: WorkflowArgs) => {
+        if (args.action === "inspect") return withApplyGuards(invoke(bridge, "selection.fingerprints.inspect"), {
+          expected_sequence_guid: { schema: projectGuidGuardSchema, sourceKey: "sequenceGuid" },
+          selection_items: { schema: selectionItemSnapshotSchema, sourceKey: "items" },
+        });
+        if (args.action === "inspect_targets") {
+          if (!args.selection_targets?.length) {
+            return { success: false, error: "inspect_targets requires one or more selection_targets" };
+          }
+          return withApplyGuards(invoke(bridge, "selection.targets.inspect", {
+            items: args.selection_targets.map((item) => ({
+              mediaType: item.media_type, trackIndex: item.track_index, clipIndex: item.clip_index,
+            })),
+          }), {
+            expected_sequence_guid: { schema: projectGuidGuardSchema, sourceKey: "sequenceGuid" },
+            selection_items: { schema: selectionItemSnapshotSchema, sourceKey: "items" },
+          });
+        }
+        if (["replace", "add", "remove", "clear"].includes(args.action ?? "")) {
+          if (!args.expected_sequence_guid) {
+            return { success: false, error: `${args.action} requires expected_sequence_guid from a recent inspection` };
+          }
+          if (args.action === "clear" && args.selection_items !== undefined) {
+            return { success: false, error: "clear requires selection_items to be omitted" };
+          }
+          if (args.action !== "clear" && !args.selection_items?.length) {
+            return { success: false, error: `${args.action} requires one or more selection_items` };
+          }
+          return invoke(bridge, "selection.update", {
+            mode: args.action,
+            expectedSequenceGuid: args.expected_sequence_guid,
+            ...(args.selection_items === undefined ? {} : {
+              items: args.selection_items.map((item) => ({
+                mediaType: item.media_type,
+                trackIndex: item.track_index,
+                clipIndex: item.clip_index,
+                expectedProjectItemId: item.expected_project_item_id,
+                expectedStartSeconds: item.expected_start_seconds,
+                expectedEndSeconds: item.expected_end_seconds,
+              })),
+            }),
+            ...operation(args),
+          });
+        }
+        return invalidAction(args.action);
+      },
+    },
+
+    detect_scene_edits_uxp: {
+      description: "Run Premiere's documented scene-edit detection on the current timeline selection using cuts, markers, or subclips. create_markers still runs when a selected item has no marker collection and reports committed_unverified if no markers can be read back. This direct host mutation is not claimed undoable.",
+      parameters: {
+        type: "object" as const,
+        additionalProperties: false,
+        properties: {
+          mode: { type: "string", enum: ["apply_cuts", "create_markers", "create_subclips"] },
+          operation_id: operationId,
+        },
+        required: ["mode"],
+      },
+      handler: async (args: WorkflowArgs) => {
+        const modes: Record<string, string> = { apply_cuts: "applyCuts", create_markers: "createMarkers", create_subclips: "createSubclips" };
+        if (!args.mode || !modes[args.mode]) return invalidAction(args.mode);
+        return invoke(bridge, "sceneEdit.detect", { mode: modes[args.mode], ...operation(args) });
+      },
+    },
+
+    manage_proxy_ingest_uxp: {
+      description: "Inspect or attach proxy/high-resolution media for one clip, or read/update project ingest state. Attach operations are non-undoable and workspace-contained.",
+      parameters: {
+        type: "object" as const,
+        additionalProperties: false,
+        properties: {
+          action: { type: "string", enum: ["inspect_proxy", "attach_proxy", "get_ingest", "set_ingest"] },
+          ...projectItemProperties,
+          media_path: { type: "string", minLength: 1, maxLength: 4096 },
+          is_high_resolution: { type: "boolean", description: "False attaches proxy media; true attaches high-resolution media." },
+          make_alternate_link_in_team_projects: { type: "boolean" },
+          replace_existing_proxy: { type: "boolean", description: "Required to replace a different attached proxy." },
+          enabled: { type: "boolean" },
+          confirm_non_undoable: { type: "boolean" },
+          operation_id: operationId,
+        },
+        required: ["action"],
+      },
+      handler: async (args: WorkflowArgs) => {
+        if (args.action === "inspect_proxy") return invoke(bridge, "proxy.inspect", target(args));
+        if (args.action === "get_ingest") return invoke(bridge, "ingest.get");
+        if (args.action === "set_ingest") return invoke(bridge, "ingest.configure", { enabled: args.enabled, ...operation(args) });
+        if (args.action === "attach_proxy") return invoke(bridge, "proxy.attach", {
+          ...target(args), mediaPath: args.media_path,
+          ...(args.is_high_resolution === undefined ? {} : { isHiRes: args.is_high_resolution }),
+          ...(args.make_alternate_link_in_team_projects === undefined ? {} : { makeAlternateLinkInTeamProjects: args.make_alternate_link_in_team_projects }),
+          ...(args.replace_existing_proxy === undefined ? {} : { replaceExistingProxy: args.replace_existing_proxy }),
+          confirmNonUndoable: args.confirm_non_undoable, ...operation(args),
+        });
+        return invalidAction(args.action);
+      },
+    },
+
+    relink_offline_media_uxp: {
+      description: "Relink one offline clip to a workspace-contained media path after stale-path and capability checks. This Premiere API is non-undoable and requires explicit confirmation.",
+      parameters: {
+        type: "object" as const,
+        additionalProperties: false,
+        properties: {
+          ...projectItemProperties,
+          new_path: { type: "string", minLength: 1, maxLength: 4096 },
+          expected_current_path: { type: "string", minLength: 1, maxLength: 4096 },
+          override_compatibility_check: { type: "boolean" },
+          require_offline: { type: "boolean", description: "Defaults to true." },
+          confirm_non_undoable: { type: "boolean" },
+          operation_id: operationId,
+        },
+        required: ["new_path", "confirm_non_undoable"],
+      },
+      handler: async (args: WorkflowArgs) => invoke(bridge, "media.relink", {
+        ...target(args), newPath: args.new_path,
+        ...(args.expected_current_path ? { expectedCurrentPath: args.expected_current_path } : {}),
+        ...(args.override_compatibility_check === undefined ? {} : { overrideCompatibilityCheck: args.override_compatibility_check }),
+        ...(args.require_offline === undefined ? {} : { requireOffline: args.require_offline }),
+        confirmNonUndoable: args.confirm_non_undoable, ...operation(args),
+      }),
+    },
+
+    manage_metadata_uxp: {
+      description: "Read bounded project/XMP metadata, inspect named fields from column JSON and XMP, or update one field/packet together in a locked undoable Premiere transaction with readback. Prefer inspect_fields or item_columns before requesting full XML. GPS and camera serials are omitted unless include_sensitive is true.",
+      parameters: {
+        type: "object" as const,
+        additionalProperties: false,
+        properties: {
+          action: { type: "string", enum: ["get", "update", "inspect_fields", "update_field"] },
+          ...projectItemProperties,
+          project_metadata: { type: "string", maxLength: 350000, description: "Project metadata; combined readback is limited to a 900,000-byte serialized UTF-8 result." },
+          xmp_metadata: { type: "string", maxLength: 350000, description: "XMP metadata; combined readback is limited to a 900,000-byte serialized UTF-8 result." },
+          updated_fields: { type: "array", minItems: 1, maxItems: 128, items: { type: "string", minLength: 1, maxLength: 512 } },
+          include_sensitive: { type: "boolean", description: "For inspect_fields, include GPS, serials, and similar EXIF. Default false." },
+          namespaces: {
+            type: "array", minItems: 1, maxItems: 8,
+            items: { type: "string", minLength: 1, maxLength: 512 },
+            description: "Optional inspect_fields filter: namespace URI or alias (premiere, dc, xmp, xmpDM, exif, iptc, photoshop).",
+          },
+          packets: {
+            type: "array", minItems: 1, maxItems: 3,
+            items: { type: "string", enum: ["columns", "project", "xmp"] },
+            description: "Optional inspect_fields packet selection. Default is columns, project, and xmp.",
+          },
+          packet: { type: "string", enum: ["project", "xmp"], description: "Required for update_field. project is Premiere-private metadata; xmp is the file/clip packet." },
+          field_namespace: { type: "string", minLength: 1, maxLength: 512, description: "XMP namespace URI or alias. Default premiere for project updates; required for xmp updates." },
+          field_name: { type: "string", minLength: 1, maxLength: 512, description: "Required for update_field. Example: Column.Intrinsic.LogNote or dc description." },
+          value: { type: "string", maxLength: 4096, description: "Required replacement value for update_field." },
+          expected_value: { type: "string", maxLength: 4096, description: "Optional compare-and-set guard for update_field." },
+          operation_id: operationId,
+        },
+        required: ["action"],
+      },
+      handler: async (args: WorkflowArgs) => {
+        if (args.action === "get") return invoke(bridge, "metadata.get", target(args));
+        if (args.action === "inspect_fields") return invoke(bridge, "metadata.fields.inspect", {
+          ...target(args),
+          ...(args.include_sensitive === undefined ? {} : { includeSensitive: args.include_sensitive }),
+          ...(args.namespaces === undefined ? {} : { namespaces: args.namespaces }),
+          ...(args.packets === undefined ? {} : { packets: args.packets }),
+        });
+        if (args.action === "update") return invoke(bridge, "metadata.update", {
+            ...target(args),
+            ...(args.project_metadata === undefined ? {} : { projectMetadata: args.project_metadata }),
+            ...(args.xmp_metadata === undefined ? {} : { xmpMetadata: args.xmp_metadata }),
+            ...(args.updated_fields === undefined ? {} : { updatedFields: args.updated_fields }),
+            ...operation(args),
+          });
+        if (args.action === "update_field") return invoke(bridge, "metadata.fields.update", {
+          ...target(args),
+          packet: args.packet,
+          ...(args.field_namespace === undefined ? {} : { namespace: args.field_namespace }),
+          name: args.field_name,
+          value: args.value,
+          ...(args.expected_value === undefined ? {} : { expectedValue: args.expected_value }),
+          ...operation(args),
+        });
+        return invalidAction(args.action);
+      },
+    },
+
+    inspect_project_panel_metadata_uxp: {
+      description: "Read bounded native Project-panel metadata: panel layout XML, or one media item's visible columns as JSON (ColumnName, ColumnValue, ColumnID, ColumnPath). Column JSON is the current view, not every XMP namespace. This is read-only; it neither creates schema fields nor writes Project-panel state.",
+      parameters: {
+        type: "object" as const,
+        additionalProperties: false,
+        properties: {
+          action: { type: "string", enum: ["panel", "item_columns"] },
+          ...projectItemProperties,
+        },
+        required: ["action"],
+      },
+      operationalCapability: {
+        backend: "UXP" as const,
+        backends: ["uxp" as const],
+        minimumPremiereVersion: "25.6",
+        verificationBoundary: "structured_uxp_readback" as const,
+        hostVerificationRequired: true,
+        notes: ["Available only through an authenticated UXP bridge whose runtime capability handshake advertises the requested metadata Project-panel command."],
+      },
+      handler: async (args: WorkflowArgs) => {
+        if (args.action === "panel") return invoke(bridge, "metadata.projectPanel.get");
+        if (args.action === "item_columns") return invoke(bridge, "metadata.columns.get", target(args));
+        return invalidAction(args.action);
+      },
+    },
+
+    manage_project_panel_metadata_uxp: {
+      description: "Inspect or guardedly replace native Project-panel metadata. Update requires the exact inspected project GUID and XML, explicit confirmation, a replay key, local per-project serialization, and exact native readback; Premiere does not expose an atomic compare-and-set for this direct non-undoable setter.",
+      parameters: {
+        type: "object" as const,
+        additionalProperties: false,
+        properties: {
+          action: { type: "string", enum: ["inspect", "update"] },
+          expected_project_guid: { ...projectGuidGuardSchema, description: "Required for update; the expected_project_guid returned by inspect, passed unchanged." },
+          expected_project_panel_metadata: { ...panelMetadataGuardSchema, description: "Required for update; the expected_project_panel_metadata returned by inspect, passed unchanged. The UXP host enforces a 12 KiB UTF-8 bound." },
+          project_panel_metadata: { type: "string", maxLength: 12288, description: "Required replacement Project-panel XML. The UXP host enforces a 12 KiB UTF-8 bound." },
+          confirm_update: { type: "boolean", description: "Required true for update because this direct setter is non-undoable." },
+          operation_id: { ...operationId, description: "Required replay key for a guarded Project-panel metadata replacement." },
+        },
+        required: ["action"],
+      },
+      operationalCapability: {
+        backend: "UXP" as const,
+        backends: ["uxp" as const],
+        minimumPremiereVersion: "25.6",
+        verificationBoundary: "project_panel_metadata_exact_readback" as const,
+        hostVerificationRequired: true,
+        notes: [
+          "Update is available only when the authenticated UXP bridge advertises metadata.projectPanel.update.",
+          "The direct documented setter is non-undoable and has no cancellation support; exact readback proves only the active project returned the requested XML after the setter completed.",
+        ],
+      },
+      handler: async (args: WorkflowArgs) => {
+        if (args.action === "inspect") return withApplyGuards(invoke(bridge, "metadata.projectPanel.get"), {
+          expected_project_guid: { schema: projectGuidGuardSchema, sourceKey: "projectGuid" },
+          expected_project_panel_metadata: { schema: panelMetadataGuardSchema, sourceKey: "projectPanelMetadata" },
+        });
+        if (args.action === "update") return invoke(bridge, "metadata.projectPanel.update", {
+          expectedProjectGuid: args.expected_project_guid,
+          expectedProjectPanelMetadata: args.expected_project_panel_metadata,
+          projectPanelMetadata: args.project_panel_metadata,
+          confirmUpdate: args.confirm_update,
+          operationId: args.operation_id,
+        });
+        return invalidAction(args.action);
+      },
+    },
+
+    create_project_metadata_field_uxp: {
+      description: "Inspect a bounded native Project-panel schema or request one typed Project metadata field through Adobe's documented direct UXP API. Creation requires the exact inspected project GUID/XML, explicit confirmation, and a replay key; it is non-undoable and reports host acceptance plus schema-change readback without claiming field-level verification or atomic compare-and-set semantics.",
+      parameters: {
+        type: "object" as const,
+        additionalProperties: false,
+        properties: {
+          action: { type: "string", enum: ["inspect", "create"] },
+          expected_project_guid: { ...projectGuidGuardSchema, description: "Required for create; the expected_project_guid returned by inspect, passed unchanged." },
+          expected_project_panel_metadata: { ...schemaMetadataGuardSchema, description: "Required for create; the expected_project_panel_metadata returned by inspect, passed unchanged. Inspect uses the same 350,000-character / 900 KiB serialized read bound as inspect_project_panel_metadata_uxp." },
+          field_name: { type: "string", minLength: 1, maxLength: 128, pattern: "^[A-Za-z][A-Za-z0-9_.-]{0,127}$", description: "Required stable metadata field identifier. Starts with a letter; only letters, digits, periods, underscores, and hyphens are accepted." },
+          field_label: { type: "string", minLength: 1, maxLength: 255, description: "Required user-visible label for the new metadata field." },
+          schema_field_type: { type: "string", enum: ["integer", "real", "text", "boolean"], description: "Required documented Premiere metadata-field type." },
+          confirm_create: { type: "boolean", description: "Required true for create because this direct schema API is non-undoable." },
+          operation_id: { ...operationId, description: "Required replay key for a guarded Project metadata schema field creation." },
+        },
+        required: ["action"],
+      },
+      operationalCapability: {
+        backend: "UXP" as const,
+        backends: ["uxp" as const],
+        minimumPremiereVersion: "25.6",
+        verificationBoundary: "project_panel_metadata_change_readback" as const,
+        hostVerificationRequired: true,
+        notes: [
+          "Creation is available only when the authenticated UXP bridge advertises metadata.projectSchema.create.",
+          "Adobe supplies no atomic compare-and-set or field-level schema getter; success is always committed_unverified even when post-call Project-panel XML changes.",
+        ],
+      },
+      handler: async (args: WorkflowArgs) => {
+        if (args.action === "inspect") return withApplyGuards(invoke(bridge, "metadata.projectSchema.inspect"), {
+          expected_project_guid: { schema: projectGuidGuardSchema, sourceKey: "projectGuid" },
+          expected_project_panel_metadata: { schema: schemaMetadataGuardSchema, sourceKey: "projectPanelMetadata" },
+        });
+        if (args.action === "create") return invoke(bridge, "metadata.projectSchema.create", {
+          expectedProjectGuid: args.expected_project_guid,
+          expectedProjectPanelMetadata: args.expected_project_panel_metadata,
+          fieldName: args.field_name,
+          fieldLabel: args.field_label,
+          fieldType: args.schema_field_type,
+          confirmCreate: args.confirm_create,
+          operationId: args.operation_id,
+        });
+        return invalidAction(args.action);
+      },
+    },
+
+    manage_color_conformance_uxp: {
+      description: "Preflight project graphics-white/LUT/footage interpretation state, or update bounded footage-conformance fields in one undoable UXP transaction.",
+      parameters: {
+        type: "object" as const,
+        additionalProperties: false,
+        properties: {
+          action: { type: "string", enum: ["preflight", "update"] },
+          ...projectItemProperties,
+          frame_rate: { type: "number", minimum: 1, maximum: 240 },
+          pixel_aspect_ratio: { type: "number", minimum: 0.01, maximum: 100 },
+          field_type: { type: "integer", minimum: 0, maximum: 64 },
+          remove_pulldown: { type: "boolean" },
+          alpha_usage: { type: "integer", minimum: 0, maximum: 64 },
+          ignore_alpha: { type: "boolean" },
+          invert_alpha: { type: "boolean" },
+          vr_conform: { type: "integer", minimum: 0, maximum: 64 },
+          vr_layout: { type: "integer", minimum: 0, maximum: 64 },
+          vr_horizontal_view: { type: "number", minimum: 1, maximum: 360 },
+          vr_vertical_view: { type: "number", minimum: 1, maximum: 180 },
+          input_lut_id: { type: "string", maxLength: 512 },
+          operation_id: operationId,
+        },
+        required: ["action"],
+      },
+      handler: async (args: WorkflowArgs) => {
+        if (args.action === "preflight") return invoke(bridge, "color.preflight", target(args));
+        if (args.action === "update") return invoke(bridge, "footage.conform", {
+          ...target(args),
+          ...(args.frame_rate === undefined ? {} : { frameRate: args.frame_rate }),
+          ...(args.pixel_aspect_ratio === undefined ? {} : { pixelAspectRatio: args.pixel_aspect_ratio }),
+          ...(args.field_type === undefined ? {} : { fieldType: args.field_type }),
+          ...(args.remove_pulldown === undefined ? {} : { removePullDown: args.remove_pulldown }),
+          ...(args.alpha_usage === undefined ? {} : { alphaUsage: args.alpha_usage }),
+          ...(args.ignore_alpha === undefined ? {} : { ignoreAlpha: args.ignore_alpha }),
+          ...(args.invert_alpha === undefined ? {} : { invertAlpha: args.invert_alpha }),
+          ...(args.vr_conform === undefined ? {} : { vrConform: args.vr_conform }),
+          ...(args.vr_layout === undefined ? {} : { vrLayout: args.vr_layout }),
+          ...(args.vr_horizontal_view === undefined ? {} : { vrHorzView: args.vr_horizontal_view }),
+          ...(args.vr_vertical_view === undefined ? {} : { vrVertView: args.vr_vertical_view }),
+          ...(args.input_lut_id === undefined ? {} : { inputLutId: args.input_lut_id }),
+          ...operation(args),
+        });
+        return invalidAction(args.action);
+      },
+    },
+
+    audition_source_monitor_uxp: {
+      description: "Open a selected project item or approved file, inspect/set position, play at bounded speed, or close Source Monitor media through documented UXP APIs.",
+      parameters: {
+        type: "object" as const,
+        additionalProperties: false,
+        properties: {
+          action: { type: "string", enum: ["state", "open_project_item", "open_file", "set_position", "play", "close", "close_all"] },
+          ...projectItemProperties,
+          file_path: { type: "string", minLength: 1, maxLength: 4096 },
+          seconds: { type: "number", minimum: 0 },
+          speed: { type: "number", minimum: -16, maximum: 16 },
+          operation_id: operationId,
+        },
+        required: ["action"],
+      },
+      handler: async (args: WorkflowArgs) => {
+        if (args.action === "state") return invoke(bridge, "sourceMonitor.state");
+        if (args.action === "open_project_item") return invoke(bridge, "sourceMonitor.open", { ...target(args), ...operation(args) });
+        if (args.action === "open_file") return invoke(bridge, "sourceMonitor.open", { filePath: args.file_path, ...operation(args) });
+        if (args.action === "set_position") return invoke(bridge, "sourceMonitor.position.set", { seconds: args.seconds, ...operation(args) });
+        if (args.action === "play") return invoke(bridge, "sourceMonitor.play", { ...(args.speed === undefined ? {} : { speed: args.speed }), ...operation(args) });
+        if (args.action === "close" || args.action === "close_all") return invoke(bridge, "sourceMonitor.close", { all: args.action === "close_all", ...operation(args) });
+        return invalidAction(args.action);
+      },
+    },
+
+    preflight_production_storage_uxp: {
+      description: "Inspect project/Production scratch disks and ingest state, or set supported project scratch categories to Premiere's symbolic destinations in one undoable transaction.",
+      parameters: {
+        type: "object" as const,
+        additionalProperties: false,
+        properties: {
+          action: { type: "string", enum: ["preflight", "configure_project"] },
+          folder_types: {
+            type: "array", minItems: 1, maxItems: 6, uniqueItems: true,
+            items: { type: "string", enum: ["capture", "audio_preview", "video_preview", "auto_save", "cc_libraries", "capsule_media"] },
+          },
+          destination: { type: "string", enum: ["same_as_project", "my_documents"] },
+          operation_id: operationId,
+        },
+        required: ["action"],
+      },
+      handler: async (args: WorkflowArgs) => {
+        if (args.action === "preflight") return invoke(bridge, "storage.preflight");
+        if (args.action !== "configure_project") return invalidAction(args.action);
+        if (!args.folder_types?.length ||
+          (args.destination !== "same_as_project" && args.destination !== "my_documents")) {
+          return { success: false, error: "configure_project requires folder_types and destination" };
+        }
+        const typeMap: Record<string, string> = {
+          capture: "capture", audio_preview: "audioPreview", video_preview: "videoPreview",
+          auto_save: "autoSave", cc_libraries: "ccLibraries", capsule_media: "capsuleMedia",
+        };
+        return invoke(bridge, "scratch.configure", {
+          folderTypes: args.folder_types.map((value) => typeMap[value]),
+          destination: args.destination === "same_as_project" ? "sameAsProject" : "myDocuments",
+          ...operation(args),
+        });
+      },
+    },
+
+    inspect_premiere_environment_uxp: {
+      description: "Inspect After Effects interoperability and the active Premiere project's current and supported graphics-white luminance values through documented read-only UXP APIs.",
+      parameters: {},
+      handler: async () => invoke(bridge, "environment.inspect"),
+    },
+
+    get_uxp_workspace_access: {
+      description: "Report whether the Premiere panel has an operator-approved persistent workspace folder. The native path and persistent token are never returned.",
+      parameters: {},
+      handler: async () => invoke(bridge, "workspace.status"),
+    },
+  };
+}

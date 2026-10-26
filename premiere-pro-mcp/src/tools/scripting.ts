@@ -1,0 +1,469 @@
+import { sequenceReadProperties, sequenceReadScript, type SequenceReadArgs } from "./sequence-read.js";
+import { buildToolScript, buildScript, escapeForExtendScript } from "../bridge/script-builder.js";
+import { sendCommand, sendRawCommand, BridgeOptions } from "../bridge/file-bridge.js";
+
+/** Property walk only: app/qe, identifiers, and numeric indexes. No calls or statements. */
+const SAFE_DOM_OBJECT_PATH = /^(?:app|qe)(?:\.[A-Za-z_][A-Za-z0-9_]*|\[\d+\])*$/;
+
+function safeDomObjectPath(objectPath: unknown): { ok: true; path: string } | { ok: false; error: string } {
+  if (typeof objectPath !== "string" || objectPath.length === 0 || objectPath.length > 512) {
+    return { ok: false, error: "object_path must be a non-empty Premiere DOM path of at most 512 characters." };
+  }
+  if (!SAFE_DOM_OBJECT_PATH.test(objectPath)) {
+    return {
+      ok: false,
+      error:
+        "object_path must be a property path starting with app or qe (for example app.project.activeSequence.videoTracks[0]). Function calls, operators, and statements are rejected because inspect_dom_object is not an unsafe-script tool.",
+    };
+  }
+  return { ok: true, path: objectPath };
+}
+
+export function getScriptingTools(bridgeOptions: BridgeOptions) {
+  return {
+    execute_extendscript: {
+      description: `Execute custom ExtendScript code in Premiere Pro. The code runs inside an IIFE with helper functions available.
+
+IMPORTANT: You MUST write ES3 syntax (var instead of let/const, no arrow functions, no template literals, no destructuring).
+
+Available helpers (auto-prepended):
+- __ticksToSeconds(ticks) / __secondsToTicks(seconds) — time conversion
+- __ticksToTimecode(ticks, fps) — timecode string
+- __findSequence(idOrName) — find sequence by name or ID
+- __findProjectItem(nodeIdOrName) — find project item recursively
+- __findClip(nodeId) — find clip in active sequence, returns {clip, trackIndex, clipIndex, trackType}
+- __getAllClips(seq) — get all clips in a sequence
+- __result(data) — return success with data (MUST call this or __error)
+- __error(msg) — return error message
+- TICKS_PER_SECOND — constant 254016000000
+- app.enableQE() — enable QE DOM access
+
+Your code MUST end with: return __result({...}) or return __error("message")
+
+Example: Set opacity to 50% on all video clips
+  var seq = app.project.activeSequence;
+  if (!seq) return __error("No active sequence");
+  var count = 0;
+  for (var t = 0; t < seq.videoTracks.numTracks; t++) {
+    var track = seq.videoTracks[t];
+    for (var c = 0; c < track.clips.numItems; c++) {
+      var clip = track.clips[c];
+      for (var i = 0; i < clip.components.numItems; i++) {
+        var comp = clip.components[i];
+        if (comp.displayName === "Opacity") {
+          for (var p = 0; p < comp.properties.numItems; p++) {
+            if (comp.properties[p].displayName === "Opacity") {
+              comp.properties[p].setValue(50, true);
+              count++;
+            }
+          }
+        }
+      }
+    }
+  }
+  return __result({updated: count});`,
+      parameters: {
+        type: "object" as const,
+        properties: {
+          code: {
+            type: "string",
+            description: "ExtendScript code to execute (ES3 syntax). Must use return __result({...}) or return __error('...'). Helpers are auto-prepended.",
+          },
+          timeout_ms: {
+            type: "number",
+            description: "Custom timeout in milliseconds (default: 30000). Increase for long operations.",
+          },
+        },
+        required: ["code"],
+      },
+      handler: async (args: { code: string; timeout_ms?: number }) => {
+        const script = buildToolScript(args.code);
+        const opts = { ...bridgeOptions };
+        if (args.timeout_ms) {
+          opts.timeoutMs = args.timeout_ms;
+        }
+        return sendRawCommand(script, opts);
+      },
+    },
+
+    evaluate_expression: {
+      description: `Evaluate a simple ExtendScript expression and return its value. Use for quick queries like checking a property, getting a count, or reading state. The expression should be a single value/call — NOT a full script.
+
+Examples:
+- "app.project.name" → project name
+- "app.project.activeSequence.name" → active sequence name
+- "app.project.rootItem.children.numItems" → number of root items
+- "app.project.activeSequence.videoTracks.numTracks" → number of video tracks
+- "app.version" → Premiere Pro version`,
+      parameters: {
+        type: "object" as const,
+        properties: {
+          expression: {
+            type: "string",
+            description: "ExtendScript expression to evaluate (e.g., 'app.project.name')",
+          },
+        },
+        required: ["expression"],
+      },
+      handler: async (args: { expression: string }) => {
+        const script = buildToolScript(`
+          try {
+            var val = ${args.expression};
+            return __result({ value: val, type: typeof val });
+          } catch(e) {
+            return __error("Expression error: " + e.toString());
+          }
+        `);
+        return sendRawCommand(script, bridgeOptions);
+      },
+    },
+
+    inspect_dom_object: {
+      description: `Inspect a Premiere Pro DOM object and list its properties, methods, and values. Useful for exploring the API and debugging. object_path must be a property path starting with app or qe (identifiers and numeric indexes only). Function calls, operators, and statements are rejected; use evaluate_expression with unsafe-script for those.
+
+Examples:
+- "app.project" → project properties
+- "app.project.activeSequence" → sequence properties
+- "app.project.activeSequence.videoTracks[0].clips[0]" → first clip on V1
+- "app.project.activeSequence.videoTracks[0].clips[0].components[0]" → first component of a clip`,
+      parameters: {
+        type: "object" as const,
+        properties: {
+          object_path: {
+            type: "string",
+            minLength: 1,
+            maxLength: 512,
+            description: "Property path starting with app or qe (e.g. 'app.project.activeSequence.videoTracks[0]'). Function calls and statements are rejected.",
+          },
+          max_depth: {
+            type: "number",
+            description: "Max depth for nested inspection (default: 1, max: 3)",
+          },
+        },
+        required: ["object_path"],
+      },
+      handler: async (args: { object_path: string; max_depth?: number }) => {
+        const objectPath = safeDomObjectPath(args.object_path);
+        if (!objectPath.ok) return { success: false, error: objectPath.error };
+        const maxDepth = Math.min(args.max_depth ?? 1, 3);
+        const quotedPath = escapeForExtendScript(objectPath.path);
+        const script = buildToolScript(`
+          function inspectObj(obj, depth, maxD) {
+            if (depth > maxD) return "<max depth>";
+            if (obj === null) return null;
+            if (obj === undefined) return undefined;
+            var t = typeof obj;
+            if (t === "string" || t === "number" || t === "boolean") return obj;
+            
+            var result = {};
+            var propCount = 0;
+            try {
+              for (var key in obj) {
+                if (propCount > 50) {
+                  result["__truncated"] = true;
+                  break;
+                }
+                try {
+                  var val = obj[key];
+                  var vt = typeof val;
+                  if (vt === "function") {
+                    result[key] = "[function]";
+                  } else if (vt === "object" && val !== null) {
+                    if (depth < maxD) {
+                      result[key] = inspectObj(val, depth + 1, maxD);
+                    } else {
+                      result[key] = "[object]";
+                    }
+                  } else {
+                    result[key] = val;
+                  }
+                } catch(e) {
+                  result[key] = "[error: " + e.toString() + "]";
+                }
+                propCount++;
+              }
+            } catch(e) {
+              return { __error: e.toString() };
+            }
+            
+            // Also try common collection properties
+            try { if (obj.numItems !== undefined) result["numItems"] = obj.numItems; } catch(e) {}
+            try { if (obj.numTracks !== undefined) result["numTracks"] = obj.numTracks; } catch(e) {}
+            try { if (obj.numSequences !== undefined) result["numSequences"] = obj.numSequences; } catch(e) {}
+            try { if (obj.length !== undefined) result["length"] = obj.length; } catch(e) {}
+            try { if (obj.name !== undefined) result["name"] = obj.name; } catch(e) {}
+            try { if (obj.displayName !== undefined) result["displayName"] = obj.displayName; } catch(e) {}
+            try { if (obj.matchName !== undefined) result["matchName"] = obj.matchName; } catch(e) {}
+            try { if (obj.nodeId !== undefined) result["nodeId"] = obj.nodeId; } catch(e) {}
+            
+            return result;
+          }
+          
+          try {
+            var obj = ${objectPath.path};
+            if (obj === null || obj === undefined) return __error("Object is null or undefined: ${quotedPath}");
+            var inspection = inspectObj(obj, 0, ${maxDepth});
+            return __result({
+              path: "${quotedPath}",
+              type: typeof obj,
+              inspection: inspection
+            });
+          } catch(e) {
+            return __error("Cannot access: ${quotedPath} — " + e.toString());
+          }
+        `);
+        return sendCommand(script, bridgeOptions);
+      },
+    },
+
+    list_clip_effects: {
+      description: "List effects/components exposed by the clip's standard DOM collection, with properties and current values. Some hosts omit QE-applied effects from this collection; absence here does not prove an effect is absent. get_effect_properties uses the same collection. Inspect Premiere's Effect Controls UI when complete QE effect presence must be confirmed.",
+      parameters: {
+        type: "object" as const,
+        properties: {
+          node_id: {
+            type: "string",
+            description: "Node ID of the clip to inspect",
+          },
+        },
+        required: ["node_id"],
+      },
+      handler: async (args: { node_id: string }) => {
+        const script = buildToolScript(`
+          var result = __findClip("${escapeForExtendScript(args.node_id)}");
+          if (!result) return __error("Clip not found: ${escapeForExtendScript(args.node_id)}");
+          
+          var clip = result.clip;
+          var components = [];
+          
+          for (var i = 0; i < clip.components.numItems; i++) {
+            var comp = clip.components[i];
+            var props = [];
+            for (var p = 0; p < comp.properties.numItems; p++) {
+              var prop = comp.properties[p];
+              var info = {
+                index: p,
+                displayName: prop.displayName,
+                matchName: ""
+              };
+              try { info.matchName = prop.matchName; } catch(e) {}
+              var color = __readColorValue(prop);
+              if (color) {
+                info.value = color;
+                info.valueType = "color_argb";
+                try { if (prop.isTimeVarying()) info.note = "Animated colour: this is the current value, not a per-keyframe sample."; } catch (eColorAnimation) {}
+              } else {
+                try { info.value = prop.getValue(0, 0); } catch(e) {}
+              }
+              try { info.isTimeVarying = prop.isTimeVarying(); } catch(e) {}
+              try { info.keyframesSupported = prop.areKeyframesSupported(); } catch(e) {}
+              props.push(info);
+            }
+            components.push({
+              index: i,
+              displayName: comp.displayName,
+              matchName: comp.matchName,
+              properties: props
+            });
+          }
+          
+          return __result({
+            clipName: clip.name,
+            nodeId: clip.nodeId,
+            trackType: result.trackType,
+            trackIndex: result.trackIndex,
+            componentCount: components.length,
+            enumerationScope: "standard_dom_components",
+            qeEffectsComplete: false,
+            components: components
+          });
+        `);
+        return sendCommand(script, bridgeOptions);
+      },
+    },
+
+    get_sequence_structure: {
+      description: "Get a bounded structural page of the active sequence (50 clips by default; follow pagination.nextOffset): all track counts, paged clips with positions, gaps, and clip metadata. Essential for understanding timeline state before making edits.",
+      parameters: {
+        type: "object" as const,
+        properties: {
+          ...sequenceReadProperties,
+          sequence_id: {
+            type: "string",
+            minLength: 1,
+            maxLength: 512,
+            description: "Sequence name or ID. Uses active sequence if omitted.",
+          },
+        },
+      },
+      handler: async (args: SequenceReadArgs & { sequence_id?: string }) => {
+        const seqLookup = args.sequence_id
+          ? `var seq = __findSequence("${escapeForExtendScript(args.sequence_id)}"); if (!seq) return __error("Sequence not found");`
+          : `var seq = app.project.activeSequence; if (!seq) return __error("No active sequence");`;
+
+        const bounds = sequenceReadScript(args);
+        const script = buildToolScript(`
+          ${bounds}
+          ${seqLookup}
+          
+          var videoTracks = [];
+          for (var t = 0; t < seq.videoTracks.numTracks; t++) {
+            var track = seq.videoTracks[t];
+            var clips = [];
+            for (var c = 0; c < track.clips.numItems; c++) {
+              var clip = track.clips[c];
+              if (!__readInclude(clip, "video", t)) continue;
+              var clipInfo = {
+                index: c,
+                nodeId: clip.nodeId,
+                name: clip.name,
+                startSeconds: __ticksToSeconds(clip.start.ticks),
+                endSeconds: __ticksToSeconds(clip.end.ticks),
+                durationSeconds: __ticksToSeconds(clip.duration.ticks),
+                inPointSeconds: __ticksToSeconds(clip.inPoint.ticks),
+                outPointSeconds: __ticksToSeconds(clip.outPoint.ticks),
+                mediaType: clip.mediaType,
+                enabled: true
+              };
+              try { clipInfo.enabled = !__isClipDisabled(clip); } catch(e) {}
+              try { clipInfo.speed = clip.getSpeed(); } catch(e) {}
+              __readPush(clips, clipInfo);
+            }
+            videoTracks.push({
+              index: t,
+              name: track.name,
+              clipCount: track.clips.numItems,
+              clips: clips,
+              isMuted: track.isMuted(),
+              isLocked: track.isLocked()
+            });
+          }
+          
+          var audioTracks = [];
+          for (var t = 0; t < seq.audioTracks.numTracks; t++) {
+            var track = seq.audioTracks[t];
+            var clips = [];
+            for (var c = 0; c < track.clips.numItems; c++) {
+              var clip = track.clips[c];
+              if (!__readInclude(clip, "audio", t)) continue;
+              __readPush(clips, {
+                index: c,
+                nodeId: clip.nodeId,
+                name: clip.name,
+                startSeconds: __ticksToSeconds(clip.start.ticks),
+                endSeconds: __ticksToSeconds(clip.end.ticks),
+                durationSeconds: __ticksToSeconds(clip.duration.ticks),
+                inPointSeconds: __ticksToSeconds(clip.inPoint.ticks),
+                outPointSeconds: __ticksToSeconds(clip.outPoint.ticks),
+                mediaType: clip.mediaType
+              });
+            }
+            audioTracks.push({
+              index: t,
+              name: track.name,
+              clipCount: track.clips.numItems,
+              clips: clips,
+              isMuted: track.isMuted(),
+              isLocked: track.isLocked()
+            });
+          }
+          
+          if (__readError) return __error(__readError);
+          return __readResult({
+            pagination: __readReceipt(),
+            name: seq.name,
+            id: seq.sequenceID,
+            durationSeconds: __ticksToSeconds(seq.end),
+            videoTrackCount: videoTracks.length,
+            audioTrackCount: audioTracks.length,
+            videoTracks: videoTracks,
+            audioTracks: audioTracks
+          });
+        `);
+        return sendCommand(script, bridgeOptions);
+      },
+    },
+
+    get_premiere_state: {
+      description: "Get a comprehensive snapshot of the current Premiere Pro state: project info, active sequence, playhead position, selected clips, and available sequences. The best first call to understand the current context.",
+      parameters: {},
+      handler: async () => {
+        const script = buildToolScript(`
+          var state = {};
+          
+          // Project info
+          var project = app.project;
+          if (!project) return __error("No project is open");
+          state.project = {
+            name: project.name,
+            path: project.path,
+            rootItemCount: project.rootItem.children.numItems,
+            sequenceCount: project.sequences.numSequences
+          };
+          
+          // List all sequences
+          state.sequences = [];
+          for (var i = 0; i < project.sequences.numSequences; i++) {
+            var seq = project.sequences[i];
+            state.sequences.push({
+              name: seq.name,
+              id: seq.sequenceID,
+              duration: __ticksToSeconds(seq.end)
+            });
+          }
+          
+          // Active sequence
+          var active = project.activeSequence;
+          if (active) {
+            state.activeSequence = {
+              name: active.name,
+              id: active.sequenceID,
+              durationSeconds: __ticksToSeconds(active.end),
+              videoTrackCount: active.videoTracks.numTracks,
+              audioTrackCount: active.audioTracks.numTracks
+            };
+            
+            // Playhead
+            try {
+              var playerPos = active.getPlayerPosition();
+              state.playheadSeconds = __ticksToSeconds(playerPos.ticks);
+            } catch(e) {}
+            
+            // Selected clips
+            try {
+              var sel = active.getSelection();
+              state.selectedClips = [];
+              for (var i = 0; i < sel.length; i++) {
+                state.selectedClips.push({
+                  nodeId: sel[i].nodeId,
+                  name: sel[i].name
+                });
+              }
+            } catch(e) {
+              state.selectedClips = [];
+            }
+            
+            // Quick clip count
+            var totalClips = 0;
+            for (var t = 0; t < active.videoTracks.numTracks; t++) {
+              totalClips += active.videoTracks[t].clips.numItems;
+            }
+            for (var t = 0; t < active.audioTracks.numTracks; t++) {
+              totalClips += active.audioTracks[t].clips.numItems;
+            }
+            state.activeSequence.totalClipCount = totalClips;
+          } else {
+            state.activeSequence = null;
+          }
+          
+          // Premiere version
+          try { state.version = app.version; } catch(e) {}
+          try { state.buildNumber = app.build; } catch(e) {}
+          
+          return __result(state);
+        `);
+        return sendCommand(script, bridgeOptions);
+      },
+    },
+  };
+}

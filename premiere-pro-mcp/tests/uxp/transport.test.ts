@@ -1,0 +1,268 @@
+import { runWithExpectedProject } from "../../src/bridge/project-guard.js";
+import { once } from "node:events";
+import { afterEach, describe, expect, it } from "vitest";
+import { WebSocket } from "ws";
+import {
+  UxpBridgeError,
+  UxpWebSocketBridge,
+} from "../../src/bridge/uxp-websocket-bridge.js";
+import { cleanupTempDirs, makePrivateBridgeTempDir } from "../helpers/temp-dir.js";
+
+const TOKEN = "test-token-at-least-16-characters";
+const bridges: UxpWebSocketBridge[] = [];
+
+async function createBridge(options: {
+  requestTimeoutMs?: number;
+  handshakeTimeoutMs?: number;
+} = {}) {
+  const tempDir = makePrivateBridgeTempDir("uxp-transport-lease-");
+  const bridge = new UxpWebSocketBridge({
+    tempDir,
+    token: TOKEN,
+    port: 0,
+    ...options,
+  });
+  bridges.push(bridge);
+  await bridge.start();
+  return bridge;
+}
+
+function bridgeUrl(bridge: UxpWebSocketBridge, token = TOKEN): string {
+  const address = bridge.address();
+  return `ws://${address.host}:${address.port}${address.path}?token=${encodeURIComponent(token)}`;
+}
+
+async function connectHost(
+  bridge: UxpWebSocketBridge,
+  commands: Record<string, { supported: boolean }> = {
+    "state.get": { supported: true },
+    "frame.export": { supported: true },
+  },
+) {
+  const client = new WebSocket(bridgeUrl(bridge));
+  await once(client, "open");
+  const connected = once(bridge, "connected");
+  client.send(JSON.stringify({
+    protocolVersion: 1,
+    type: "hello",
+    payload: {
+      backend: "uxp",
+      protocolVersion: 1,
+      commandSchemaVersion: 1, receiptVersion: 1, replayPersistence: "durable_hashed_tombstones",
+      commands,
+    },
+  }));
+  await connected;
+  return client;
+}
+
+afterEach(async () => {
+  await Promise.all(bridges.splice(0).map((bridge) => bridge.stop()));
+  cleanupTempDirs();
+});
+
+describe("UXP WebSocket bridge", () => {
+  it("binds only to IPv4 loopback and requires the configured token", async () => {
+    const bridge = await createBridge();
+    expect(bridge.address()).toMatchObject({ host: "127.0.0.1", path: "/uxp" });
+
+    const unauthorized = new WebSocket(bridgeUrl(bridge, "wrong-token"));
+    unauthorized.on("error", () => {});
+    const [, response] = await once(unauthorized, "unexpected-response");
+    expect(response.statusCode).toBe(401);
+    response.resume();
+    expect(bridge.getState()).toEqual({ status: "listening", connected: false });
+  });
+
+  it("validates the versioned hello before reporting capabilities", async () => {
+    const bridge = await createBridge();
+    const client = await connectHost(bridge);
+    expect(bridge.getState()).toMatchObject({
+      status: "connected",
+      connected: true,
+      protocolVersion: 1,
+      capabilities: {
+        backend: "uxp",
+        commands: { "state.get": { supported: true } },
+      },
+    });
+    client.close();
+  });
+
+  it("correlates serialized command results by request id and ignores unrelated replies", async () => {
+    const bridge = await createBridge();
+    const client = await connectHost(bridge);
+    const commands: any[] = [];
+    client.on("message", (data) => {
+      const command = JSON.parse(data.toString()); commands.push(command);
+      client.send(JSON.stringify({ protocolVersion: 1, type: "result", requestId: "unrelated-request", payload: { ok: true, result: { wrong: true } } }));
+      client.send(JSON.stringify({ protocolVersion: 1, type: "result", requestId: command.requestId, payload: { ok: true, result: { command: command.command } } }));
+    });
+    const [state, frame] = await Promise.all([bridge.request("state.get"), bridge.request("frame.export", { filename: "frame.png" })]);
+    expect(state).toEqual({ command: "state.get" }); expect(frame).toEqual({ command: "frame.export" });
+    expect(commands.map((command) => command.command)).toEqual(["state.get", "frame.export"]);
+    client.close();
+  });
+
+  it("rejects unsupported commands before sending them", async () => {
+    const bridge = await createBridge();
+    const client = await connectHost(bridge, { "state.get": { supported: true } });
+    await expect(bridge.request("frame.export")).rejects.toMatchObject({
+      code: "UXP_COMMAND_UNSUPPORTED",
+    });
+    client.close();
+  });
+
+  it("refuses a CEP project guard without sending a UXP command", async () => {
+    const bridge = await createBridge();
+    const client = await connectHost(bridge, { "frame.export": { supported: true } });
+    const sent: string[] = [];
+    client.on("message", (data) => sent.push(String(data)));
+    await expect(runWithExpectedProject("/target.prproj", () => bridge.request("frame.export")))
+      .rejects.toMatchObject({ code: "UXP_PROJECT_GUARD_UNSUPPORTED" });
+    expect(sent).toEqual([]);
+    client.close();
+  });
+
+  it("re-reads live capabilities before refusing a command the handshake marked unsupported", async () => {
+    // Measured on 26.5.2: a panel that connects before a project is open or a workspace is
+    // approved advertises fewer commands, and the handshake is never resent.
+    const bridge = await createBridge();
+    const client = await connectHost(bridge, { "capabilities.get": { supported: true }, "frame.export": { supported: false } });
+    const sent: string[] = [];
+    client.on("message", (data) => {
+      const message = JSON.parse(String(data));
+      sent.push(message.command);
+      const result = message.command === "capabilities.get"
+        ? { backend: "uxp", protocolVersion: 1, commandSchemaVersion: 1, receiptVersion: 1, replayPersistence: "durable_hashed_tombstones", commands: { "capabilities.get": { supported: true }, "frame.export": { supported: true } } }
+        : { exported: true };
+      client.send(JSON.stringify({ protocolVersion: 1, type: "result", requestId: message.requestId, payload: { ok: true, result } }));
+    });
+
+    await expect(bridge.request("frame.export", { filename: "frame.png" })).resolves.toEqual({ exported: true });
+    expect(sent).toEqual(["capabilities.get", "frame.export"]);
+    const state = bridge.getState();
+    expect(state.connected && state.capabilities.commands["frame.export"]).toEqual({ supported: true });
+    client.close();
+  });
+
+  it("still refuses without sending the command when the live capabilities agree it is unsupported", async () => {
+    const bridge = await createBridge();
+    const client = await connectHost(bridge, { "capabilities.get": { supported: true }, "frame.export": { supported: false } });
+    const sent: string[] = [];
+    client.on("message", (data) => {
+      const message = JSON.parse(String(data));
+      sent.push(message.command);
+      const result = { backend: "uxp", protocolVersion: 1, commands: { "capabilities.get": { supported: true }, "frame.export": { supported: false } } };
+      client.send(JSON.stringify({ protocolVersion: 1, type: "result", requestId: message.requestId, payload: { ok: true, result } }));
+    });
+
+    await expect(bridge.request("frame.export")).rejects.toMatchObject({ code: "UXP_COMMAND_UNSUPPORTED" });
+    expect(sent).toEqual(["capabilities.get"]);
+    client.close();
+  });
+
+  it("times out requests and rejects in-flight work on disconnect", async () => {
+    const bridge = await createBridge({ requestTimeoutMs: 30 });
+    const client = await connectHost(bridge);
+    await expect(bridge.request("state.get")).rejects.toMatchObject({
+      code: "UXP_TIMEOUT",
+    });
+
+    const pending = bridge.request("state.get");
+    client.close();
+    await expect(pending).rejects.toMatchObject({ code: "UXP_DISCONNECTED" });
+  });
+
+  it("honors a per-request minimum timeout for bounded host waits", async () => {
+    const bridge = await createBridge({ requestTimeoutMs: 20 });
+    const client = await connectHost(bridge);
+    client.once("message", (data) => {
+      const command = JSON.parse(data.toString());
+      setTimeout(() => {
+        client.send(JSON.stringify({
+          protocolVersion: 1,
+          type: "result",
+          requestId: command.requestId,
+          payload: { ok: true, result: { waited: true } },
+        }));
+      }, 40);
+    });
+
+    await expect(bridge.request("state.get", {}, { minimumTimeoutMs: 100 }))
+      .resolves.toEqual({ waited: true });
+    client.close();
+  });
+
+  it("rejects invalid per-request minimum timeouts before dispatch", async () => {
+    const bridge = await createBridge();
+    const client = await connectHost(bridge);
+
+    await expect(bridge.request("state.get", {}, { minimumTimeoutMs: -1 }))
+      .rejects.toThrow("non-negative integer");
+    await expect(bridge.request("state.get", {}, { minimumTimeoutMs: 1.5 }))
+      .rejects.toThrow("non-negative integer");
+    client.close();
+  });
+
+  it("rejects invalid configuration without opening a listener", () => {
+    expect(() => new UxpWebSocketBridge({ token: "short" })).toThrow(
+      "at least 16 characters",
+    );
+    expect(() => new UxpWebSocketBridge({
+      token: TOKEN,
+      port: 70_000,
+    })).toThrow("between 0 and 65535");
+    expect(new UxpBridgeError("CODE", "message")).toMatchObject({
+      code: "CODE",
+      message: "message",
+    });
+    expect(() => new UxpWebSocketBridge({ token: TOKEN, path: "uxp" }))
+      .toThrow("must begin with '/'");
+  });
+
+  it("forwards host events and command failures", async () => {
+    const bridge = await createBridge();
+    const client = await connectHost(bridge);
+    const event = once(bridge, "event");
+    client.send(JSON.stringify({ protocolVersion: 1, type: "event", payload: { kind: "projectChanged" } }));
+    await expect(event).resolves.toEqual([{ kind: "projectChanged" }]);
+
+    client.once("message", (data) => {
+      const command = JSON.parse(data.toString());
+      client.send(JSON.stringify({
+        protocolVersion: 1, type: "result", requestId: command.requestId,
+        payload: { ok: false, error: { code: "HOST_BUSY", message: "Dialog open" } },
+      }));
+    });
+    await expect(bridge.request("state.get")).rejects.toMatchObject({ code: "HOST_BUSY", message: "Dialog open" });
+    client.close();
+  });
+
+  it("rejects requests while stopped and rejects work when a host reconnects", async () => {
+    const bridge = await createBridge();
+    await expect(bridge.request("state.get")).rejects.toMatchObject({ code: "UXP_NOT_CONNECTED" });
+    const first = await connectHost(bridge);
+    const pending = bridge.request("state.get");
+    const rejection = expect(pending).rejects.toMatchObject({ code: "UXP_RECONNECTED" });
+    const second = await connectHost(bridge);
+    await rejection;
+    first.on("error", () => {});
+    second.close();
+  });
+
+  it("closes clients that send invalid JSON or an invalid handshake", async () => {
+    const bridge = await createBridge();
+    const invalidJson = new WebSocket(bridgeUrl(bridge));
+    await once(invalidJson, "open");
+    invalidJson.send("{");
+    const [jsonCode] = await once(invalidJson, "close");
+    expect(jsonCode).toBe(1007);
+
+    const invalidHello = new WebSocket(bridgeUrl(bridge));
+    await once(invalidHello, "open");
+    invalidHello.send(JSON.stringify({ protocolVersion: 99, type: "hello", payload: { backend: "uxp", protocolVersion: 99, commands: {} } }));
+    const [helloCode] = await once(invalidHello, "close");
+    expect(helloCode).toBe(1008);
+  });
+});

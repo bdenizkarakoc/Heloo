@@ -1,0 +1,1 @@
+{"name":"kesim-selfedit-dev","private":true,"scripts":{"test":"node --test test/"},"dependencies":{"@napi-rs/canvas":"^1.0.13"}}

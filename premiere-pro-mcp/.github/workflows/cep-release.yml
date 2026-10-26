@@ -1,0 +1,36 @@
+name: Attach Premiere connector
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  attach-connector:
+    runs-on: windows-latest
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.release.tag_name }}
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - name: Verify release identity
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: node scripts/verify-release-tag.mjs
+      - name: Build and verify signed connector
+        shell: pwsh
+        run: ./scripts/build-signed-cep.ps1
+      - name: Attach connector to release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" "artifacts/MCPBridgeCEP.zxp" --clobber

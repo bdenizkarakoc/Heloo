@@ -1,0 +1,14 @@
+.git
+.github
+node_modules
+dist
+coverage
+output
+*.log
+.worktrees
+**/.env*
+**/*.pem
+**/*.key
+**/*.pfx
+**/*.p12
+**/.npmrc

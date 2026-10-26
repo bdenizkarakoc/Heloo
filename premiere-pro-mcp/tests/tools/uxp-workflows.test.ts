@@ -1,0 +1,385 @@
+import { describe, expect, it, vi } from "vitest";
+import { getUxpTools } from "../../src/tools/uxp.js";
+import type { UxpWebSocketBridge } from "../../src/bridge/uxp-websocket-bridge.js";
+
+const WORKFLOW_TOOLS = [
+  "manage_clip_effects_uxp",
+  "inspect_track_item_identity_uxp",
+  "batch_selected_clips_uxp",
+  "manage_timeline_selection_uxp",
+  "detect_scene_edits_uxp",
+  "manage_proxy_ingest_uxp",
+  "relink_offline_media_uxp",
+  "manage_metadata_uxp",
+  "inspect_project_panel_metadata_uxp",
+  "manage_project_panel_metadata_uxp",
+  "create_project_metadata_field_uxp",
+  "manage_color_conformance_uxp",
+  "audition_source_monitor_uxp",
+  "preflight_production_storage_uxp",
+  "inspect_premiere_environment_uxp",
+  "get_uxp_workspace_access",
+] as const;
+
+describe("stable UXP workflow MCP catalog", () => {
+  it("publishes the researched workflow entrypoints with bounded schemas", () => {
+    const bridge = { request: vi.fn(), getState: vi.fn() } as unknown as UxpWebSocketBridge;
+    const tools = getUxpTools(bridge) as Record<string, { parameters: Record<string, unknown> }>;
+    expect(Object.keys(tools)).toEqual(expect.arrayContaining(WORKFLOW_TOOLS));
+    expect(tools.manage_clip_effects_uxp.parameters).toMatchObject({
+      type: "object",
+      additionalProperties: false,
+      required: ["action"],
+      properties: {
+        action: { enum: ["catalog", "inspect", "add", "remove"] },
+        effect_id: { maxLength: 256 },
+        operation_id: { pattern: expect.any(String) },
+      },
+    });
+    expect(tools.inspect_track_item_identity_uxp.parameters).toMatchObject({
+      type: "object", additionalProperties: false,
+      required: ["media_type", "track_index", "clip_index"],
+      properties: { media_type: { enum: ["video", "audio"] }, expected_sequence_guid: { maxLength: 512 } },
+    });
+    expect(tools.manage_metadata_uxp.parameters).toMatchObject({
+      properties: {
+        action: { enum: ["get", "update", "inspect_fields", "update_field"] },
+        project_metadata: { maxLength: 350000, description: expect.stringContaining("900,000-byte") },
+        xmp_metadata: { maxLength: 350000, description: expect.stringContaining("900,000-byte") },
+        updated_fields: { maxItems: 128 },
+        field_name: { minLength: 1, maxLength: 512 },
+        value: { maxLength: 4096 },
+      },
+    });
+    expect(tools.inspect_project_panel_metadata_uxp.parameters).toMatchObject({
+      type: "object",
+      additionalProperties: false,
+      required: ["action"],
+      properties: {
+        action: { enum: ["panel", "item_columns"] },
+        project_item_id: { minLength: 1, maxLength: 512 },
+        project_item_name: { minLength: 1, maxLength: 255 },
+      },
+    });
+    expect(tools.manage_project_panel_metadata_uxp.parameters).toMatchObject({
+      type: "object",
+      additionalProperties: false,
+      required: ["action"],
+      properties: {
+        action: { enum: ["inspect", "update"] },
+        expected_project_guid: { minLength: 1, maxLength: 512 },
+        expected_project_panel_metadata: { maxLength: 12288 },
+        project_panel_metadata: { maxLength: 12288 },
+        confirm_update: { type: "boolean" },
+        operation_id: { pattern: expect.any(String) },
+      },
+    });
+    expect(tools.create_project_metadata_field_uxp.parameters).toMatchObject({
+      type: "object",
+      additionalProperties: false,
+      required: ["action"],
+      properties: {
+        action: { enum: ["inspect", "create"] },
+        expected_project_guid: { minLength: 1, maxLength: 512 },
+        expected_project_panel_metadata: { maxLength: 350000 },
+        field_name: { minLength: 1, maxLength: 128, pattern: expect.any(String) },
+        field_label: { minLength: 1, maxLength: 255 },
+        schema_field_type: { enum: ["integer", "real", "text", "boolean"] },
+        confirm_create: { type: "boolean" },
+        operation_id: { pattern: expect.any(String) },
+      },
+    });
+    expect(tools.relink_offline_media_uxp.parameters).toMatchObject({
+      required: ["new_path", "confirm_non_undoable"],
+      properties: { new_path: { maxLength: 4096 }, confirm_non_undoable: { type: "boolean" } },
+    });
+    expect(tools.manage_proxy_ingest_uxp.parameters).toMatchObject({
+      properties: {
+        project_item_id: { minLength: 1, maxLength: 512 },
+        project_item_name: { minLength: 1, maxLength: 255 },
+      },
+    });
+    expect(tools.manage_timeline_selection_uxp.parameters).toMatchObject({
+      required: ["action"],
+      properties: {
+        action: { enum: ["inspect", "inspect_targets", "replace", "add", "remove", "clear"] },
+        selection_targets: {
+          minItems: 1, maxItems: 64,
+          items: { required: ["media_type", "track_index", "clip_index"] },
+        },
+        expected_sequence_guid: { minLength: 1, maxLength: 512 },
+        selection_items: {
+          minItems: 1, maxItems: 64,
+          items: {
+            additionalProperties: false,
+            required: [
+              "media_type", "track_index", "clip_index", "expected_project_item_id",
+              "expected_start_seconds", "expected_end_seconds",
+            ],
+          },
+        },
+      },
+    });
+  });
+
+  it("maps timeline selection inspection and guarded mutations", async () => {
+    const request = vi.fn().mockResolvedValue({ outcome: "verified" });
+    const bridge = { request, getState: vi.fn() } as unknown as UxpWebSocketBridge;
+    const tools = getUxpTools(bridge);
+
+    await tools.manage_timeline_selection_uxp.handler({ action: "inspect" });
+    await tools.manage_timeline_selection_uxp.handler({
+      action: "inspect_targets",
+      selection_targets: [{ media_type: "audio", track_index: 0, clip_index: 4 }],
+    });
+    await tools.manage_timeline_selection_uxp.handler({
+      action: "replace", expected_sequence_guid: "sequence-1", operation_id: "selection-1",
+      selection_items: [{
+        media_type: "video", track_index: 1, clip_index: 2,
+        expected_project_item_id: "clip-17", expected_start_seconds: 3.25, expected_end_seconds: 7.5,
+      }],
+    });
+    await tools.manage_timeline_selection_uxp.handler({
+      action: "clear", expected_sequence_guid: "sequence-1", operation_id: "selection-2",
+    });
+
+    expect(request).toHaveBeenNthCalledWith(1, "selection.fingerprints.inspect", {});
+    expect(request).toHaveBeenNthCalledWith(2, "selection.targets.inspect", {
+      items: [{ mediaType: "audio", trackIndex: 0, clipIndex: 4 }],
+    });
+    expect(request).toHaveBeenNthCalledWith(3, "selection.update", {
+      mode: "replace", expectedSequenceGuid: "sequence-1", operationId: "selection-1",
+      items: [{
+        mediaType: "video", trackIndex: 1, clipIndex: 2,
+        expectedProjectItemId: "clip-17", expectedStartSeconds: 3.25, expectedEndSeconds: 7.5,
+      }],
+    });
+    expect(request).toHaveBeenNthCalledWith(4, "selection.update", {
+      mode: "clear", expectedSequenceGuid: "sequence-1", operationId: "selection-2",
+    });
+  });
+
+  it("maps bounded track-item identity inspection without granting an edit route", async () => {
+    const request = vi.fn().mockResolvedValue({ outcome: "verified" });
+    const bridge = { request, getState: vi.fn() } as unknown as UxpWebSocketBridge;
+    await getUxpTools(bridge).inspect_track_item_identity_uxp.handler({
+      media_type: "audio", track_index: 2, clip_index: 4, expected_sequence_guid: "sequence-1",
+    });
+    expect(request).toHaveBeenCalledWith("trackItem.identity.inspect", {
+      mediaType: "audio", trackIndex: 2, clipIndex: 4, expectedSequenceGuid: "sequence-1",
+    });
+  });
+
+  it("rejects incomplete timeline selection mutations before bridge access", async () => {
+    const request = vi.fn();
+    const bridge = { request, getState: vi.fn() } as unknown as UxpWebSocketBridge;
+    const tools = getUxpTools(bridge);
+
+    await expect(tools.manage_timeline_selection_uxp.handler({ action: "clear" }))
+      .resolves.toMatchObject({ success: false, error: expect.stringContaining("expected_sequence_guid") });
+    await expect(tools.manage_timeline_selection_uxp.handler({ action: "inspect_targets" }))
+      .resolves.toMatchObject({ success: false, error: expect.stringContaining("selection_targets") });
+    await expect(tools.manage_timeline_selection_uxp.handler({
+      action: "replace", expected_sequence_guid: "sequence-1",
+    })).resolves.toMatchObject({ success: false, error: expect.stringContaining("selection_items") });
+    await expect(tools.manage_timeline_selection_uxp.handler({
+      action: "clear", expected_sequence_guid: "sequence-1", selection_items: [],
+    })).resolves.toMatchObject({ success: false, error: expect.stringContaining("omitted") });
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it("rejects incomplete storage configuration and preserves explicit empty selectors", async () => {
+    const request = vi.fn().mockResolvedValue({ outcome: "verified" });
+    const bridge = { request, getState: vi.fn() } as unknown as UxpWebSocketBridge;
+    const tools = getUxpTools(bridge);
+
+    await expect(tools.preflight_production_storage_uxp.handler({
+      action: "configure_project", folder_types: ["capture"],
+    })).resolves.toMatchObject({ success: false, error: expect.stringContaining("destination") });
+    expect(request).not.toHaveBeenCalled();
+
+    await tools.manage_metadata_uxp.handler({ action: "get", project_item_id: "" });
+    expect(request).toHaveBeenCalledWith("metadata.get", { projectItemId: "" });
+  });
+
+  it("maps consolidated public actions to exact capability-gated UXP commands", async () => {
+    const request = vi.fn().mockResolvedValue({ outcome: "verified" });
+    const bridge = { request, getState: vi.fn() } as unknown as UxpWebSocketBridge;
+    const tools = getUxpTools(bridge);
+
+    await tools.manage_clip_effects_uxp.handler({
+      action: "add", media_type: "video", track_index: 1, clip_index: 2,
+      effect_id: "PR.Test", insertion_index: 3, operation_id: "effect-1",
+    });
+    await tools.batch_selected_clips_uxp.handler({
+      action: "remove_effect", media_type: "audio", component_index: 4,
+      expected_effect_id: "Dynamics", operation_id: "batch-1",
+    });
+    await tools.detect_scene_edits_uxp.handler({ mode: "create_markers", operation_id: "scene-1" });
+    await tools.manage_proxy_ingest_uxp.handler({ action: "set_ingest", enabled: true, operation_id: "ingest-1" });
+    await tools.relink_offline_media_uxp.handler({
+      project_item_id: "clip-1", new_path: "D:/Approved/online.mov", expected_current_path: "D:/Approved/missing.mov",
+      confirm_non_undoable: true, operation_id: "relink-1",
+    });
+    await tools.manage_metadata_uxp.handler({
+      action: "update", project_item_id: "clip-1", project_metadata: "metadata", updated_fields: ["LogNote"], operation_id: "meta-1",
+    });
+    await tools.manage_metadata_uxp.handler({
+      action: "inspect_fields", project_item_id: "clip-1", include_sensitive: false, namespaces: ["premiere"],
+    });
+    await tools.manage_metadata_uxp.handler({
+      action: "update_field", project_item_id: "clip-1", packet: "project",
+      field_name: "Column.Intrinsic.LogNote", value: "slate-2", expected_value: "slate-1", operation_id: "field-1",
+    });
+    await tools.manage_project_panel_metadata_uxp.handler({
+      action: "update", expected_project_guid: "project-1", expected_project_panel_metadata: "<before/>",
+      project_panel_metadata: "<after/>", confirm_update: true, operation_id: "panel-1",
+    });
+    await tools.manage_color_conformance_uxp.handler({
+      action: "update", project_item_id: "clip-1", frame_rate: 24, input_lut_id: "lut-guid", operation_id: "color-1",
+    });
+    await tools.audition_source_monitor_uxp.handler({ action: "open_file", file_path: "D:/Approved/take.mov", operation_id: "monitor-1" });
+    await tools.preflight_production_storage_uxp.handler({
+      action: "configure_project", folder_types: ["capture", "auto_save"], destination: "same_as_project", operation_id: "scratch-1",
+    });
+    await tools.inspect_premiere_environment_uxp.handler();
+    await tools.get_uxp_workspace_access.handler();
+
+    expect(request).toHaveBeenNthCalledWith(1, "effects.chain.add", {
+      mediaType: "video", trackIndex: 1, clipIndex: 2, effectId: "PR.Test", insertionIndex: 3, operationId: "effect-1",
+    });
+    expect(request).toHaveBeenNthCalledWith(2, "effects.selection.remove", {
+      mediaType: "audio", componentIndex: 4, expectedEffectId: "Dynamics", operationId: "batch-1",
+    });
+    expect(request).toHaveBeenNthCalledWith(3, "sceneEdit.detect", { mode: "createMarkers", operationId: "scene-1" });
+    expect(request).toHaveBeenNthCalledWith(4, "ingest.configure", { enabled: true, operationId: "ingest-1" });
+    expect(request).toHaveBeenNthCalledWith(5, "media.relink", {
+      projectItemId: "clip-1", newPath: "D:/Approved/online.mov", expectedCurrentPath: "D:/Approved/missing.mov",
+      confirmNonUndoable: true, operationId: "relink-1",
+    });
+    expect(request).toHaveBeenNthCalledWith(6, "metadata.update", {
+      projectItemId: "clip-1", projectMetadata: "metadata", updatedFields: ["LogNote"], operationId: "meta-1",
+    });
+    expect(request).toHaveBeenNthCalledWith(7, "metadata.fields.inspect", {
+      projectItemId: "clip-1", includeSensitive: false, namespaces: ["premiere"],
+    });
+    expect(request).toHaveBeenNthCalledWith(8, "metadata.fields.update", {
+      projectItemId: "clip-1", packet: "project", name: "Column.Intrinsic.LogNote",
+      value: "slate-2", expectedValue: "slate-1", operationId: "field-1",
+    });
+    expect(request).toHaveBeenNthCalledWith(9, "metadata.projectPanel.update", {
+      expectedProjectGuid: "project-1", expectedProjectPanelMetadata: "<before/>", projectPanelMetadata: "<after/>",
+      confirmUpdate: true, operationId: "panel-1",
+    });
+    expect(request).toHaveBeenNthCalledWith(10, "footage.conform", {
+      projectItemId: "clip-1", frameRate: 24, inputLutId: "lut-guid", operationId: "color-1",
+    });
+    expect(request).toHaveBeenNthCalledWith(11, "sourceMonitor.open", { filePath: "D:/Approved/take.mov", operationId: "monitor-1" });
+    expect(request).toHaveBeenNthCalledWith(12, "scratch.configure", {
+      folderTypes: ["capture", "autoSave"], destination: "sameAsProject", operationId: "scratch-1",
+    });
+    expect(request).toHaveBeenNthCalledWith(13, "environment.inspect", {});
+    expect(request).toHaveBeenNthCalledWith(14, "workspace.status", {});
+  });
+
+  it("maps Project-panel metadata reads and guarded writes to separate authority routes", async () => {
+    const request = vi.fn().mockResolvedValue({ outcome: "verified" });
+    const bridge = { request, getState: vi.fn() } as unknown as UxpWebSocketBridge;
+    const tool = getUxpTools(bridge).inspect_project_panel_metadata_uxp;
+
+    await tool.handler({ action: "panel" });
+    await tool.handler({ action: "item_columns", project_item_id: "clip-1" });
+    await getUxpTools(bridge).manage_project_panel_metadata_uxp.handler({
+      action: "inspect",
+    });
+    await getUxpTools(bridge).manage_project_panel_metadata_uxp.handler({
+      action: "update", expected_project_guid: "project-1", expected_project_panel_metadata: "<before/>",
+      project_panel_metadata: "<after/>", confirm_update: true, operation_id: "panel-1",
+    });
+
+    expect(request).toHaveBeenNthCalledWith(1, "metadata.projectPanel.get", {});
+    expect(request).toHaveBeenNthCalledWith(2, "metadata.columns.get", { projectItemId: "clip-1" });
+    expect(request).toHaveBeenNthCalledWith(3, "metadata.projectPanel.get", {});
+    expect(request).toHaveBeenNthCalledWith(4, "metadata.projectPanel.update", {
+      expectedProjectGuid: "project-1", expectedProjectPanelMetadata: "<before/>", projectPanelMetadata: "<after/>",
+      confirmUpdate: true, operationId: "panel-1",
+    });
+  });
+
+  it("maps Project metadata schema inspection and creation to separate authority routes", async () => {
+    const request = vi.fn().mockResolvedValue({ outcome: "committed_unverified" });
+    const bridge = { request, getState: vi.fn() } as unknown as UxpWebSocketBridge;
+    const tool = getUxpTools(bridge).create_project_metadata_field_uxp;
+
+    await tool.handler({ action: "inspect" });
+    await tool.handler({
+      action: "create", expected_project_guid: "project-1", expected_project_panel_metadata: "<before/>",
+      field_name: "McpReviewState", field_label: "MCP Review State", schema_field_type: "text",
+      confirm_create: true, operation_id: "schema-1",
+    });
+
+    expect(request).toHaveBeenNthCalledWith(1, "metadata.projectSchema.inspect", {});
+    expect(request).toHaveBeenNthCalledWith(2, "metadata.projectSchema.create", {
+      expectedProjectGuid: "project-1", expectedProjectPanelMetadata: "<before/>",
+      fieldName: "McpReviewState", fieldLabel: "MCP Review State", fieldType: "text",
+      confirmCreate: true, operationId: "schema-1",
+    });
+  });
+
+  it("rejects unsupported dispatcher actions before bridge access", async () => {
+    const request = vi.fn();
+    const bridge = { request, getState: vi.fn() } as unknown as UxpWebSocketBridge;
+    const tools = getUxpTools(bridge);
+
+    const results = await Promise.all([
+      tools.manage_clip_effects_uxp.handler({ action: "unsupported" }),
+      tools.batch_selected_clips_uxp.handler({ action: "unsupported" }),
+      tools.manage_timeline_selection_uxp.handler({ action: "unsupported" }),
+      tools.manage_proxy_ingest_uxp.handler({ action: "unsupported" }),
+      tools.manage_metadata_uxp.handler({ action: "unsupported" }),
+      tools.inspect_project_panel_metadata_uxp.handler({ action: "unsupported" }),
+      tools.manage_project_panel_metadata_uxp.handler({ action: "unsupported" }),
+      tools.create_project_metadata_field_uxp.handler({ action: "unsupported" }),
+      tools.manage_color_conformance_uxp.handler({ action: "unsupported" }),
+      tools.audition_source_monitor_uxp.handler({ action: "unsupported" }),
+    ]);
+
+    expect(results).toEqual(Array.from({ length: 10 }, () => ({
+      success: false,
+      error: "Unsupported workflow action: unsupported",
+    })));
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it("normalizes bridge failures and forwards optional proxy controls", async () => {
+    const request = vi.fn()
+      .mockRejectedValueOnce(new Error("host disconnected"))
+      .mockResolvedValueOnce({ outcome: "verified" });
+    const bridge = { request, getState: vi.fn() } as unknown as UxpWebSocketBridge;
+    const tools = getUxpTools(bridge);
+
+    await expect(tools.manage_clip_effects_uxp.handler({ action: "catalog" })).resolves.toEqual({
+      success: false,
+      error: "host disconnected",
+    });
+    await tools.manage_proxy_ingest_uxp.handler({
+      action: "attach_proxy",
+      project_item_name: "Interview A",
+      media_path: "D:/Approved/Interview A Proxy.mov",
+      is_high_resolution: false,
+      make_alternate_link_in_team_projects: true,
+      replace_existing_proxy: true,
+      confirm_non_undoable: true,
+    });
+
+    expect(request).toHaveBeenNthCalledWith(2, "proxy.attach", {
+      projectItemName: "Interview A",
+      mediaPath: "D:/Approved/Interview A Proxy.mov",
+      isHiRes: false,
+      makeAlternateLinkInTeamProjects: true,
+      replaceExistingProxy: true,
+      confirmNonUndoable: true,
+    });
+  });
+
+});

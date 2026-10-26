@@ -1,0 +1,57 @@
+{
+  "$schema": "https://raw.githubusercontent.com/modelcontextprotocol/mcpb/main/schemas/mcpb-manifest-v0.4.schema.json",
+  "manifest_version": "0.4",
+  "name": "premiere-pro-mcp",
+  "display_name": "MCP for Adobe Premiere Pro",
+  "version": "1.25.0",
+  "description": "Control a local Adobe Premiere Pro project through MCP.",
+  "long_description": "Inspect projects, assemble and modify timelines, manage media, effects, audio and captions, and export deliverables through a local bridge to Adobe Premiere Pro.",
+  "author": {
+    "name": "MCP for Adobe Premiere Pro contributors",
+    "url": "https://github.com/leancoderkavy/premiere-pro-mcp"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/leancoderkavy/premiere-pro-mcp.git"
+  },
+  "homepage": "https://premiere-pro-mcp.com/",
+  "documentation": "https://premiere-pro-mcp.com/docs/",
+  "support": "https://github.com/leancoderkavy/premiere-pro-mcp/issues",
+  "server": {
+    "type": "node",
+    "entry_point": "server/dist/index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/server/dist/index.js"],
+      "env": {
+        "PREMIERE_UXP_TOKEN": "${user_config.premiere_uxp_token}",
+        "PREMIERE_MCP_PROTOCOL_MODE": "${user_config.premiere_mcp_protocol_mode}"
+      }
+    }
+  },
+  "user_config": {
+    "premiere_uxp_token": {
+      "type": "string",
+      "title": "Premiere UXP Token",
+      "description": "Optional. Only needed for the UXP plugin (Premiere: Window → UXP Plugins → MCP for Adobe Premiere Pro → Bridge token). Generate any 16+ character secret yourself and enter the same value here. The CEP Connector panel does not show or need a token. Leave blank to use CEP only.",
+      "sensitive": true,
+      "required": false
+    },
+    "premiere_mcp_protocol_mode": {
+      "type": "string",
+      "title": "MCP protocol mode",
+      "description": "Leave blank or use auto for modern MCP negotiation. Set legacy only if Claude Desktop support directs you to bypass server/discover negotiation.",
+      "required": false
+    }
+  },
+  "tools_generated": true,
+  "prompts_generated": true,
+  "keywords": ["premiere-pro", "video-editing", "timeline", "captions", "export"],
+  "license": "MIT",
+  "compatibility": {
+    "platforms": ["darwin", "win32"],
+    "runtimes": {
+      "node": ">=20.19.0"
+    }
+  }
+}

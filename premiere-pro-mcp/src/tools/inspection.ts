@@ -1,0 +1,1435 @@
+import { sequenceReadProperties, sequenceReadScript, type SequenceReadArgs } from "./sequence-read.js";
+import { buildToolScript, escapeForExtendScript } from "../bridge/script-builder.js";
+import { sendCommand, BridgeOptions } from "../bridge/file-bridge.js";
+
+export function getInspectionTools(bridgeOptions: BridgeOptions) {
+  return {
+    get_full_project_overview: {
+      description: "Get a comprehensive overview of the project. Use include_bin_tree false or sequence_offset/sequence_limit for a bounded response on large projects.",
+      parameters: {
+        type: "object" as const,
+        additionalProperties: false,
+        properties: {
+          include_bin_tree: { type: "boolean", description: "Include the recursive bin tree (default: true). Set false to return project statistics and sequences only." },
+          max_bin_depth: { type: "integer", minimum: 0, maximum: 10, description: "Maximum recursive bin-tree depth when include_bin_tree is true (default: 10)." },
+          sequence_offset: { type: "integer", minimum: 0, description: "Zero-based offset into project sequences." },
+          sequence_limit: { type: "integer", minimum: 1, maximum: 500, description: "Maximum sequences to include. Omit to preserve the complete legacy response." },
+        },
+      },
+      handler: async (args: { include_bin_tree?: boolean; max_bin_depth?: number; sequence_offset?: number; sequence_limit?: number } = {}) => {
+        const includeBinTree = args.include_bin_tree !== false;
+        const maxBinDepth = Number.isInteger(args.max_bin_depth) ? Math.min(Math.max(args.max_bin_depth as number, 0), 10) : 10;
+        const sequenceOffset = Number.isInteger(args.sequence_offset) && (args.sequence_offset as number) >= 0 ? args.sequence_offset as number : 0;
+        const sequenceLimit = Number.isInteger(args.sequence_limit) && (args.sequence_limit as number) > 0
+          ? Math.min(args.sequence_limit as number, 500)
+          : -1;
+        const script = buildToolScript(`
+          var project = app.project;
+          if (!project) return __error("No project is open");
+
+          function walkBin(bin, depth) {
+            var items = [];
+            for (var i = 0; i < bin.children.numItems; i++) {
+              var item = bin.children[i];
+              var entry = {
+                nodeId: item.nodeId,
+                name: item.name,
+                treePath: item.treePath,
+                type: __projectItemTypeName(item)
+              };
+              try { entry.mediaPath = item.getMediaPath(); } catch(e) {}
+              try { entry.offline = item.isOffline(); } catch(e) {}
+              try { entry.colorLabel = item.getColorLabel(); } catch(e) {}
+              if (item.type === 2 && depth < ${maxBinDepth}) {
+                entry.children = walkBin(item, depth + 1);
+                entry.childCount = entry.children.length;
+              }
+              items.push(entry);
+            }
+            return items;
+          }
+
+          var binTree = ${includeBinTree ? "walkBin(project.rootItem, 0)" : "null"};
+
+          var sequences = [];
+          var sequenceTotal = project.sequences.numSequences;
+          var sequenceOffset = ${sequenceOffset};
+          var sequenceLimit = ${sequenceLimit};
+          for (var i = sequenceOffset; i < sequenceTotal && (sequenceLimit < 0 || sequences.length < sequenceLimit); i++) {
+            var seq = project.sequences[i];
+            var clipCount = 0;
+            for (var t = 0; t < seq.videoTracks.numTracks; t++) clipCount += seq.videoTracks[t].clips.numItems;
+            for (var t = 0; t < seq.audioTracks.numTracks; t++) clipCount += seq.audioTracks[t].clips.numItems;
+            sequences.push({
+              name: seq.name,
+              id: seq.sequenceID,
+              width: seq.frameSizeHorizontal,
+              height: seq.frameSizeVertical,
+              durationSeconds: __ticksToSeconds(seq.end),
+              videoTracks: seq.videoTracks.numTracks,
+              audioTracks: seq.audioTracks.numTracks,
+              totalClips: clipCount
+            });
+          }
+
+          var totalItems = 0;
+          var offlineCount = 0;
+          var mediaTypes = {};
+          function countItems(bin) {
+            for (var i = 0; i < bin.children.numItems; i++) {
+              var item = bin.children[i];
+              totalItems++;
+              try { if (item.isOffline()) offlineCount++; } catch(e) {}
+              try {
+                var mp = item.getMediaPath();
+                if (mp) {
+                  var ext = mp.split(".").pop().toLowerCase();
+                  if (!mediaTypes[ext]) mediaTypes[ext] = 0;
+                  mediaTypes[ext]++;
+                }
+              } catch(e) {}
+              if (item.type === 2) countItems(item);
+            }
+          }
+          countItems(project.rootItem);
+
+          var activeSeqInfo = null;
+          var active = project.activeSequence;
+          if (active) {
+            activeSeqInfo = { name: active.name, id: active.sequenceID };
+          }
+
+          return __result({
+            projectName: project.name,
+            projectPath: project.path,
+            totalItems: totalItems,
+            offlineItems: offlineCount,
+            sequenceCount: sequenceTotal,
+            mediaFileTypes: mediaTypes,
+            activeSequence: activeSeqInfo,
+            sequences: sequences,
+            ${includeBinTree ? "binTree: binTree," : ""}
+            sequencePagination: {
+              offset: sequenceOffset,
+              limit: sequenceLimit < 0 ? null : sequenceLimit,
+              returned: sequences.length,
+              total: sequenceTotal,
+              hasMore: sequenceOffset + sequences.length < sequenceTotal,
+              nextOffset: sequenceOffset + sequences.length < sequenceTotal ? sequenceOffset + sequences.length : null
+            }
+          });
+        `);
+        return sendCommand(script, bridgeOptions);
+      },
+    },
+
+    get_bin_contents: {
+      description: "Get detailed contents of a specific bin (folder) including all nested items, media paths, offline status, color labels, and metadata. Searches by bin name or node ID.",
+      parameters: {
+        type: "object" as const,
+        properties: {
+          bin_id: {
+            type: "string",
+            description: "Bin name, node ID, or path (e.g., 'Footage', 'Footage/Raw'); '/' or 'root' for the project root",
+          },
+          recursive: {
+            type: "boolean",
+            description: "Include items from sub-bins recursively (default: true)",
+          },
+          offset: {
+            type: "integer",
+            minimum: 0,
+            description: "Zero-based offset into the bin's direct children. Pair with limit for a bounded page.",
+          },
+          limit: {
+            type: "integer",
+            minimum: 1,
+            maximum: 500,
+            description: "Maximum direct children to return. Pair with recursive false for the smallest bounded response.",
+          },
+          max_depth: {
+            type: "integer",
+            minimum: 0,
+            maximum: 10,
+            description: "Maximum nested-bin depth when recursive is true. Defaults to the legacy unlimited recursion.",
+          },
+        },
+        required: ["bin_id"],
+      },
+      handler: async (args: { bin_id: string; recursive?: boolean; offset?: number; limit?: number; max_depth?: number }) => {
+        const recursive = args.recursive !== false;
+        const offset = Number.isInteger(args.offset) && (args.offset as number) >= 0 ? args.offset as number : 0;
+        const limit = Number.isInteger(args.limit) && (args.limit as number) > 0 ? Math.min(args.limit as number, 500) : -1;
+        const maxDepth = Number.isInteger(args.max_depth) ? Math.min(Math.max(args.max_depth as number, 0), 10) : -1;
+        const script = buildToolScript(`
+          if (!app.project || !app.project.rootItem) return __error("No project is open");
+          var requestedBin = "${escapeForExtendScript(args.bin_id)}";
+          // The project root is a bin too, but list_project_items never lists it:
+          // accept "/", "root", or its node ID. Otherwise node ID, then bin
+          // path, then bin name.
+          var rootBin = app.project.rootItem;
+          var target = null;
+          if (requestedBin === "/" || requestedBin.toLowerCase() === "root" || __nodeIdOf(rootBin) === requestedBin) target = rootBin;
+          else target = __findBin(requestedBin);
+          if (!target) {
+            var nonBin = __findProjectItemByNodeId(requestedBin);
+            if (nonBin) return __error("Project item " + requestedBin + " is not a bin. Pass a bin node ID, bin path, or bin name; use get_project_item_info for other item types.");
+            return __error("Bin not found: " + requestedBin + ". Pass a bin node ID from list_project_items, a slash-separated bin path, or an exact bin name.");
+          }
+
+          function getItemDetails(item) {
+            var info = {
+              nodeId: __nodeIdOf(item),
+              name: "",
+              type: __projectItemTypeName(item)
+            };
+            try { info.name = item.name; } catch(e) {}
+            try { info.treePath = item.treePath; } catch(e) {}
+            try { info.mediaPath = item.getMediaPath(); } catch(e) {}
+            try { info.offline = item.isOffline(); } catch(e) {}
+            try { info.colorLabel = item.getColorLabel(); } catch(e) {}
+            try {
+              var interp = item.getFootageInterpretation();
+              if (interp) {
+                info.frameRate = interp.frameRate;
+                info.pixelAspectRatio = interp.pixelAspectRatio;
+              }
+            } catch(e) {}
+            try {
+              info.inPoint = __ticksToSeconds(item.getInPoint().ticks);
+              info.outPoint = __ticksToSeconds(item.getOutPoint().ticks);
+            } catch(e) {}
+            return info;
+          }
+
+          function walkItems(bin, recurse, depth) {
+            var items = [];
+            var count = __childCount(bin);
+            for (var i = 0; i < count; i++) {
+              var item = __childAt(bin, i);
+              if (!item) continue;
+              var info = getItemDetails(item);
+              if (__isBinItem(item) && recurse && (${maxDepth} < 0 || depth < ${maxDepth})) {
+                info.children = walkItems(item, true, depth + 1);
+                info.childCount = info.children.length;
+              }
+              items.push(info);
+            }
+            return items;
+          }
+
+          var allContents = walkItems(target, ${recursive}, 0);
+          var offset = ${offset};
+          var limit = ${limit};
+          var contents = limit < 0 ? allContents.slice(offset) : allContents.slice(offset, offset + limit);
+          return __result({
+            binName: target.name,
+            binNodeId: __nodeIdOf(target),
+            binPath: (function () { try { return target.treePath; } catch (e) { return null; } })(),
+            itemCount: contents.length,
+            totalDirectItems: allContents.length,
+            items: contents,
+            pagination: {
+              offset: offset,
+              limit: limit < 0 ? null : limit,
+              returned: contents.length,
+              totalDirectItems: allContents.length,
+              hasMore: offset + contents.length < allContents.length,
+              nextOffset: offset + contents.length < allContents.length ? offset + contents.length : null
+            }
+          });
+        `);
+        return sendCommand(script, bridgeOptions);
+      },
+    },
+
+    get_full_sequence_info: {
+      description: "Get bounded information about a sequence (50 clips by default; follow pagination.nextOffset; markers and transitions capped at 50 per collection): settings, all tracks with lock/mute/target state, paged clips with positions/effects/speed/enabled state, bounded markers, transitions, in/out points, and work area.",
+      parameters: {
+        type: "object" as const,
+        properties: {
+          ...sequenceReadProperties,
+          sequence_id: {
+            type: "string",
+            description: "Sequence name or ID. Uses active sequence if omitted.",
+          },
+        },
+      },
+      handler: async (args: SequenceReadArgs & { sequence_id?: string }) => {
+        const seqLookup = args.sequence_id
+          ? `var seq = __findSequence("${escapeForExtendScript(args.sequence_id)}"); if (!seq) return __error("Sequence not found");`
+          : `var seq = app.project.activeSequence; if (!seq) return __error("No active sequence");`;
+
+        const bounds = sequenceReadScript(args);
+        const script = buildToolScript(`
+          ${bounds}
+          ${seqLookup}
+
+          // Settings
+          var info = {
+            name: seq.name,
+            id: seq.sequenceID,
+            width: seq.frameSizeHorizontal,
+            height: seq.frameSizeVertical,
+            durationSeconds: __ticksToSeconds(seq.end)
+          };
+
+          try {
+            var s = seq.getSettings();
+            if (s) {
+              info.frameRate = s.videoFrameRate;
+              info.audioSampleRate = s.audioSampleRate;
+              info.audioSampleRateHz = __sampleRateHz(s.audioSampleRate);
+              info.audioChannelType = s.audioChannelType;
+              info.audioChannelCount = s.audioChannelCount;
+              info.videoFieldType = s.videoFieldType;
+              info.videoDisplayFormat = s.videoDisplayFormat;
+              info.audioDisplayFormat = s.audioDisplayFormat;
+            }
+          } catch(e) {}
+
+          // Playhead
+          try { info.playheadSeconds = __ticksToSeconds(seq.getPlayerPosition().ticks); } catch(e) {}
+
+          // In/Out points
+          try { info.inPointSeconds = __sequencePointSeconds(seq.getInPoint()); } catch(e) {}
+          try { info.outPointSeconds = __sequencePointSeconds(seq.getOutPoint()); } catch(e) {}
+
+          // Work area
+          try { info.workAreaIn = __workAreaSeconds(seq.getWorkAreaInPoint()); } catch(e) {}
+          try { info.workAreaOut = __workAreaSeconds(seq.getWorkAreaOutPoint()); } catch(e) {}
+
+          // Zero point
+          try { info.zeroPoint = __ticksToSeconds(seq.zeroPoint); } catch(e) {}
+
+          // Markers
+          var markers = [];
+          try {
+            var m = seq.markers.getFirstMarker();
+            while (m && markers.length < 50) {
+              var mInfo = {
+                name: m.name,
+                comments: String(m.comments || "").substr(0, 2048),
+                startSeconds: __ticksToSeconds(m.start.ticks),
+                endSeconds: __ticksToSeconds(m.end.ticks),
+                type: m.type
+              };
+              try { mInfo.colorIndex = m.getColorByIndex(); } catch(e) {}
+              markers.push(mInfo);
+              m = seq.markers.getNextMarker(m);
+            }
+          } catch(e) {}
+          info.markers = markers;
+          try { info.markerCount = seq.markers.numMarkers; } catch (markerCountError) { info.markerCount = null; }
+          info.markersTruncated = !!m;
+
+          // Video tracks
+          info.videoTracks = [];
+          for (var t = 0; t < seq.videoTracks.numTracks; t++) {
+            var track = seq.videoTracks[t];
+            var trackInfo = {
+              index: t,
+              name: track.name,
+              isMuted: track.isMuted(),
+              isLocked: track.isLocked()
+            };
+            try { trackInfo.isTargeted = track.isTargeted(); } catch(e) {}
+
+            // Clips
+            trackInfo.clips = [];
+            for (var c = 0; c < track.clips.numItems; c++) {
+              var clip = track.clips[c];
+              if (!__readInclude(clip, "video", t)) continue;
+              var ci = {
+                index: c,
+                nodeId: clip.nodeId,
+                name: clip.name,
+                startSeconds: __ticksToSeconds(clip.start.ticks),
+                endSeconds: __ticksToSeconds(clip.end.ticks),
+                durationSeconds: __ticksToSeconds(clip.duration.ticks),
+                inPointSeconds: __ticksToSeconds(clip.inPoint.ticks),
+                outPointSeconds: __ticksToSeconds(clip.outPoint.ticks),
+                mediaType: clip.mediaType
+              };
+              try { ci.enabled = !__isClipDisabled(clip); } catch(e) { ci.enabled = true; }
+              try { ci.speed = clip.getSpeed(); } catch(e) {}
+              try { ci.reversed = clip.isSpeedReversed(); } catch(e) {}
+              try { ci.isAdjustmentLayer = clip.isAdjustmentLayer(); } catch(e) {}
+              try { ci.isSelected = clip.isSelected(); } catch(e) {}
+
+              // Source media info
+              try {
+                if (clip.projectItem) {
+                  ci.sourceNodeId = clip.projectItem.nodeId;
+                  ci.sourceName = clip.projectItem.name;
+                  try { ci.sourceMediaPath = clip.projectItem.getMediaPath(); } catch(e) {}
+                  try { ci.sourceOffline = clip.projectItem.isOffline(); } catch(e) {}
+                }
+              } catch(e) {}
+
+              // Effect count
+              try {
+                ci.effectCount = clip.components.numItems;
+                ci.effects = [];
+                for (var e = 0; e < clip.components.numItems && e < 64; e++) {
+                  ci.effects.push(clip.components[e].displayName);
+                }
+                ci.effectsTruncated = ci.effectCount > ci.effects.length;
+              } catch(e) {}
+
+              __readPush(trackInfo.clips, ci);
+            }
+
+            // Transitions
+            trackInfo.transitions = [];
+            try {
+              for (var tr = 0; tr < track.transitions.numItems && tr < 50; tr++) {
+                var trans = track.transitions[tr];
+                trackInfo.transitions.push({
+                  index: tr,
+                  startSeconds: __ticksToSeconds(trans.start.ticks),
+                  endSeconds: __ticksToSeconds(trans.end.ticks),
+                  type: trans.type
+                });
+              }
+            } catch(e) {}
+
+            trackInfo.clipCount = track.clips.numItems;
+            trackInfo.transitionCount = track.transitions ? track.transitions.numItems : 0;
+            trackInfo.transitionsTruncated = trackInfo.transitionCount > trackInfo.transitions.length;
+            info.videoTracks.push(trackInfo);
+          }
+
+          // Audio tracks
+          info.audioTracks = [];
+          for (var t = 0; t < seq.audioTracks.numTracks; t++) {
+            var track = seq.audioTracks[t];
+            var trackInfo = {
+              index: t,
+              name: track.name,
+              isMuted: track.isMuted(),
+              isLocked: track.isLocked()
+            };
+            try { trackInfo.isTargeted = track.isTargeted(); } catch(e) {}
+
+            trackInfo.clips = [];
+            for (var c = 0; c < track.clips.numItems; c++) {
+              var clip = track.clips[c];
+              if (!__readInclude(clip, "audio", t)) continue;
+              var ci = {
+                index: c,
+                nodeId: clip.nodeId,
+                name: clip.name,
+                startSeconds: __ticksToSeconds(clip.start.ticks),
+                endSeconds: __ticksToSeconds(clip.end.ticks),
+                durationSeconds: __ticksToSeconds(clip.duration.ticks),
+                inPointSeconds: __ticksToSeconds(clip.inPoint.ticks),
+                outPointSeconds: __ticksToSeconds(clip.outPoint.ticks),
+                mediaType: clip.mediaType
+              };
+              try { ci.enabled = !__isClipDisabled(clip); } catch(e) { ci.enabled = true; }
+              try { ci.speed = clip.getSpeed(); } catch(e) {}
+              try {
+                if (clip.projectItem) {
+                  ci.sourceNodeId = clip.projectItem.nodeId;
+                  ci.sourceName = clip.projectItem.name;
+                  try { ci.sourceMediaPath = clip.projectItem.getMediaPath(); } catch(e) {}
+                }
+              } catch(e) {}
+              try {
+                ci.effectCount = clip.components.numItems;
+                ci.effects = [];
+                for (var e = 0; e < clip.components.numItems && e < 64; e++) {
+                  ci.effects.push(clip.components[e].displayName);
+                }
+                ci.effectsTruncated = ci.effectCount > ci.effects.length;
+              } catch(e) {}
+              __readPush(trackInfo.clips, ci);
+            }
+
+            trackInfo.transitions = [];
+            try {
+              for (var tr = 0; tr < track.transitions.numItems && tr < 50; tr++) {
+                var trans = track.transitions[tr];
+                trackInfo.transitions.push({
+                  index: tr,
+                  startSeconds: __ticksToSeconds(trans.start.ticks),
+                  endSeconds: __ticksToSeconds(trans.end.ticks)
+                });
+              }
+            } catch(e) {}
+
+            trackInfo.clipCount = track.clips.numItems;
+            trackInfo.transitionCount = track.transitions ? track.transitions.numItems : 0;
+            trackInfo.transitionsTruncated = trackInfo.transitionCount > trackInfo.transitions.length;
+            info.audioTracks.push(trackInfo);
+          }
+
+          info.videoTrackCount = info.videoTracks.length;
+          info.audioTrackCount = info.audioTracks.length;
+
+          info.pagination = __readReceipt();
+          if (__readError) return __error(__readError);
+          return __readResult(info);
+        `);
+        return sendCommand(script, bridgeOptions);
+      },
+    },
+
+    get_full_clip_info: {
+      description: "Get exhaustive information about a specific clip: all effects with every property value, source media details, footage interpretation, metadata, markers, speed, enabled state, color label, linked clips, and proxy status.",
+      parameters: {
+        type: "object" as const,
+        properties: {
+          node_id: {
+            type: "string",
+            description: "Node ID of the clip on the timeline",
+          },
+        },
+        required: ["node_id"],
+      },
+      handler: async (args: { node_id: string }) => {
+        const script = buildToolScript(`
+          var found = __findClip("${escapeForExtendScript(args.node_id)}");
+          if (!found) return __error("Clip not found: ${escapeForExtendScript(args.node_id)}");
+
+          var clip = found.clip;
+          var info = {
+            nodeId: clip.nodeId,
+            name: clip.name,
+            trackType: found.trackType,
+            trackIndex: found.trackIndex,
+            clipIndex: found.clipIndex,
+            startSeconds: __ticksToSeconds(clip.start.ticks),
+            endSeconds: __ticksToSeconds(clip.end.ticks),
+            durationSeconds: __ticksToSeconds(clip.duration.ticks),
+            inPointSeconds: __ticksToSeconds(clip.inPoint.ticks),
+            outPointSeconds: __ticksToSeconds(clip.outPoint.ticks),
+            mediaType: clip.mediaType
+          };
+
+          try { info.enabled = !__isClipDisabled(clip); } catch(e) { info.enabled = true; }
+          try { info.speed = clip.getSpeed(); } catch(e) {}
+          try { info.reversed = clip.isSpeedReversed(); } catch(e) {}
+          try { info.isSelected = clip.isSelected(); } catch(e) {}
+          try { info.isAdjustmentLayer = clip.isAdjustmentLayer(); } catch(e) {}
+
+          // Source project item details
+          try {
+            var src = clip.projectItem;
+            if (src) {
+              info.source = {
+                nodeId: src.nodeId,
+                name: src.name,
+                treePath: src.treePath
+              };
+              try { info.source.mediaPath = src.getMediaPath(); } catch(e) {}
+              try { info.source.offline = src.isOffline(); } catch(e) {}
+              try { info.source.colorLabel = src.getColorLabel(); } catch(e) {}
+              try {
+                var interp = src.getFootageInterpretation();
+                if (interp) {
+                  info.source.frameRate = interp.frameRate;
+                  info.source.pixelAspectRatio = interp.pixelAspectRatio;
+                  info.source.fieldType = interp.fieldType;
+                  info.source.alphaUsage = interp.alphaUsage;
+                }
+              } catch(e) {}
+              // XMP metadata
+              try {
+                var xmp = src.getProjectMetadata();
+                if (xmp && xmp.length < 5000) info.source.projectMetadata = xmp;
+              } catch(e) {}
+              // Proxy info
+              try { info.source.hasProxy = src.hasProxy(); } catch(e) {}
+              try { info.source.canChangeMediaPath = src.canChangeMediaPath(); } catch(e) {}
+            }
+          } catch(e) {}
+
+          // All effects/components with full property details
+          info.components = [];
+          try {
+            for (var i = 0; i < clip.components.numItems; i++) {
+              var comp = clip.components[i];
+              var compInfo = {
+                index: i,
+                displayName: comp.displayName,
+                matchName: comp.matchName,
+                properties: []
+              };
+              for (var p = 0; p < comp.properties.numItems; p++) {
+                var prop = comp.properties[p];
+                var propInfo = {
+                  index: p,
+                  displayName: prop.displayName
+                };
+                try { propInfo.matchName = prop.matchName; } catch(e) {}
+                var colorValue = __readColorValue(prop);
+                if (colorValue) {
+                  propInfo.value = colorValue;
+                  propInfo.valueType = "color_argb";
+                  try { if (prop.isTimeVarying()) propInfo.note = "Animated colour: this is the current value, not a per-keyframe sample."; } catch (eColorAnimation) {}
+                } else {
+                  try { propInfo.value = prop.getValue(0, 0); } catch(e) {}
+                }
+                try { propInfo.isTimeVarying = prop.isTimeVarying(); } catch(e) {}
+                try { propInfo.keyframesSupported = prop.areKeyframesSupported(); } catch(e) {}
+                try {
+                  if (prop.isTimeVarying()) {
+                    var keys = prop.getKeys();
+                    if (keys && keys.length > 0) {
+                      propInfo.keyframeCount = keys.length;
+                      propInfo.keyframeTimes = [];
+                      for (var k = 0; k < Math.min(keys.length, 20); k++) {
+                        propInfo.keyframeTimes.push(__ticksToSeconds(keys[k].ticks));
+                      }
+                      if (keys.length > 20) propInfo.keyframesTruncated = true;
+                    }
+                  }
+                } catch(e) {}
+                compInfo.properties.push(propInfo);
+              }
+              info.components.push(compInfo);
+            }
+          } catch(e) {}
+          info.componentCount = info.components.length;
+
+          // Clip markers
+          info.markers = [];
+          try {
+            var m = clip.markers.getFirstMarker();
+            while (m) {
+              info.markers.push({
+                name: m.name,
+                comments: m.comments,
+                startSeconds: __ticksToSeconds(m.start.ticks),
+                endSeconds: __ticksToSeconds(m.end.ticks)
+              });
+              m = clip.markers.getNextMarker(m);
+            }
+          } catch(e) {}
+
+          return __result(info);
+        `);
+        return sendCommand(script, bridgeOptions);
+      },
+    },
+
+    get_project_item_info: {
+      description: "Get detailed information about a project item (media file in the project panel): media path, resolution, duration, frame rate, codec info, metadata, color label, offline status, in/out points, and proxy status.",
+      parameters: {
+        type: "object" as const,
+        properties: {
+          item_id: {
+            type: "string",
+            description: "Node ID or name of the project item",
+          },
+        },
+        required: ["item_id"],
+      },
+      handler: async (args: { item_id: string }) => {
+        const script = buildToolScript(`
+          var item = __findProjectItem("${escapeForExtendScript(args.item_id)}");
+          if (!item) return __error("Item not found: ${escapeForExtendScript(args.item_id)}");
+
+          var info = {
+            nodeId: item.nodeId,
+            name: item.name,
+            type: __projectItemTypeName(item),
+            treePath: item.treePath
+          };
+
+          try { info.mediaPath = item.getMediaPath(); } catch(e) {}
+          try { info.offline = item.isOffline(); } catch(e) {}
+          try { info.colorLabel = item.getColorLabel(); } catch(e) {}
+          try { info.canChangeMediaPath = item.canChangeMediaPath(); } catch(e) {}
+
+          // Footage interpretation
+          try {
+            var interp = item.getFootageInterpretation();
+            if (interp) {
+              info.frameRate = interp.frameRate;
+              info.pixelAspectRatio = interp.pixelAspectRatio;
+              info.fieldType = interp.fieldType;
+              info.alphaUsage = interp.alphaUsage;
+              info.ignoreAlpha = interp.ignoreAlpha;
+              info.invertAlpha = interp.invertAlpha;
+            }
+          } catch(e) {}
+
+          // In/Out points
+          try { info.inPoint = __ticksToSeconds(item.getInPoint().ticks); } catch(e) {}
+          try { info.outPoint = __ticksToSeconds(item.getOutPoint().ticks); } catch(e) {}
+
+          // Proxy
+          try { info.hasProxy = item.hasProxy(); } catch(e) {}
+
+          // Project metadata (XMP)
+          try {
+            var xmp = item.getProjectMetadata();
+            if (xmp && xmp.length < 10000) info.projectMetadata = xmp;
+            else if (xmp) info.projectMetadataLength = xmp.length;
+          } catch(e) {}
+
+          // XMP metadata
+          try {
+            var xmp2 = item.getXMPMetadata();
+            if (xmp2 && xmp2.length < 10000) info.xmpMetadata = xmp2;
+            else if (xmp2) info.xmpMetadataLength = xmp2.length;
+          } catch(e) {}
+
+          // Item markers
+          info.markers = [];
+          try {
+            var m = item.getMarkers();
+            if (m) {
+              var marker = m.getFirstMarker();
+              while (marker) {
+                info.markers.push({
+                  name: marker.name,
+                  comments: marker.comments,
+                  startSeconds: __ticksToSeconds(marker.start.ticks)
+                });
+                marker = m.getNextMarker(marker);
+              }
+            }
+          } catch(e) {}
+
+          // Child count for bins
+          if (item.type === 2) {
+            info.childCount = item.children.numItems;
+          }
+
+          return __result(info);
+        `);
+        return sendCommand(script, bridgeOptions);
+      },
+    },
+
+    search_project_items: {
+      description: "Search for project items by name, media file extension, offline status, or color label. Returns matching items with full details.",
+      parameters: {
+        type: "object" as const,
+        properties: {
+          query: {
+            type: "string",
+            description: "Search query (matched against item name, case-insensitive substring match)",
+          },
+          extension: {
+            type: "string",
+            description: "Filter by file extension (e.g., 'mp4', 'wav', 'png'). Without dot.",
+          },
+          offline_only: {
+            type: "boolean",
+            description: "If true, only return offline/missing items",
+          },
+          color_label: {
+            type: "number",
+            description: "Filter by color label index (0-15)",
+          },
+          item_type: {
+            type: "string",
+            enum: ["clip", "bin", "all"],
+            description: "Filter by item type (default: all)",
+          },
+          max_results: {
+            type: "number",
+            description: "Maximum results to return (default: 100)",
+          },
+        },
+      },
+      handler: async (args: {
+        query?: string;
+        extension?: string;
+        offline_only?: boolean;
+        color_label?: number;
+        item_type?: string;
+        max_results?: number;
+      }) => {
+        const maxResults = args.max_results ?? 100;
+        const script = buildToolScript(`
+          var results = [];
+          var maxR = ${maxResults};
+          var query = ${args.query ? `"${escapeForExtendScript(args.query)}".toLowerCase()` : "null"};
+          var ext = ${args.extension ? `"${escapeForExtendScript(args.extension)}".toLowerCase()` : "null"};
+          var offlineOnly = ${args.offline_only ? "true" : "false"};
+          var colorFilter = ${args.color_label !== undefined ? args.color_label : "-1"};
+          var typeFilter = "${args.item_type || "all"}";
+
+          function searchBin(bin) {
+            if (results.length >= maxR) return;
+            for (var i = 0; i < bin.children.numItems; i++) {
+              if (results.length >= maxR) return;
+              var item = bin.children[i];
+
+              // Type filter
+              if (typeFilter === "clip" && item.type === 2) {
+                searchBin(item);
+                continue;
+              }
+              if (typeFilter === "bin" && item.type !== 2) continue;
+
+              var match = true;
+
+              // Name filter
+              if (query && item.name.toLowerCase().indexOf(query) === -1) match = false;
+
+              // Extension filter
+              if (match && ext) {
+                try {
+                  var mp = item.getMediaPath();
+                  if (!mp || mp.split(".").pop().toLowerCase() !== ext) match = false;
+                } catch(e) { match = false; }
+              }
+
+              // Offline filter
+              if (match && offlineOnly) {
+                try { if (!item.isOffline()) match = false; } catch(e) { match = false; }
+              }
+
+              // Color label filter
+              if (match && colorFilter >= 0) {
+                try { if (item.getColorLabel() !== colorFilter) match = false; } catch(e) { match = false; }
+              }
+
+              if (match) {
+                var entry = {
+                  nodeId: item.nodeId,
+                  name: item.name,
+                  type: __projectItemTypeName(item),
+                  treePath: item.treePath
+                };
+                try { entry.mediaPath = item.getMediaPath(); } catch(e) {}
+                try { entry.offline = item.isOffline(); } catch(e) {}
+                try { entry.colorLabel = item.getColorLabel(); } catch(e) {}
+                results.push(entry);
+              }
+
+              if (item.type === 2) searchBin(item);
+            }
+          }
+
+          searchBin(app.project.rootItem);
+          return __result({ resultCount: results.length, maxResults: maxR, items: results });
+        `);
+        return sendCommand(script, bridgeOptions);
+      },
+    },
+
+    get_timeline_gaps: {
+      description: "Find a bounded page of gaps (50 by default; follow pagination.nextOffset) on the timeline between clips. Useful for identifying where content is missing or where clips can be tightened.",
+      parameters: {
+        type: "object" as const,
+        properties: {
+          ...sequenceReadProperties,
+          sequence_id: {
+            type: "string",
+            description: "Sequence name or ID. Uses active sequence if omitted.",
+          },
+          track_type: {
+            type: "string",
+            enum: ["video", "audio", "both"],
+            description: "Which track type to analyze (default: both)",
+          },
+          min_gap_seconds: {
+            type: "number",
+            description: "Minimum gap duration in seconds to report (default: 0.04 = ~1 frame at 24fps)",
+          },
+        },
+      },
+      handler: async (args: SequenceReadArgs & { sequence_id?: string; min_gap_seconds?: number }) => {
+        const seqLookup = args.sequence_id
+          ? `var seq = __findSequence("${escapeForExtendScript(args.sequence_id)}"); if (!seq) return __error("Sequence not found");`
+          : `var seq = app.project.activeSequence; if (!seq) return __error("No active sequence");`;
+        const minGap = args.min_gap_seconds ?? 0.04;
+        if (!Number.isFinite(minGap) || minGap < 0) throw new Error("min_gap_seconds must be finite and nonnegative");
+        const bounds = sequenceReadScript(args);
+
+        const script = buildToolScript(`
+          ${seqLookup}
+          ${bounds}
+
+          var gaps = [];
+          var trackCounts = [];
+          var minGapTicks = __secondsToTicks(${minGap});
+
+          function findGaps(tracks, type) {
+            for (var t = 0; t < tracks.numTracks; t++) {
+              var track = tracks[t];
+              __readTotalClips += track.clips.numItems;
+              trackCounts.push({ trackType: type, trackIndex: t, clipCount: track.clips.numItems });
+              if (!__readTrack(type, t)) continue;
+              if (track.clips.numItems === 0) continue;
+              var prevEnd = 0;
+              for (var c = 0; c < track.clips.numItems; c++) {
+                var clip = track.clips[c];
+                var startTicks = parseFloat(clip.start.ticks);
+                var endTicks = parseFloat(clip.end.ticks);
+                var gapTicks = startTicks - prevEnd;
+                if (gapTicks > minGapTicks && __readWindow(__ticksToSeconds(prevEnd), __ticksToSeconds(startTicks))) {
+                  var ordinal = __readMatched++;
+                  if (ordinal >= ${args.clip_offset ?? 0} && __readReturned < ${args.clip_limit ?? 50} && !__readBlocked)
+                  __readPush(gaps, {
+                    trackType: type,
+                    trackIndex: t,
+                    trackName: track.name,
+                    gapStartSeconds: __ticksToSeconds("" + prevEnd),
+                    gapEndSeconds: __ticksToSeconds("" + startTicks),
+                    gapDurationSeconds: __ticksToSeconds("" + gapTicks),
+                    beforeClip: c > 0 ? track.clips[c - 1].name : null,
+                    afterClip: clip.name
+                  });
+                }
+                prevEnd = Math.max(prevEnd, endTicks);
+              }
+            }
+          }
+
+          findGaps(seq.videoTracks, "video");
+          findGaps(seq.audioTracks, "audio");
+
+          if (__readError) return __error(__readError);
+          var pagination = __readReceipt();
+          pagination.totalGaps = __readMatched;
+          return __readResult({
+            pagination: pagination,
+            sequenceName: seq.name,
+            gapCount: __readMatched,
+            minGapSeconds: ${minGap},
+            gaps: gaps,
+            tracks: trackCounts
+          });
+        `);
+        return sendCommand(script, bridgeOptions);
+      },
+    },
+
+    get_timeline_summary: {
+      description: "Get a human-readable summary of the timeline: total duration, clip count per track, total gaps, coverage percentage, used media files, effect usage, and marker overview. Great for a quick understanding of sequence state.",
+      parameters: {
+        type: "object" as const,
+        properties: {
+          sequence_id: {
+            type: "string",
+            description: "Sequence name or ID. Uses active sequence if omitted.",
+          },
+        },
+      },
+      handler: async (args: { sequence_id?: string }) => {
+        const seqLookup = args.sequence_id
+          ? `var seq = __findSequence("${escapeForExtendScript(args.sequence_id)}"); if (!seq) return __error("Sequence not found");`
+          : `var seq = app.project.activeSequence; if (!seq) return __error("No active sequence");`;
+
+        const script = buildToolScript(`
+          ${seqLookup}
+
+          var summary = {
+            name: seq.name,
+            id: seq.sequenceID,
+            resolution: seq.frameSizeHorizontal + "x" + seq.frameSizeVertical,
+            durationSeconds: __ticksToSeconds(seq.end)
+          };
+
+          try {
+            var s = seq.getSettings();
+            if (s) summary.frameRate = s.videoFrameRate;
+          } catch(e) {}
+
+          // Playhead
+          try { summary.playheadSeconds = __ticksToSeconds(seq.getPlayerPosition().ticks); } catch(e) {}
+
+          var totalVideoClips = 0;
+          var totalAudioClips = 0;
+          var usedMedia = {};
+          var effectUsage = {};
+          var disabledClips = 0;
+          var totalVideoFilled = 0;
+          var seqEndTicks = parseFloat(seq.end);
+
+          // Video tracks
+          var videoTrackSummary = [];
+          for (var t = 0; t < seq.videoTracks.numTracks; t++) {
+            var track = seq.videoTracks[t];
+            var trackFilled = 0;
+            for (var c = 0; c < track.clips.numItems; c++) {
+              totalVideoClips++;
+              var clip = track.clips[c];
+              trackFilled += parseFloat(clip.end.ticks) - parseFloat(clip.start.ticks);
+              try { if (__isClipDisabled(clip)) disabledClips++; } catch(e) {}
+              try {
+                if (clip.projectItem) {
+                  var srcName = clip.projectItem.name;
+                  if (!usedMedia[srcName]) usedMedia[srcName] = 0;
+                  usedMedia[srcName]++;
+                }
+              } catch(e) {}
+              try {
+                for (var e = 0; e < clip.components.numItems; e++) {
+                  var eName = clip.components[e].displayName;
+                  if (!effectUsage[eName]) effectUsage[eName] = 0;
+                  effectUsage[eName]++;
+                }
+              } catch(e) {}
+            }
+            if (t === 0) totalVideoFilled = trackFilled;
+            videoTrackSummary.push({
+              index: t,
+              name: track.name,
+              clipCount: track.clips.numItems,
+              muted: track.isMuted(),
+              locked: track.isLocked()
+            });
+          }
+
+          // Audio tracks
+          var audioTrackSummary = [];
+          for (var t = 0; t < seq.audioTracks.numTracks; t++) {
+            var track = seq.audioTracks[t];
+            for (var c = 0; c < track.clips.numItems; c++) {
+              totalAudioClips++;
+              var aClip = track.clips[c];
+              try {
+                if (aClip.projectItem) {
+                  var srcName = aClip.projectItem.name;
+                  if (!usedMedia[srcName]) usedMedia[srcName] = 0;
+                  usedMedia[srcName]++;
+                }
+              } catch(e) {}
+            }
+            audioTrackSummary.push({
+              index: t,
+              name: track.name,
+              clipCount: track.clips.numItems,
+              muted: track.isMuted(),
+              locked: track.isLocked()
+            });
+          }
+
+          summary.totalVideoClips = totalVideoClips;
+          summary.totalAudioClips = totalAudioClips;
+          summary.totalClips = totalVideoClips + totalAudioClips;
+          summary.disabledClips = disabledClips;
+          summary.videoTrackCount = seq.videoTracks.numTracks;
+          summary.audioTrackCount = seq.audioTracks.numTracks;
+          summary.videoTracks = videoTrackSummary;
+          summary.audioTracks = audioTrackSummary;
+
+          // V1 coverage
+          if (seqEndTicks > 0) {
+            summary.v1CoveragePercent = Math.round((totalVideoFilled / seqEndTicks) * 10000) / 100;
+          }
+
+          // Used media
+          var mediaList = [];
+          for (var name in usedMedia) {
+            if (usedMedia.hasOwnProperty(name)) {
+              mediaList.push({ name: name, useCount: usedMedia[name] });
+            }
+          }
+          summary.usedMedia = mediaList;
+          summary.uniqueMediaCount = mediaList.length;
+
+          // Effect usage
+          var effectList = [];
+          for (var name in effectUsage) {
+            if (effectUsage.hasOwnProperty(name)) {
+              effectList.push({ name: name, count: effectUsage[name] });
+            }
+          }
+          summary.effectUsage = effectList;
+
+          // Markers
+          var markerCount = 0;
+          try {
+            var m = seq.markers.getFirstMarker();
+            while (m) { markerCount++; m = seq.markers.getNextMarker(m); }
+          } catch(e) {}
+          summary.markerCount = markerCount;
+
+          return __result(summary);
+        `);
+        return sendCommand(script, bridgeOptions);
+      },
+    },
+
+    get_offline_media: {
+      description: "Find all offline/missing media in the project with their expected file paths. Essential for diagnosing broken links.",
+      parameters: {},
+      handler: async () => {
+        const script = buildToolScript(`
+          var offline = [];
+          function scan(bin) {
+            for (var i = 0; i < bin.children.numItems; i++) {
+              var item = bin.children[i];
+              try {
+                if (item.isOffline()) {
+                  var entry = {
+                    nodeId: item.nodeId,
+                    name: item.name,
+                    treePath: item.treePath
+                  };
+                  try { entry.mediaPath = item.getMediaPath(); } catch(e) {}
+                  try { entry.colorLabel = item.getColorLabel(); } catch(e) {}
+                  offline.push(entry);
+                }
+              } catch(e) {}
+              if (item.type === 2) scan(item);
+            }
+          }
+          scan(app.project.rootItem);
+          return __result({ offlineCount: offline.length, items: offline });
+        `);
+        return sendCommand(script, bridgeOptions);
+      },
+    },
+
+    get_used_media_report: {
+      description: "Get a report of all media files used in a sequence: which source files are used, how many times each appears, on which tracks, and whether any sources are offline.",
+      parameters: {
+        type: "object" as const,
+        properties: {
+          sequence_id: {
+            type: "string",
+            description: "Sequence name or ID. Uses active sequence if omitted.",
+          },
+        },
+      },
+      handler: async (args: { sequence_id?: string }) => {
+        const seqLookup = args.sequence_id
+          ? `var seq = __findSequence("${escapeForExtendScript(args.sequence_id)}"); if (!seq) return __error("Sequence not found");`
+          : `var seq = app.project.activeSequence; if (!seq) return __error("No active sequence");`;
+
+        const script = buildToolScript(`
+          ${seqLookup}
+
+          var mediaMap = {};
+
+          function scanTracks(tracks, trackType) {
+            for (var t = 0; t < tracks.numTracks; t++) {
+              var track = tracks[t];
+              for (var c = 0; c < track.clips.numItems; c++) {
+                var clip = track.clips[c];
+                try {
+                  var src = clip.projectItem;
+                  if (!src) continue;
+                  var key = src.nodeId;
+                  if (!mediaMap[key]) {
+                    mediaMap[key] = {
+                      nodeId: src.nodeId,
+                      name: src.name,
+                      mediaPath: "",
+                      offline: false,
+                      useCount: 0,
+                      tracks: [],
+                      trackDetails: []
+                    };
+                    try { mediaMap[key].mediaPath = src.getMediaPath(); } catch(e) {}
+                    try { mediaMap[key].offline = src.isOffline(); } catch(e) {}
+                  }
+                  mediaMap[key].useCount++;
+                  mediaMap[key].tracks.push(trackType + " " + t);
+                  mediaMap[key].trackDetails.push({ track: trackType + " " + t, trackType: trackType === "V" ? "video" : "audio", trackIndex: t, trackLabel: trackType + (t + 1) });
+                } catch(e) {}
+              }
+            }
+          }
+
+          scanTracks(seq.videoTracks, "V");
+          scanTracks(seq.audioTracks, "A");
+
+          var report = [];
+          var offlineUsed = 0;
+          for (var key in mediaMap) {
+            if (mediaMap.hasOwnProperty(key)) {
+              // Deduplicate track list
+              var unique = {};
+              for (var i = 0; i < mediaMap[key].tracks.length; i++) {
+                unique[mediaMap[key].tracks[i]] = true;
+              }
+              var trackList = [];
+              for (var k in unique) { if (unique.hasOwnProperty(k)) trackList.push(k); }
+              mediaMap[key].tracks = trackList;
+              var detailMap = {};
+              var trackDetails = [];
+              for (var di = 0; di < mediaMap[key].trackDetails.length; di++) {
+                var detail = mediaMap[key].trackDetails[di];
+                if (!detailMap[detail.track]) { detailMap[detail.track] = true; trackDetails.push(detail); }
+              }
+              mediaMap[key].trackDetails = trackDetails;
+              if (mediaMap[key].offline) offlineUsed++;
+              report.push(mediaMap[key]);
+            }
+          }
+
+          return __result({
+            sequenceName: seq.name,
+            uniqueMediaCount: report.length,
+            offlineUsedCount: offlineUsed,
+            media: report
+          });
+        `);
+        return sendCommand(script, bridgeOptions);
+      },
+    },
+
+    inspect_edit_readiness: {
+      description:
+        "Audit the active sequence in one read-only bridge request for empty timelines, primary-track gaps, disabled clips, muted tracks, and excessive Motion scale. Structural diagnostics only; it cannot judge story, framing, sound, or final delivery.",
+      parameters: {
+        type: "object" as const,
+        properties: {
+          primary_video_track: { type: "number", description: "Video track used for gap inspection (default: 0)" },
+          maximum_scale_percent: { type: "number", description: "Warn above this Motion scale percentage (default: 110)" },
+          gap_tolerance_seconds: { type: "number", description: "Ignore smaller gaps caused by time rounding (default: 0.001)" },
+        },
+      },
+      handler: async (args: { primary_video_track?: number; maximum_scale_percent?: number; gap_tolerance_seconds?: number }) => {
+        const trackIndex = args.primary_video_track ?? 0;
+        const maximumScale = args.maximum_scale_percent ?? 110;
+        const gapTolerance = args.gap_tolerance_seconds ?? 0.001;
+        if (!Number.isInteger(trackIndex) || trackIndex < 0) return { success: false, error: "primary_video_track must be a non-negative integer" };
+        if (!Number.isFinite(maximumScale) || maximumScale <= 0 || maximumScale > 10000) return { success: false, error: "maximum_scale_percent must be finite and greater than 0" };
+        if (!Number.isFinite(gapTolerance) || gapTolerance < 0 || gapTolerance > 1) return { success: false, error: "gap_tolerance_seconds must be from 0 through 1" };
+
+        const script = buildToolScript(`
+          var seq = app.project.activeSequence;
+          if (!seq) return __error("No active sequence");
+          if (${trackIndex} >= seq.videoTracks.numTracks) return __error("Primary video track index is out of range");
+          var blockers = [];
+          var warnings = [];
+          var counts = { videoClips: 0, audioClips: 0, disabledClips: 0, mutedTracks: 0, excessiveScaleClips: 0, gaps: 0 };
+
+          function inspectTracks(tracks, type) {
+            for (var t = 0; t < tracks.numTracks; t++) {
+              var track = tracks[t];
+              try {
+                if (track.isMuted && track.isMuted()) {
+                  counts.mutedTracks++;
+                  warnings.push({ code: "MUTED_TRACK", trackType: type, trackIndex: t, trackName: track.name });
+                }
+              } catch(e) {}
+              for (var c = 0; c < track.clips.numItems; c++) {
+                var clip = track.clips[c];
+                if (type === "video") counts.videoClips++; else counts.audioClips++;
+                try {
+                  if (clip.disabled === true || clip.disabled === 1) {
+                    counts.disabledClips++;
+                    warnings.push({ code: "DISABLED_CLIP", trackType: type, trackIndex: t, clipName: clip.name, nodeId: clip.nodeId });
+                  }
+                } catch(e2) {}
+                if (type === "video") {
+                  try {
+                    for (var x = 0; x < clip.components.numItems; x++) {
+                      var component = clip.components[x];
+                      if (component.displayName !== "Motion" && component.matchName !== "AE.ADBE Motion") continue;
+                      for (var p = 0; p < component.properties.numItems; p++) {
+                        var property = component.properties[p];
+                        if (property.displayName !== "Scale" && property.matchName !== "ADBE Scale") continue;
+                        var scale = Number(property.getValue());
+                        if (!isNaN(scale) && scale > ${maximumScale}) {
+                          counts.excessiveScaleClips++;
+                          warnings.push({ code: "EXCESSIVE_SCALE", trackIndex: t, clipName: clip.name, nodeId: clip.nodeId, scalePercent: scale, thresholdPercent: ${maximumScale} });
+                        }
+                      }
+                    }
+                  } catch(e3) {}
+                }
+              }
+            }
+          }
+          inspectTracks(seq.videoTracks, "video");
+          inspectTracks(seq.audioTracks, "audio");
+
+          var primary = seq.videoTracks[${trackIndex}];
+          var cursor = 0;
+          for (var i = 0; i < primary.clips.numItems; i++) {
+            var current = primary.clips[i];
+            var start = current.start.seconds;
+            if (start - cursor > ${gapTolerance}) {
+              counts.gaps++;
+              blockers.push({ code: "PRIMARY_TRACK_GAP", startSeconds: cursor, endSeconds: start, durationSeconds: start - cursor });
+            }
+            cursor = Math.max(cursor, current.end.seconds);
+          }
+          if (!counts.videoClips) blockers.push({ code: "EMPTY_VIDEO_TIMELINE" });
+          return __result({
+            sequence: { name: seq.name, durationSeconds: __ticksToSeconds(seq.end) },
+            thresholds: { primaryVideoTrack: ${trackIndex}, maximumScalePercent: ${maximumScale}, gapToleranceSeconds: ${gapTolerance} },
+            counts: counts, blockers: blockers, warnings: warnings,
+            structurallyReady: blockers.length === 0,
+            verificationScope: "Premiere timeline readback only. This does not inspect rendered pixels, loudness, captions, rights, or editorial quality."
+          });
+        `);
+        return sendCommand(script, bridgeOptions);
+      },
+    },
+
+    inspect_sequence_review_report: {
+      description:
+        "Build one read-only sequence handoff report with timeline structure, primary-track gaps, disabled clips, muted tracks, marker timing, and offline-source evidence. Media paths are never returned; marker comments require an explicit opt-in. It does not prove rendered pixels, audio quality, caption correctness, rights, or editorial approval.",
+      parameters: {
+        type: "object" as const,
+        properties: {
+          sequence_id: {
+            type: "string",
+            description: "Sequence name or ID. Uses the active sequence if omitted.",
+          },
+          primary_video_track: {
+            type: "number",
+            description: "Video track used for gap inspection (default: 0).",
+          },
+          max_markers: {
+            type: "number",
+            description: "Maximum marker entries to return from the start of the sequence (default: 50, maximum: 200).",
+          },
+          include_marker_comments: {
+            type: "boolean",
+            description: "Include marker comments. Defaults to false because comments can contain private editorial notes.",
+          },
+        },
+      },
+      handler: async (args: {
+        sequence_id?: string;
+        primary_video_track?: number;
+        max_markers?: number;
+        include_marker_comments?: boolean;
+      }) => {
+        const primaryTrack = args.primary_video_track ?? 0;
+        const maxMarkers = args.max_markers ?? 50;
+        const includeComments = args.include_marker_comments === true;
+        if (!Number.isInteger(primaryTrack) || primaryTrack < 0) {
+          return { success: false, error: "primary_video_track must be a non-negative integer" };
+        }
+        if (!Number.isInteger(maxMarkers) || maxMarkers < 1 || maxMarkers > 200) {
+          return { success: false, error: "max_markers must be an integer from 1 through 200" };
+        }
+
+        const requestedSequence = args.sequence_id
+          ? `"${escapeForExtendScript(args.sequence_id)}"`
+          : "";
+        const script = buildToolScript(`
+          var requestedSequence = ${requestedSequence ? requestedSequence : "null"};
+          var seq = app.project.activeSequence;
+          if (requestedSequence) {
+            seq = null;
+            for (var s = 0; s < app.project.sequences.numSequences; s++) {
+              var candidate = app.project.sequences[s];
+              if (String(candidate.sequenceID) === requestedSequence || candidate.name === requestedSequence) {
+                seq = candidate;
+                break;
+              }
+            }
+          }
+          if (!seq) return __error(requestedSequence ? "Sequence not found: " + requestedSequence : "No active sequence");
+
+          var summary = {
+            videoClips: 0,
+            audioClips: 0,
+            disabledClips: 0,
+            mutedTracks: 0,
+            primaryTrackGaps: 0,
+            offlineSourceItems: 0,
+            markers: 0
+          };
+          var warnings = [];
+          var offlineItems = [];
+          var offlineById = {};
+
+          function noteOffline(clip, trackType, trackIndex) {
+            try {
+              var source = clip.projectItem;
+              if (!source || !source.isOffline || !source.isOffline()) return;
+              var key = String(source.nodeId || source.name || (trackType + ":" + trackIndex + ":" + clip.name));
+              if (offlineById[key]) return;
+              offlineById[key] = true;
+              summary.offlineSourceItems++;
+              offlineItems.push({ nodeId: source.nodeId, name: source.name, trackType: trackType, trackIndex: trackIndex });
+            } catch (offlineError) {}
+          }
+
+          function inspectTracks(tracks, trackType) {
+            for (var t = 0; t < tracks.numTracks; t++) {
+              var track = tracks[t];
+              try {
+                if (track.isMuted && track.isMuted()) {
+                  summary.mutedTracks++;
+                  warnings.push({ code: "MUTED_TRACK", trackType: trackType, trackIndex: t, trackName: track.name });
+                }
+              } catch (muteError) {}
+              for (var c = 0; c < track.clips.numItems; c++) {
+                var clip = track.clips[c];
+                if (trackType === "video") summary.videoClips++; else summary.audioClips++;
+                try {
+                  if (clip.disabled === true || clip.disabled === 1) {
+                    summary.disabledClips++;
+                    warnings.push({ code: "DISABLED_CLIP", trackType: trackType, trackIndex: t, clipName: clip.name, nodeId: clip.nodeId });
+                  }
+                } catch (disabledError) {}
+                noteOffline(clip, trackType, t);
+              }
+            }
+          }
+
+          inspectTracks(seq.videoTracks, "video");
+          inspectTracks(seq.audioTracks, "audio");
+
+          var gaps = [];
+          if (${primaryTrack} < seq.videoTracks.numTracks) {
+            var primary = seq.videoTracks[${primaryTrack}];
+            var cursor = 0;
+            for (var i = 0; i < primary.clips.numItems; i++) {
+              var current = primary.clips[i];
+              var start = current.start.seconds;
+              if (start - cursor > 0.001) {
+                summary.primaryTrackGaps++;
+                gaps.push({ startSeconds: cursor, endSeconds: start, durationSeconds: start - cursor });
+              }
+              cursor = Math.max(cursor, current.end.seconds);
+            }
+          } else {
+            warnings.push({ code: "PRIMARY_VIDEO_TRACK_UNAVAILABLE", trackIndex: ${primaryTrack} });
+          }
+
+          var markers = [];
+          var marker = null;
+          try { marker = seq.markers.getFirstMarker(); } catch (markerError) {}
+          while (marker) {
+            summary.markers++;
+            if (markers.length < ${maxMarkers}) {
+              var entry = {
+                name: marker.name,
+                type: marker.type,
+                startSeconds: __ticksToSeconds(marker.start.ticks),
+                endSeconds: __ticksToSeconds(marker.end.ticks)
+              };
+              ${includeComments ? "try { entry.comments = marker.comments; } catch (commentError) {}" : ""}
+              markers.push(entry);
+            }
+            try { marker = seq.markers.getNextMarker(marker); } catch (nextMarkerError) { marker = null; }
+          }
+
+          return __result({
+            reportType: "sequence-review-handoff",
+            sequence: {
+              name: seq.name,
+              id: seq.sequenceID,
+              durationSeconds: __ticksToSeconds(seq.end),
+              videoTracks: seq.videoTracks.numTracks,
+              audioTracks: seq.audioTracks.numTracks
+            },
+            primaryVideoTrack: ${primaryTrack},
+            summary: summary,
+            primaryTrackGaps: gaps,
+            markers: markers,
+            markersTruncated: summary.markers > markers.length,
+            markerCommentsIncluded: ${includeComments},
+            offlineItems: offlineItems,
+            warnings: warnings,
+            verificationScope: "Premiere timeline readback only. This report does not inspect rendered pixels, audio quality, caption accuracy, rights, or editorial approval. It never returns media paths."
+          });
+        `);
+        return sendCommand(script, bridgeOptions);
+      },
+    },
+  };
+}

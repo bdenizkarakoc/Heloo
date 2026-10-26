@@ -1,0 +1,273 @@
+/**
+ * Workflow packs narrow `tools/list` for clients with limited tool context.
+ * They intentionally do not change capability enforcement: every registered
+ * handler still passes through the central authority guard at invocation time.
+ */
+export const WORKFLOW_TOOL_PACK_NAMES = [
+  "essential",
+  "inspection",
+  "delivery",
+  "captions",
+  "assistant-edit",
+  "intake",
+] as const;
+
+export type WorkflowToolPackName = (typeof WORKFLOW_TOOL_PACK_NAMES)[number];
+export type ToolPackSource = "default" | "environment" | "explicit";
+
+export interface ToolPackSelection {
+  source: ToolPackSource;
+  selected: readonly WorkflowToolPackName[];
+  fullCatalog: boolean;
+}
+
+export interface WorkflowToolPack {
+  name: WorkflowToolPackName;
+  title: string;
+  description: string;
+  tools: readonly string[];
+}
+
+export interface ToolPackReport {
+  source: ToolPackSource;
+  selected: readonly (WorkflowToolPackName | "full")[];
+  fullCatalog: boolean;
+  available: ReadonlyArray<Pick<WorkflowToolPack, "name" | "title" | "description">>;
+  note: string;
+}
+
+// Match the capability layer's diagnostic guarantee. A narrowed list must
+// still let an operator discover the selected packs and diagnose authority.
+const ALWAYS_ADVERTISED_DIAGNOSTIC_TOOLS = new Set(["ping", "get_capabilities"]);
+
+/**
+ * Each pack is deliberately a short, reviewable set of named tools. Keeping
+ * membership explicit avoids a new broad prefix accidentally widening a pack
+ * when another tool is added later.
+ */
+export const WORKFLOW_TOOL_PACKS: readonly WorkflowToolPack[] = [
+  {
+    name: "essential",
+    title: "Essential editing and delivery",
+    description:
+      "Connection, project and sequence inspection, safe edit-plan preview, save, delivery validation, export, and local delivery verification.",
+    tools: [
+      "verify_premiere_connection",
+      "can_execute",
+      "inspect_operation_recovery",
+      "get_project_info",
+      "get_active_sequence",
+      "get_sequence_structure",
+      "inspect_edit_readiness",
+      "inspect_sequence_review_report",
+      "preview_edit_plan",
+      "create_sequence_checkpoint",
+      "save_project",
+      "validate_project_for_export",
+      "export_sequence",
+      "export_sequence_job_start",
+      "get_export_job_status",
+      "verify_delivery_file",
+      "verify_delivery_conformance",
+      "export_and_verify",
+    ],
+  },
+  {
+    name: "inspection",
+    title: "Project and review inspection",
+    description:
+      "Read-only project, sequence, timeline, review, render-queue, and clip-metadata inspection before an editorial or delivery handoff.",
+    tools: [
+      "verify_premiere_connection",
+      "get_premiere_state",
+      "get_full_project_overview",
+      "get_project_info",
+      "list_sequences",
+      "get_active_sequence",
+      "get_sequence_structure",
+      "get_full_sequence_info",
+      "get_timeline_gaps",
+      "get_timeline_summary",
+      "inspect_edit_readiness",
+      "inspect_sequence_review_report",
+      "detect_silence",
+      "map_source_ranges_to_timeline",
+      "plan_silence_review_markers",
+      "get_offline_media",
+      "get_used_media_report",
+      "get_metadata",
+      "get_xmp_metadata",
+      "get_project_panel_metadata",
+      "inspect_project_panel_metadata_uxp",
+      "get_render_queue_status",
+      "diff_sequence_snapshots",
+      "audit_timeline_health",
+      "audit_project_structure",
+      "list_sequence_checkpoints",
+    ],
+  },
+  {
+    name: "delivery",
+    title: "Export and delivery",
+    description:
+      "Export preflight, rendering, interchange export, review-frame export, queue state, and post-export local verification.",
+    tools: [
+      "validate_project_for_export",
+      "validate_export_preset",
+      "export_sequence",
+      "export_sequence_job_start",
+      "get_export_job_status",
+      "export_frame",
+      "export_sequence_review_frames",
+      "export_sequence_marker_review_frames",
+      "export_sequence_clip_review_frames",
+      "export_as_fcp_xml",
+      "export_aaf",
+      "export_omf",
+      "add_to_render_queue",
+      "start_batch_encode",
+      "get_render_queue_status",
+      "encode_project_item",
+      "encode_file",
+      "verify_delivery_file",
+      "verify_delivery_conformance",
+      "export_and_verify",
+      "verify_temporal_render_artifact",
+      "build_edit_review_evidence",
+      "analyze_video_qc",
+      "plan_platform_delivery_matrix",
+      "validate_platform_publish_package",
+      "export_sequence_edl",
+    ],
+  },
+  {
+    name: "captions",
+    title: "Caption review",
+    description:
+      "Caption-track creation, supported caption readback, sequence structure, and review-frame evidence.",
+    tools: [
+      "create_caption_track",
+      "read_sequence_captions",
+      "get_active_sequence",
+      "get_sequence_structure",
+      "inspect_sequence_review_report",
+      "export_sequence_review_frames",
+      "export_sequence_clip_review_frames",
+      "build_caption_artifact",
+      "check_caption_safe_zone",
+      "retime_caption_file",
+      "plan_reaction_captions",
+      "plan_short_subscribe_cta",
+      "plan_short_export_folder",
+    ],
+  },
+  {
+    name: "assistant-edit",
+    title: "Reviewed assistant editing",
+    description: "Transcript-locked dialogue analysis, preview, derivative assembly, captions, reframing, and structural review.",
+    tools: [
+      "inspect_film_editorial_workflow",
+      "verify_premiere_connection", "get_clip_transcript_uxp", "search_clip_transcript_uxp",
+      "review_dialogue_candidates", "review_quote_paper_edit", "review_text_changes", "review_sync_evidence", "review_broll_placements",
+      "detect_silence", "analyze_dialogue_edit_candidates", "preview_derived_dialogue_sequence_uxp",
+      "apply_derived_dialogue_sequence_uxp", "create_caption_track", "auto_reframe_sequence",
+      "get_sequence_structure", "inspect_sequence_review_report",
+      "plan_filler_word_removal",
+      "plan_pause_tightening",
+      "plan_word_mute_ranges",
+      "detect_repeated_takes",
+      "rank_short_form_candidates",
+      "plan_chapter_markers",
+      "plan_emphasis_zoom_keyframes",
+      "plan_beat_montage",
+      "plan_cross_app_workflow",
+      "plan_speaker_checkerboard",
+      "plan_active_speaker_reframe",
+      "plan_reaction_captions",
+      "plan_short_subscribe_cta",
+      "plan_short_export_folder",
+      "plan_client_notes_checklist",
+      "plan_multicam_angle_switches",
+      "create_sequence_checkpoint",
+      "add_markers_batch",
+      "select_clips_by_pattern",
+      "navigate_playhead",
+    ],
+  },
+  {
+    name: "intake",
+    title: "Watched media intake",
+    description: "Session-scoped watched-folder monitoring, path-redacted proposals, deliberate import, and project inspection.",
+    tools: [
+      "verify_premiere_connection", "manage_media_watch", "preview_watched_media_import",
+      "import_project_media_uxp", "get_project_info", "get_premiere_state", "audit_project_structure",
+      "search_workflow_recipes", "preview_workflow_recipe",
+    ],
+  },
+];
+
+const PACK_BY_NAME = new Map(
+  WORKFLOW_TOOL_PACKS.map((pack) => [pack.name, pack]),
+);
+
+function parseToolPackNames(value: string): WorkflowToolPackName[] {
+  const selected = new Set<WorkflowToolPackName>();
+  for (const rawName of value.split(",")) {
+    const name = rawName.trim().toLowerCase();
+    if (!name) continue;
+    if (name === "full") {
+      if (value.split(",").filter((part) => part.trim()).length > 1) {
+        throw new Error("PREMIERE_MCP_TOOL_PACKS cannot combine 'full' with another pack");
+      }
+      return [];
+    }
+    if (!PACK_BY_NAME.has(name as WorkflowToolPackName)) {
+      throw new Error(
+        `Unknown Premiere MCP tool pack: ${name}. Available packs: full, ${WORKFLOW_TOOL_PACK_NAMES.join(", ")}`,
+      );
+    }
+    selected.add(name as WorkflowToolPackName);
+  }
+  if (selected.size === 0) {
+    throw new Error(
+      `PREMIERE_MCP_TOOL_PACKS must select full or at least one pack: ${WORKFLOW_TOOL_PACK_NAMES.join(", ")}`,
+    );
+  }
+  return [...selected];
+}
+
+export function resolveToolPacks(
+  value: string | undefined = process.env.PREMIERE_MCP_TOOL_PACKS,
+  source: ToolPackSource = value === undefined || value.trim() === ""
+    ? "default"
+    : "environment",
+): ToolPackSelection {
+  if (value === undefined || value.trim() === "" || value.trim().toLowerCase() === "full") {
+    return { source, selected: [], fullCatalog: true };
+  }
+  return { source, selected: parseToolPackNames(value), fullCatalog: false };
+}
+
+export function isToolInSelectedPacks(
+  toolName: string,
+  selection: ToolPackSelection,
+): boolean {
+  if (selection.fullCatalog) return true;
+  if (ALWAYS_ADVERTISED_DIAGNOSTIC_TOOLS.has(toolName)) return true;
+  return selection.selected.some((name) => PACK_BY_NAME.get(name)?.tools.includes(toolName));
+}
+
+export function buildToolPackReport(selection: ToolPackSelection): ToolPackReport {
+  return {
+    source: selection.source,
+    selected: selection.fullCatalog ? ["full"] : [...selection.selected],
+    fullCatalog: selection.fullCatalog,
+    available: WORKFLOW_TOOL_PACKS.map(({ name, title, description }) => ({
+      name,
+      title,
+      description,
+    })),
+    note:
+      "Tool packs narrow tool discovery and registration for this session. They do not grant capabilities; every registered call remains subject to the configured authority profile.",
+  };
+}

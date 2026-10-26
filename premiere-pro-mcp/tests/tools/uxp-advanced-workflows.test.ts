@@ -1,0 +1,518 @@
+import { describe, expect, it, vi } from "vitest";
+import type { UxpWebSocketBridge } from "../../src/bridge/uxp-websocket-bridge.js";
+import { getUxpTools } from "../../src/tools/uxp.js";
+
+function expectMatchesSchema(value: unknown, schema: Record<string, any>) {
+  const types = Array.isArray(schema.type) ? schema.type : schema.type ? [schema.type] : [];
+  if (types.includes("object")) {
+    expect(value).not.toBeNull(); expect(typeof value).toBe("object"); expect(Array.isArray(value)).toBe(false);
+    const record = value as Record<string, unknown>;
+    for (const key of schema.required ?? []) expect(record).toHaveProperty(key);
+    if (schema.additionalProperties === false) expect(Object.keys(record).every((key) => key in (schema.properties ?? {}))).toBe(true);
+    for (const [key, child] of Object.entries(schema.properties ?? {})) if (key in record) expectMatchesSchema(record[key], child as Record<string, any>);
+  }
+  if (types.includes("array")) { expect(Array.isArray(value)).toBe(true); for (const child of value as unknown[]) expectMatchesSchema(child, schema.items); }
+  if (types.includes("string")) expect(typeof value).toBe("string");
+  if (types.includes("number")) expect(typeof value).toBe("number");
+  if (types.includes("integer")) expect(Number.isSafeInteger(value)).toBe(true);
+  if (types.includes("boolean")) expect(typeof value).toBe("boolean");
+}
+
+const ADVANCED_WORKFLOW_TOOLS = [
+  "inspect_project_selection_uxp",
+  "inspect_project_tree_uxp",
+  "manage_markers_uxp",
+  "apply_beat_markers_uxp",
+  "create_silence_cut_source_stringout_uxp",
+  "organize_project_items_uxp",
+  "manage_sequence_settings_uxp",
+  "manage_sequence_display_format_uxp",
+  "import_project_media_uxp",
+  "automate_effect_parameters_uxp",
+  "transform_track_item_uxp",
+  "edit_timeline_uxp",
+  "manage_sequences_uxp",
+  "encode_media_uxp",
+] as const;
+
+describe("advanced stable UXP workflow MCP catalog", () => {
+  it("publishes fourteen advanced tools with closed, bounded schemas", () => {
+    const bridge = { request: vi.fn(), getState: vi.fn() } as unknown as UxpWebSocketBridge;
+    const tools = getUxpTools(bridge) as Record<string, { parameters: Record<string, unknown> }>;
+
+    expect(Object.keys(tools)).toEqual(expect.arrayContaining(ADVANCED_WORKFLOW_TOOLS));
+    expect(ADVANCED_WORKFLOW_TOOLS).toHaveLength(14);
+    for (const name of ADVANCED_WORKFLOW_TOOLS) {
+      const parameters = tools[name].parameters;
+      expect(parameters).toMatchObject({
+        type: "object",
+        additionalProperties: false,
+      });
+      if (name !== "inspect_project_tree_uxp") {
+        expect(parameters).toMatchObject({
+          required: expect.arrayContaining([name === "apply_beat_markers_uxp" ? "beat_times_seconds" : name === "create_silence_cut_source_stringout_uxp" ? "source_project_item_id" : "action"]),
+        });
+      }
+    }
+    expect(tools.inspect_project_selection_uxp.parameters).toMatchObject({
+      properties: { action: { enum: ["views", "selection"] }, view_id: { maxLength: 128 } },
+    });
+    expect(tools.inspect_project_tree_uxp.parameters).toMatchObject({
+      additionalProperties: false,
+      properties: { max_items: { minimum: 1, maximum: 512 }, max_depth: { minimum: 0, maximum: 16 } },
+    });
+    expect(tools.manage_markers_uxp.parameters).toMatchObject({
+      properties: {
+        action: { enum: ["inspect", "add", "update", "remove", "remove_many"] },
+        marker_snapshots: {
+          minItems: 1, maxItems: 128,
+          items: { required: ["marker_guid", "expected_name", "expected_start_seconds", "expected_duration_seconds"] },
+        },
+        confirm_destructive: { type: "boolean" },
+      },
+    });
+    expect(tools.manage_sequence_display_format_uxp.parameters).toMatchObject({
+      properties: {
+        action: { enum: ["inspect", "update"] },
+        expected_sequence_guid: { maxLength: 128 },
+        expected_display_formats: { required: ["audio_display_format", "video_display_format"] },
+        updates: { additionalProperties: false },
+      },
+    });
+    expect(tools.import_project_media_uxp.parameters).toMatchObject({
+      required: ["action", "confirm_non_undoable"],
+      properties: { paths: { maxItems: 100 }, confirm_non_undoable: { type: "boolean" } },
+    });
+    expect(tools.automate_effect_parameters_uxp.parameters).toMatchObject({
+      properties: {
+        action: { enum: ["inspect", "inspect_point_value", "inspect_point_displacement", "set_point_value", "inspect_color_value", "set_color_value", "inspect_keyframe", "set_value", "add_keyframe", "remove_keyframe", "remove_keyframe_range", "set_interpolation", "inspect_time_varying", "set_time_varying"] },
+        point: { required: ["x", "y"], additionalProperties: false },
+        expected_point_snapshot: { required: ["project_id", "sequence_id", "media_type", "track_index", "clip_index", "component_index", "component_id", "param_index", "param_name", "time_varying", "point"], additionalProperties: false },
+        color: { required: ["red", "green", "blue", "alpha"], additionalProperties: false },
+        expected_color_snapshot: { required: ["project_id", "sequence_id", "media_type", "track_index", "clip_index", "component_index", "component_id", "param_index", "param_name", "time_varying", "color"], additionalProperties: false },
+        expected_sequence_id: { maxLength: 128 }, expected_time_varying: { type: "boolean" },
+        expected_keyframe_times_seconds: { maxItems: 256, uniqueItems: true },
+        keyframe_direction: { enum: ["at", "next", "previous", "nearest"] },
+        time_varying: { type: "boolean" }, confirm_disable_time_varying: { type: "boolean" },
+      },
+    });
+    expect(tools.encode_media_uxp.parameters).toMatchObject({
+      properties: {
+        action: { enum: ["preflight", "jobs", "wait", "sequence", "project_item", "file"] },
+        job_id: { pattern: expect.any(String) },
+        timeout_ms: { maximum: 60000 },
+        output_file: { maxLength: 4096 },
+        confirm_external_write: { type: "boolean" },
+      },
+    });
+  });
+
+  it("maps guarded parameter keyframe and animation-mode reads to their exact UXP commands", async () => {
+    const request = vi.fn().mockResolvedValue({ outcome: "verified" });
+    const bridge = { request, getState: vi.fn() } as unknown as UxpWebSocketBridge;
+    const tools = getUxpTools(bridge);
+    const target = {
+      media_type: "video", track_index: 0, clip_index: 1, component_index: 2, param_index: 3,
+      expected_component_id: "ADBE Opacity", expected_param_name: "Opacity",
+    };
+
+    await tools.automate_effect_parameters_uxp.handler({ action: "inspect_keyframe", ...target, time_seconds: 4, keyframe_direction: "next" });
+    await tools.automate_effect_parameters_uxp.handler({ action: "inspect_keyframe", ...target, time_seconds: 4, end_seconds: 6, keyframe_direction: "nearest" });
+    await tools.automate_effect_parameters_uxp.handler({ action: "inspect_time_varying", ...target, time_seconds: 4 });
+    await tools.automate_effect_parameters_uxp.handler({
+      action: "set_time_varying", ...target, expected_sequence_id: "sequence-1", expected_time_varying: true,
+      expected_keyframe_times_seconds: [1, 2], time_varying: false, confirm_disable_time_varying: true,
+      operation_id: "parameter-animation-op",
+    });
+
+    expect(request.mock.calls).toEqual([
+      ["parameters.keyframe.inspect", {
+        mediaType: "video", trackIndex: 0, clipIndex: 1, componentIndex: 2, paramIndex: 3,
+        expectedComponentId: "ADBE Opacity", expectedParamName: "Opacity", timeSeconds: 4, direction: "next",
+      }],
+      ["parameters.keyframe.inspect", {
+        mediaType: "video", trackIndex: 0, clipIndex: 1, componentIndex: 2, paramIndex: 3,
+        expectedComponentId: "ADBE Opacity", expectedParamName: "Opacity", timeSeconds: 4, direction: "nearest", endSeconds: 6,
+      }],
+      ["parameters.timeVarying.inspect", {
+        mediaType: "video", trackIndex: 0, clipIndex: 1, componentIndex: 2, paramIndex: 3,
+        expectedComponentId: "ADBE Opacity", expectedParamName: "Opacity",
+      }],
+      ["parameters.timeVarying.set", {
+        mediaType: "video", trackIndex: 0, clipIndex: 1, componentIndex: 2, paramIndex: 3,
+        expectedSequenceId: "sequence-1", expectedComponentId: "ADBE Opacity", expectedParamName: "Opacity",
+        expectedTimeVarying: true, expectedKeyframeTimesSeconds: [1, 2], timeVarying: false,
+        confirmDisableTimeVarying: true, operationId: "parameter-animation-op",
+      }],
+    ]);
+  });
+
+  it("returns every display-format and animation-mode guard in apply-ready form", async () => {
+    const request = vi.fn()
+      .mockResolvedValueOnce({ sequence: { id: "sequence-1" }, displayFormats: { audioDisplayFormat: 1, videoDisplayFormat: 20 } })
+      .mockResolvedValueOnce({ updated: true })
+      .mockResolvedValueOnce({ projectId: "project-1", sequenceId: "sequence-1", componentId: "ADBE Opacity", paramName: "Opacity", timeVarying: true, keyframeTimesSeconds: [1, 2], keyframesLimited: false })
+      .mockResolvedValueOnce({ updated: true });
+    const tools = getUxpTools({ request, getState: vi.fn() } as unknown as UxpWebSocketBridge);
+    const display = await tools.manage_sequence_display_format_uxp.handler({ action: "inspect" });
+    const displayData = display.data as Record<string, unknown>;
+    expectMatchesSchema(displayData.expected_sequence_guid, tools.manage_sequence_display_format_uxp.parameters.properties.expected_sequence_guid);
+    expectMatchesSchema(displayData.expected_display_formats, tools.manage_sequence_display_format_uxp.parameters.properties.expected_display_formats);
+    await tools.manage_sequence_display_format_uxp.handler({
+      action: "update", expected_sequence_guid: displayData.expected_sequence_guid,
+      expected_display_formats: displayData.expected_display_formats, updates: { audio_display_format: 2 },
+    } as never);
+
+    const target = { media_type: "video", track_index: 0, clip_index: 1, component_index: 2, param_index: 3 };
+    const animation = await tools.automate_effect_parameters_uxp.handler({ action: "inspect_time_varying", ...target } as never);
+    const animationData = animation.data as Record<string, unknown>;
+    const animationTool = tools.automate_effect_parameters_uxp;
+    for (const key of ["expected_sequence_id", "expected_component_id", "expected_param_name", "expected_time_varying", "expected_keyframe_times_seconds"]) {
+      expectMatchesSchema(animationData[key], animationTool.parameters.properties[key]);
+    }
+    await animationTool.handler({
+      action: "set_time_varying", ...target,
+      expected_sequence_id: animationData.expected_sequence_id,
+      expected_component_id: animationData.expected_component_id,
+      expected_param_name: animationData.expected_param_name,
+      expected_time_varying: animationData.expected_time_varying,
+      expected_keyframe_times_seconds: animationData.expected_keyframe_times_seconds,
+      time_varying: false, confirm_disable_time_varying: true,
+    } as never);
+    expect(request).toHaveBeenNthCalledWith(2, "sequence.displayFormat.update", expect.objectContaining({
+      expectedSequenceGuid: "sequence-1", expectedDisplayFormats: { audioDisplayFormat: 1, videoDisplayFormat: 20 },
+    }));
+    expect(request).toHaveBeenNthCalledWith(4, "parameters.timeVarying.set", expect.objectContaining({
+      expectedSequenceId: "sequence-1", expectedComponentId: "ADBE Opacity", expectedParamName: "Opacity",
+      expectedTimeVarying: true, expectedKeyframeTimesSeconds: [1, 2],
+    }));
+  });
+
+  it("returns the inspected marker name as the optional update guard", async () => {
+    const request = vi.fn()
+      .mockResolvedValueOnce({ ownerType: "sequence", markers: [{ guid: "marker-1", name: "Intro", startSeconds: 0, durationSeconds: 2 }] })
+      .mockResolvedValueOnce({ updated: true });
+    const tool = getUxpTools({ request, getState: vi.fn() } as unknown as UxpWebSocketBridge).manage_markers_uxp;
+    const inspected = await tool.handler({ action: "inspect", owner_type: "sequence", sequence_id: "sequence-1", marker_guid: "marker-1" } as never);
+    const expectedName = (inspected.data as Record<string, unknown>).expected_name;
+    expectMatchesSchema(expectedName, tool.parameters.properties.expected_name);
+    await tool.handler({
+      action: "update", owner_type: "sequence", sequence_id: "sequence-1", marker_guid: "marker-1",
+      expected_name: expectedName, name: "Opening", operation_id: "marker-guard-roundtrip",
+    } as never);
+    expect(request).toHaveBeenNthCalledWith(2, "markers.update", expect.objectContaining({ markerGuid: "marker-1", expectedName: "Intro" }));
+  });
+
+  it("maps guarded static PointF inspection and update actions to the exact UXP commands", async () => {
+    const request = vi.fn().mockResolvedValue({ outcome: "verified" });
+    const bridge = { request, getState: vi.fn() } as unknown as UxpWebSocketBridge;
+    const tools = getUxpTools(bridge);
+    const target = {
+      media_type: "video", track_index: 0, clip_index: 1, component_index: 2, param_index: 3,
+      expected_component_id: "ADBE Motion", expected_param_name: "Position",
+    };
+    const expectedPointSnapshot = {
+      project_id: "project-1", sequence_id: "sequence-1", media_type: "video", track_index: 0, clip_index: 1,
+      component_index: 2, component_id: "ADBE Motion", param_index: 3, param_name: "Position", time_varying: false,
+      point: { x: 960, y: 540 },
+    };
+
+    await tools.automate_effect_parameters_uxp.handler({ action: "inspect_point_value", ...target });
+    await tools.automate_effect_parameters_uxp.handler({
+      action: "set_point_value", ...target, expected_point_snapshot: expectedPointSnapshot,
+      point: { x: 1100, y: 600 }, confirm_set_point: true, operation_id: "point-tool-op",
+    });
+
+    expect(request.mock.calls).toEqual([
+      ["parameters.point.inspect", {
+        mediaType: "video", trackIndex: 0, clipIndex: 1, componentIndex: 2, paramIndex: 3,
+        expectedComponentId: "ADBE Motion", expectedParamName: "Position",
+      }],
+      ["parameters.point.set", {
+        mediaType: "video", trackIndex: 0, clipIndex: 1, componentIndex: 2, paramIndex: 3,
+        expectedComponentId: "ADBE Motion", expectedParamName: "Position", point: { x: 1100, y: 600 },
+        expectedSnapshot: {
+          projectId: "project-1", sequenceId: "sequence-1", mediaType: "video", trackIndex: 0, clipIndex: 1,
+          componentIndex: 2, componentId: "ADBE Motion", paramIndex: 3, paramName: "Position", timeVarying: false,
+          point: { x: 960, y: 540 },
+        },
+        confirmSetPoint: true, operationId: "point-tool-op",
+      }],
+    ]);
+  });
+
+  it("maps bounded native PointF displacement inspection to its exact UXP command", async () => {
+    const request = vi.fn().mockResolvedValue({ straightLineDistance: 5 });
+    const bridge = { request, getState: vi.fn() } as unknown as UxpWebSocketBridge;
+    const tools = getUxpTools(bridge);
+    await tools.automate_effect_parameters_uxp.handler({
+      action: "inspect_point_displacement", media_type: "video", track_index: 0, clip_index: 1,
+      component_index: 2, param_index: 3, expected_component_id: "ADBE Motion", expected_param_name: "Position",
+      time_seconds: 2, end_seconds: 5,
+    });
+    expect(request).toHaveBeenCalledWith("parameters.point.displacement.inspect", {
+      mediaType: "video", trackIndex: 0, clipIndex: 1, componentIndex: 2, paramIndex: 3,
+      expectedComponentId: "ADBE Motion", expectedParamName: "Position", startSeconds: 2, endSeconds: 5,
+    });
+  });
+
+  it("maps guarded static Color inspection and update actions to the exact UXP commands", async () => {
+    const request = vi.fn().mockResolvedValue({ outcome: "verified" });
+    const bridge = { request, getState: vi.fn() } as unknown as UxpWebSocketBridge;
+    const tools = getUxpTools(bridge);
+    const target = {
+      media_type: "video", track_index: 0, clip_index: 1, component_index: 2, param_index: 3,
+      expected_component_id: "ADBE Lumetri", expected_param_name: "Tint",
+    };
+    const expectedColorSnapshot = {
+      project_id: "project-1", sequence_id: "sequence-1", media_type: "video", track_index: 0, clip_index: 1,
+      component_index: 2, component_id: "ADBE Lumetri", param_index: 3, param_name: "Tint", time_varying: false,
+      color: { red: 0.1, green: 0.2, blue: 0.3, alpha: 1 },
+    };
+
+    await tools.automate_effect_parameters_uxp.handler({ action: "inspect_color_value", ...target });
+    await tools.automate_effect_parameters_uxp.handler({
+      action: "set_color_value", ...target, expected_color_snapshot: expectedColorSnapshot,
+      color: { red: 0.9, green: 0.8, blue: 0.7, alpha: 0.6 }, confirm_set_color: true, operation_id: "color-tool-op",
+    });
+
+    expect(request.mock.calls).toEqual([
+      ["parameters.color.inspect", {
+        mediaType: "video", trackIndex: 0, clipIndex: 1, componentIndex: 2, paramIndex: 3,
+        expectedComponentId: "ADBE Lumetri", expectedParamName: "Tint",
+      }],
+      ["parameters.color.set", {
+        mediaType: "video", trackIndex: 0, clipIndex: 1, componentIndex: 2, paramIndex: 3,
+        expectedComponentId: "ADBE Lumetri", expectedParamName: "Tint",
+        color: { red: 0.9, green: 0.8, blue: 0.7, alpha: 0.6 },
+        expectedSnapshot: {
+          projectId: "project-1", sequenceId: "sequence-1", mediaType: "video", trackIndex: 0, clipIndex: 1,
+          componentIndex: 2, componentId: "ADBE Lumetri", paramIndex: 3, paramName: "Tint", timeVarying: false,
+          color: { red: 0.1, green: 0.2, blue: 0.3, alpha: 1 },
+        },
+        confirmSetColor: true, operationId: "color-tool-op",
+      }],
+    ]);
+  });
+
+  it("maps every consolidated tool to its exact camel-case UXP command contract", async () => {
+    const request = vi.fn().mockResolvedValue({ outcome: "verified" });
+    const bridge = { request, getState: vi.fn() } as unknown as UxpWebSocketBridge;
+    const tools = getUxpTools(bridge);
+
+    await tools.inspect_project_selection_uxp.handler({ action: "selection", view_id: "view-1" });
+    await tools.inspect_project_tree_uxp.handler({ max_items: 12, max_depth: 3 });
+    await tools.manage_markers_uxp.handler({
+      action: "update", owner_type: "project_item", project_item_id: "clip-1",
+      marker_guid: "marker-1", expected_name: "Old", name: "New", color_index: 3,
+      operation_id: "marker-op",
+    });
+    await tools.manage_markers_uxp.handler({
+      action: "remove_many", owner_type: "sequence", sequence_id: "sequence-1", marker_guid: "single-marker", expected_name: "Ignored", confirm_destructive: true,
+      marker_snapshots: [{ marker_guid: "marker-1", expected_name: "Old", expected_start_seconds: 1, expected_duration_seconds: 0 }],
+      operation_id: "marker-batch-op",
+    });
+    await tools.apply_beat_markers_uxp.handler({
+      beat_times_seconds: [0.5, 1, 1.5], sequence_id: "sequence-1", offset_seconds: 2,
+      name_prefix: "Downbeat", comments: "Detected beat grid", operation_id: "beat-grid-op",
+    });
+    await tools.create_silence_cut_source_stringout_uxp.handler({
+      source_project_item_id: "clip-1", sequence_name: "Interview Tight", duration_seconds: 10,
+      frame_rate: 30, silence_ranges: [{ start_seconds: 2, end_seconds: 4 }],
+      keep_handle_frames: 0, confirm_non_undoable: true, operation_id: "silence-op",
+    });
+    await tools.organize_project_items_uxp.handler({
+      action: "create_smart_bin", parent_bin_id: "bin-1", name: "Selects",
+      search_query: "rating:5", operation_id: "bin-op",
+    });
+    await tools.manage_sequence_settings_uxp.handler({
+      action: "update", sequence_id: "sequence-1",
+      updates: { maximum_bit_depth: true, video_frame_rate: 24, video_width: 1920 },
+      operation_id: "settings-op",
+    });
+    await tools.manage_sequence_display_format_uxp.handler({
+      action: "update", sequence_id: "sequence-1", expected_sequence_guid: "sequence-1",
+      expected_display_formats: { audio_display_format: 1, video_display_format: 20 },
+      updates: { audio_display_format: 2, video_display_format: 26 }, operation_id: "display-format-op",
+    });
+    await tools.import_project_media_uxp.handler({
+      action: "ae_comps", aep_path: "D:/Approved/graphics.aep",
+      comp_names: ["Lower Third"], target_bin_id: "bin-1",
+      confirm_non_undoable: true, operation_id: "import-op",
+    });
+    await tools.automate_effect_parameters_uxp.handler({
+      action: "add_keyframe", media_type: "video", track_index: 0, clip_index: 1,
+      component_index: 2, param_index: 3, expected_component_id: "ADBE Opacity",
+      expected_param_name: "Opacity", value: 75, time_seconds: 2.5,
+      operation_id: "keyframe-op",
+    });
+    await tools.transform_track_item_uxp.handler({
+      action: "update", media_type: "audio", track_index: 1, clip_index: 2,
+      expected_start_seconds: 10, expected_end_seconds: 20, move_by_seconds: 1.5,
+      disabled: false, operation_id: "track-op",
+    });
+    await tools.edit_timeline_uxp.handler({
+      action: "insert_mogrt_path", file_path: "D:/Approved/title.mogrt",
+      time_seconds: 4, video_track_index: 2, audio_track_index: 0,
+      confirm_non_undoable: true, operation_id: "timeline-op",
+    });
+    await tools.manage_sequences_uxp.handler({
+      action: "create_from_media", name: "Assembly", project_item_ids: ["clip-1", "clip-2"],
+      target_bin_id: "bin-1", confirm_non_undoable: true, operation_id: "sequence-op",
+    });
+    await tools.encode_media_uxp.handler({
+      action: "file", file_path: "D:/Approved/input.mov", output_file: "D:/Approved/output.mp4",
+      preset_file: "D:/Approved/h264.epr", in_seconds: 1, out_seconds: 8, work_area: 0,
+      remove_upon_completion: true, start_queue_immediately: false,
+      confirm_external_write: true, operation_id: "encode-op",
+    });
+    await tools.encode_media_uxp.handler({
+      action: "wait", job_id: "encode-op", timeout_ms: 5000,
+    });
+    await tools.encode_media_uxp.handler({ action: "jobs", limit: 3 });
+    await tools.encode_media_uxp.handler({ action: "wait", job_id: "encode-op" });
+
+    expect(request.mock.calls).toEqual([
+      ["projectSelection.inspect", { viewId: "view-1" }],
+      ["projectTree.inspect", { maxItems: 12, maxDepth: 3 }],
+      ["markers.update", {
+        ownerType: "projectItem", projectItemId: "clip-1", markerGuid: "marker-1",
+        expectedName: "Old", name: "New", colorIndex: 3, operationId: "marker-op",
+      }],
+      ["markers.removeMany", {
+        ownerType: "sequence", sequenceId: "sequence-1",
+        markerSnapshots: [{ markerGuid: "marker-1", expectedName: "Old", expectedStartSeconds: 1, expectedDurationSeconds: 0 }],
+        confirmDestructive: true, operationId: "marker-batch-op",
+      }],
+      ["markers.addBeatGrid", {
+        beatTimesSeconds: [0.5, 1, 1.5], sequenceId: "sequence-1", offsetSeconds: 2,
+        namePrefix: "Downbeat", comments: "Detected beat grid", operationId: "beat-grid-op",
+      }],
+      ["silence.deriveSequence", {
+        sourceProjectItemId: "clip-1", name: "Interview Tight",
+        keepRanges: [
+          { startFrame: 0, endFrame: 60, startSeconds: 0, endSeconds: 2 },
+          { startFrame: 120, endFrame: 300, startSeconds: 4, endSeconds: 10 },
+        ],
+        confirmNonUndoable: true, operationId: "silence-op",
+      }],
+      ["bins.createSmart", {
+        parentBinId: "bin-1", name: "Selects", searchQuery: "rating:5", operationId: "bin-op",
+      }],
+      ["sequenceSettings.update", {
+        sequenceId: "sequence-1",
+        updates: { maximumBitDepth: true, videoFrameRate: 24, videoWidth: 1920 },
+        operationId: "settings-op",
+      }],
+      ["sequence.displayFormat.update", {
+        sequenceId: "sequence-1", expectedSequenceGuid: "sequence-1",
+        expectedDisplayFormats: { audioDisplayFormat: 1, videoDisplayFormat: 20 },
+        updates: { audioDisplayFormat: 2, videoDisplayFormat: 26 }, operationId: "display-format-op",
+      }],
+      ["project.import", {
+        mode: "aeComps", aepPath: "D:/Approved/graphics.aep", compNames: ["Lower Third"],
+        targetBinId: "bin-1", confirmNonUndoable: true, operationId: "import-op",
+      }],
+      ["parameters.keyframeAdd", {
+        mediaType: "video", trackIndex: 0, clipIndex: 1, componentIndex: 2, paramIndex: 3,
+        expectedComponentId: "ADBE Opacity", expectedParamName: "Opacity", timeSeconds: 2.5,
+        value: 75, operationId: "keyframe-op",
+      }],
+      ["trackItem.update", {
+        mediaType: "audio", trackIndex: 1, clipIndex: 2, expectedStartSeconds: 10,
+        expectedEndSeconds: 20, moveBySeconds: 1.5, disabled: false, operationId: "track-op",
+      }],
+      ["timeline.mogrtPath", {
+        timeSeconds: 4, videoTrackIndex: 2, audioTrackIndex: 0,
+        filePath: "D:/Approved/title.mogrt", confirmNonUndoable: true,
+        operationId: "timeline-op",
+      }],
+      ["sequences.createFromMedia", {
+        name: "Assembly", projectItemIds: ["clip-1", "clip-2"], targetBinId: "bin-1",
+        confirmNonUndoable: true, operationId: "sequence-op",
+      }],
+      ["encoder.file", {
+        filePath: "D:/Approved/input.mov", outputFile: "D:/Approved/output.mp4",
+        presetFile: "D:/Approved/h264.epr", inSeconds: 1, outSeconds: 8, workArea: 0,
+        removeUponCompletion: true, startQueueImmediately: false,
+        confirmExternalWrite: true, operationId: "encode-op",
+      }],
+      ["encoder.wait", { jobId: "encode-op", timeoutMs: 5000 }, { minimumTimeoutMs: 10000 }],
+      ["encoder.jobs", { limit: 3 }],
+      ["encoder.wait", { jobId: "encode-op" }, { minimumTimeoutMs: 5000 }],
+    ]);
+  });
+
+  it("rejects unknown public actions without contacting Premiere", async () => {
+    const request = vi.fn();
+    const bridge = { request, getState: vi.fn() } as unknown as UxpWebSocketBridge;
+    const tools = getUxpTools(bridge);
+    const results = await Promise.all([
+      tools.inspect_project_selection_uxp.handler({ action: "destroy_everything" }),
+      tools.manage_markers_uxp.handler({ action: "destroy_everything" }),
+      tools.organize_project_items_uxp.handler({ action: "destroy_everything" }),
+      tools.transform_track_item_uxp.handler({ action: "destroy_everything" }),
+    ]);
+
+    expect(results).toEqual(Array.from({ length: 4 }, () => ({
+      success: false,
+      error: "Unsupported workflow action: destroy_everything",
+    })));
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it("rejects unreviewed or duplicate marker batch removal before contacting Premiere", async () => {
+    const request = vi.fn();
+    const bridge = { request, getState: vi.fn() } as unknown as UxpWebSocketBridge;
+    const tools = getUxpTools(bridge);
+    const snapshot = { marker_guid: "marker-1", expected_name: "Beat", expected_start_seconds: 0, expected_duration_seconds: 0 };
+
+    await expect(tools.manage_markers_uxp.handler({ action: "remove_many", marker_snapshots: [snapshot] })).resolves.toMatchObject({
+      success: false, error: expect.stringContaining("confirm_destructive=true"),
+    });
+    await expect(tools.manage_markers_uxp.handler({
+      action: "remove_many", confirm_destructive: true, marker_snapshots: [snapshot, snapshot],
+    })).resolves.toMatchObject({ success: false, error: expect.stringContaining("duplicate marker_guid") });
+    await expect(tools.manage_markers_uxp.handler({
+      action: "remove_many", confirm_destructive: true, marker_snapshots: [null],
+    })).resolves.toMatchObject({ success: false, error: expect.stringContaining("marker_snapshots[0] must be an object") });
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it("normalizes Error and non-Error bridge rejections", async () => {
+    const request = vi.fn()
+      .mockRejectedValueOnce(new Error("Premiere unavailable"))
+      .mockRejectedValueOnce("transport closed");
+    const bridge = { request, getState: vi.fn() } as unknown as UxpWebSocketBridge;
+    const tools = getUxpTools(bridge);
+
+    await expect(tools.inspect_project_selection_uxp.handler({ action: "views" })).resolves.toEqual({
+      success: false,
+      error: "Premiere unavailable",
+    });
+    await expect(tools.manage_sequence_settings_uxp.handler({ action: "get" })).resolves.toEqual({
+      success: false,
+      error: "transport closed",
+    });
+  });
+
+  it("rejects missing actions in mapped dispatchers before bridge access", async () => {
+    const request = vi.fn();
+    const bridge = { request, getState: vi.fn() } as unknown as UxpWebSocketBridge;
+    const tools = getUxpTools(bridge);
+
+    const results = await Promise.all([
+      tools.import_project_media_uxp.handler({ confirm_non_undoable: true }),
+      tools.automate_effect_parameters_uxp.handler({}),
+      tools.edit_timeline_uxp.handler({}),
+      tools.manage_sequences_uxp.handler({}),
+      tools.encode_media_uxp.handler({}),
+    ]);
+
+    expect(results).toEqual(Array.from({ length: 5 }, () => ({
+      success: false,
+      error: "Unsupported workflow action: undefined",
+    })));
+    expect(request).not.toHaveBeenCalled();
+  });
+});

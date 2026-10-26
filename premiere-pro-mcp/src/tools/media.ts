@@ -1,0 +1,863 @@
+import { setProjectItemStartTime } from "./project-item-start-time.js";
+import { buildToolScript, escapeForExtendScript } from "../bridge/script-builder.js";
+import { sendCommand, BridgeOptions } from "../bridge/file-bridge.js";
+import { existsSync, statSync } from "node:fs";
+import { resolve } from "node:path";
+
+export function getMediaTools(bridgeOptions: BridgeOptions) {
+  return {
+    import_media: {
+      description: "Import media files into the project and confirm a new project item for each file",
+      parameters: {
+        type: "object" as const,
+        properties: {
+          file_paths: {
+            type: "array",
+            minItems: 1,
+            items: { type: "string", minLength: 1 },
+            description: "Array of file paths to import",
+          },
+          target_bin: {
+            type: "string",
+            description: "Optional bin name or node ID to import into. Imports to root if omitted.",
+          },
+          suppress_ui: {
+            type: "boolean",
+            description: "Suppress import dialogs (default: true)",
+          },
+        },
+        required: ["file_paths"],
+      },
+      handler: async (args: { file_paths: string[]; target_bin?: string; suppress_ui?: boolean }) => {
+        // SEC FORK (#725 FAM-5): an empty array used to fall through to a vague
+        // "Import failed"; require at least one real path.
+        if (!Array.isArray(args.file_paths) || args.file_paths.length === 0 || args.file_paths.some((p) => typeof p !== "string" || !p.trim())) {
+          return { success: false as const, error: "file_paths must contain at least one non-empty path" };
+        }
+        // importFiles with a nonexistent path opens a blocking modal in Premiere
+        // that wedges the CEP bridge (#713): check every path here first and
+        // hand the host native separators.
+        const resolvedPaths = args.file_paths.map((p) => resolve(p));
+        const missing: string[] = [];
+        const nonFiles: string[] = [];
+        for (const p of resolvedPaths) {
+          try {
+            if (!existsSync(p)) missing.push(p);
+            else if (!statSync(p).isFile()) nonFiles.push(p);
+          } catch {
+            return { success: false as const, error: `Could not inspect import path: ${p} — nothing was imported.` };
+          }
+        }
+        if (missing.length > 0) {
+          return {
+            success: false as const,
+            error: `File(s) not found: ${missing.join(", ")} — nothing was imported. importFiles with a missing path opens a blocking dialog in Premiere.`,
+          };
+        }
+        if (nonFiles.length > 0) {
+          return { success: false as const, error: `file_paths must contain files, not directories or special paths: ${nonFiles.join(", ")}. Use import_folder for a directory; nothing was imported.` };
+        }
+        const paths = resolvedPaths.map((p) => `"${escapeForExtendScript(p)}"`).join(", ");
+        const suppress = args.suppress_ui !== false ? "true" : "false";
+        const binLookup = args.target_bin
+          ? `var targetBin = __findProjectItem("${escapeForExtendScript(args.target_bin)}");
+             if (!targetBin) return __error("Bin not found: ${escapeForExtendScript(args.target_bin)}");`
+          : `var targetBin = app.project.rootItem;`;
+
+        const script = buildToolScript(`
+          ${binLookup}
+          var filePaths = [${paths}];
+          var missing = [];
+          for (var m = 0; m < filePaths.length; m++) if (!new File(filePaths[m]).exists) missing.push(filePaths[m]);
+          if (missing.length) return __error("No file exists at: " + missing.join(", ") + ". Nothing was imported.");
+          function __childIds() {
+            var ids = {};
+            var count = __childCount(targetBin);
+            for (var c = 0; c < count; c++) { var child = __childAt(targetBin, c); if (child) ids[String(child.nodeId)] = true; }
+            return ids;
+          }
+          var before = __childIds();
+          var importSuccess = app.project.importFiles(filePaths, ${suppress}, targetBin, false);
+          // Match new items in the target bin to the requested paths.
+          var added = [];
+          var count = __childCount(targetBin);
+          for (var c = 0; c < count; c++) {
+            var child = __childAt(targetBin, c);
+            if (!child || before[String(child.nodeId)]) continue;
+            var mediaPath = "";
+            try { mediaPath = String(child.getMediaPath()); } catch (ePath) {}
+            added.push({ nodeId: String(child.nodeId), name: child.name, mediaPath: mediaPath });
+          }
+          var notImported = [];
+          for (var f = 0; f < filePaths.length; f++) {
+            var found = false;
+            var wantedPath = new File(filePaths[f]).fsName;
+            for (var a = 0; a < added.length; a++) if (added[a].mediaPath && new File(added[a].mediaPath).fsName === wantedPath) { found = true; break; }
+            if (!found) notImported.push(filePaths[f]);
+          }
+          // Interchange files (XML/AAF/EDL/project) create sequences and bins, not an item with the file's own path.
+          var interchangeOnly = notImported.length > 0;
+          for (var n = 0; n < notImported.length; n++) if (!/[.](xml|aaf|edl|prproj)$/i.test(notImported[n])) interchangeOnly = false;
+          if (interchangeOnly && importSuccess && added.length > 0) {
+            return __result({ imported: filePaths.length, verified: false, outcome: "committed_unverified", interchange: true, items: added, files: filePaths });
+          }
+          if (notImported.length) {
+            return __jsonStringify({ success: false, error: notImported.length + " file(s) produced no new project item: " + notImported.join(", "), data: { importReturned: !!importSuccess, imported: added, notImported: notImported } });
+          }
+          return __result({ imported: filePaths.length, verified: true, items: added, files: filePaths });
+        `);
+        return sendCommand(script, bridgeOptions);
+      },
+    },
+
+    import_folder: {
+      description: "Import the media files directly inside a folder and read the destination tree back. Refuses an unreadable baseline before importing. Reports observed new media items; unreadable or unmatched imports are committed_unverified. Host errors retain partial-change diagnostics; inspect the destination before retrying.",
+      parameters: {
+        type: "object" as const,
+        properties: {
+          folder_path: {
+            type: "string",
+            description: "Path to the folder to import",
+          },
+          target_bin: {
+            type: "string",
+            description: "Optional bin name or node ID to import into. Defaults to the project root.",
+          },
+        },
+        required: ["folder_path"],
+      },
+      handler: async (args: { folder_path: string; target_bin?: string }) => {
+        // Reject an invalid folder before contacting Premiere.
+        if (typeof args.folder_path !== "string" || !args.folder_path.trim()) {
+          return { success: false as const, error: "folder_path must be a non-empty directory path" };
+        }
+        if (args.target_bin !== undefined && (typeof args.target_bin !== "string" || !args.target_bin.trim())) {
+          return { success: false as const, error: "target_bin must be a non-empty string when provided" };
+        }
+        const resolvedFolder = resolve(args.folder_path);
+        try {
+          if (!existsSync(resolvedFolder) || !statSync(resolvedFolder).isDirectory()) {
+            return { success: false as const, error: `Folder not found or not a directory: ${resolvedFolder} — nothing was imported.` };
+          }
+        } catch {
+          return { success: false as const, error: `Could not inspect folder: ${resolvedFolder} — nothing was imported.` };
+        }
+        const folderBinLookup = args.target_bin
+          ? `var targetBin = __findProjectItem("${escapeForExtendScript(args.target_bin)}");
+             if (!targetBin) return __error("Bin not found: ${escapeForExtendScript(args.target_bin)}");`
+          : `var targetBin = app.project.rootItem;`;
+        const script = buildToolScript(`
+          ${folderBinLookup}
+          var folder = new Folder("${escapeForExtendScript(resolvedFolder)}");
+          if (!folder.exists) return __error("Folder not found: ${escapeForExtendScript(args.folder_path)}");
+          
+          var files = folder.getFiles();
+          var filePaths = [];
+          for (var i = 0; i < files.length; i++) {
+            if (files[i] instanceof File && !/^(thumbs[.]db|desktop[.]ini|[.]ds_store)$/i.test(files[i].name)) {
+              filePaths.push(files[i].fsName);
+            }
+          }
+          
+          if (filePaths.length === 0) return __error("No files found in folder");
+          
+          function folderTreeItems(parent, entries) {
+            var children = parent.children;
+            if (!children || typeof children.numItems !== "number" || !isFinite(children.numItems) || children.numItems < 0 || Math.floor(children.numItems) !== children.numItems) throw new Error("Destination children are unreadable");
+            for (var c = 0; c < children.numItems; c++) {
+              var child = children[c];
+              if (!child || child.nodeId === undefined || child.nodeId === null) throw new Error("Destination item identity is unreadable");
+              var mediaPath = "";
+              try { mediaPath = String(child.getMediaPath() || ""); } catch (ePath) {}
+              entries.push({ nodeId: String(child.nodeId), name: child.name, mediaPath: mediaPath });
+              if (child.type === 2 && child.children) folderTreeItems(child, entries);
+            }
+          }
+          var before = [], after = [], treeReadable = true;
+          try { folderTreeItems(targetBin, before); } catch (eBefore) {
+            return __error("Cannot inspect the destination before import: " + eBefore.toString() + ". Nothing was imported.");
+          }
+          var importSuccess = false, hostError = null;
+          try { importSuccess = app.project.importFiles(filePaths, true, targetBin, false); }
+          catch (eImport) { hostError = eImport.toString(); }
+          try { folderTreeItems(targetBin, after); } catch (eAfter) { treeReadable = false; }
+          var added = [], observedFiles = [], missingFiles = [];
+          if (treeReadable) {
+            for (var a = 0; a < after.length; a++) {
+              var existed = false;
+              for (var b = 0; b < before.length; b++) if (before[b].nodeId === after[a].nodeId) { existed = true; break; }
+              if (!existed) added.push(after[a]);
+            }
+            for (var f = 0; f < filePaths.length; f++) {
+              var matched = false;
+              for (var n = 0; n < added.length; n++) {
+                if (added[n].mediaPath && new File(added[n].mediaPath).fsName === new File(filePaths[f]).fsName) { matched = true; break; }
+              }
+              if (matched) observedFiles.push(filePaths[f]); else missingFiles.push(filePaths[f]);
+            }
+          }
+          var verified = treeReadable && missingFiles.length === 0;
+          var receipt = { imported: treeReadable ? observedFiles.length : null, requestedCount: filePaths.length,
+            observedNewItemCount: treeReadable ? added.length : null, items: added, notImported: missingFiles,
+            importReturned: importSuccess, hostError: hostError, projectChanged: treeReadable && added.length > 0 ? true : null,
+            verified: verified, outcome: verified ? "verified" : "committed_unverified",
+            folder: "${escapeForExtendScript(args.folder_path)}", targetBin: targetBin.name };
+          if (hostError && !verified) return __error("Folder import threw after it was attempted. Inspect the destination before retrying to avoid duplicates.", receipt);
+          if (treeReadable && added.length === 0) {
+            receipt.outcome = "failed";
+            return __error("Premiere produced no new destination items for the requested folder.", receipt);
+          }
+          if (!verified) receipt.verificationScope = "New destination items could not be matched to every requested file; the requested count is not an imported count.";
+          return __result(receipt);
+        `);
+        return sendCommand(script, bridgeOptions);
+      },
+    },
+
+    create_bin: {
+      description:
+        "Create a new bin (folder) in the project panel, optionally nested inside an existing bin. Reads the project back: verified is true only when the new bin is a direct child of the requested parent; otherwise the result reports outcome committed_unverified.",
+      parameters: {
+        type: "object" as const,
+        properties: {
+          name: {
+            type: "string",
+            description: "Name of the new bin",
+          },
+          parent_bin_id: {
+            type: "string",
+            description: "Optional node ID of the existing parent bin (searched recursively through nested bins). Creates in the project root if both parent_bin_id and parent_bin are omitted.",
+          },
+          parent_bin: {
+            type: "string",
+            description: "Optional parent bin node ID, slash-separated bin path, or exact bin name. Alias of parent_bin_id that also accepts a path or name.",
+          },
+        },
+        required: ["name"],
+      },
+      handler: async (args: { name: string; parent_bin?: string; parent_bin_id?: string }) => {
+        if (typeof args.name !== "string" || !args.name.trim()) {
+          return { success: false, error: "name must be a non-empty bin name" };
+        }
+        const parentId = typeof args.parent_bin_id === "string" && args.parent_bin_id.trim() ? args.parent_bin_id : undefined;
+        const parentRef = typeof args.parent_bin === "string" && args.parent_bin.trim() ? args.parent_bin : undefined;
+        if (parentId && parentRef && parentId !== parentRef) {
+          return { success: false, error: "parent_bin_id and parent_bin name different parents; pass only one." };
+        }
+        const name = escapeForExtendScript(args.name);
+        let parentLookup = `var parent = app.project.rootItem; var parentIsRoot = true;`;
+        if (parentId) {
+          const id = escapeForExtendScript(parentId);
+          parentLookup = `
+          var parentIsRoot = false;
+          var parent = __findProjectItemByNodeId("${id}");
+          if (!parent) return __error("Parent bin not found: no project item has node ID ${id}. Use list_project_items or get_bin_contents to find the bin node ID.");
+          if (!__isBinItem(parent)) return __error("Parent ${id} is not a bin; pass the node ID of a bin.");`;
+        } else if (parentRef) {
+          const ref = escapeForExtendScript(parentRef);
+          parentLookup = `
+          var parentIsRoot = false;
+          var parent = __findBin("${ref}");
+          if (!parent) {
+            if (__findProjectItemByNodeId("${ref}")) return __error("Parent ${ref} is not a bin; pass the node ID, path, or name of a bin.");
+            return __error("Parent bin not found: ${ref}. Pass a bin node ID, slash-separated bin path, or exact bin name.");
+          }`;
+        }
+
+        const script = buildToolScript(`
+          if (!app.project || !app.project.rootItem) return __error("No project is open");
+          ${parentLookup}
+          var parentNodeId = parentIsRoot ? __nodeIdOf(app.project.rootItem) : __nodeIdOf(parent);
+          var parentPath = null;
+          try { parentPath = parent.treePath; } catch (eParentPath) {}
+          var requestedName = "${name}";
+
+          // Snapshot the parent's and the root's direct children so a created
+          // bin can be found even when createBin returns no usable item.
+          var searchBins = parentIsRoot ? [parent] : [parent, app.project.rootItem];
+          var before = {};
+          for (var s = 0; s < searchBins.length; s++) {
+            var beforeCount = __childCount(searchBins[s]);
+            for (var b = 0; b < beforeCount; b++) {
+              var existing = __childAt(searchBins[s], b);
+              if (existing) before[__nodeIdOf(existing)] = true;
+            }
+          }
+
+          var newBin = parent.createBin(requestedName);
+          var newBinId = newBin ? __nodeIdOf(newBin) : "";
+
+          // Readback: locate the created bin in the live project tree.
+          var created = null;
+          if (newBinId) created = __findProjectItemByNodeId(newBinId);
+          for (var s2 = 0; !created && s2 < searchBins.length; s2++) {
+            var afterCount = __childCount(searchBins[s2]);
+            for (var a = 0; a < afterCount; a++) {
+              var candidate = __childAt(searchBins[s2], a);
+              if (candidate && !before[__nodeIdOf(candidate)] && __isBinItem(candidate) && candidate.name === requestedName) {
+                created = candidate;
+                break;
+              }
+            }
+          }
+          if (!created) return __error("Premiere did not create bin " + requestedName + " under the requested parent; nothing is reported as created.");
+
+          var createdId = __nodeIdOf(created);
+          var inParent = __isDirectChild(parent, created);
+          if (!inParent && !parentIsRoot) {
+            // Premiere placed the bin elsewhere (e.g. the project root). Move it
+            // into the requested parent, then read back again.
+            try { created.moveBin(parent); } catch (eMove) {}
+            var relocated = __findProjectItemByNodeId(createdId);
+            if (relocated) created = relocated;
+            inParent = __isDirectChild(parent, created);
+          }
+          var treePath = null;
+          try { treePath = created.treePath; } catch (eTreePath) {}
+          var createdName = requestedName;
+          try { createdName = created.name; } catch (eName) {}
+
+          if (!inParent) {
+            return __result({
+              created: true,
+              verified: false,
+              outcome: "committed_unverified",
+              name: createdName,
+              nodeId: createdId,
+              treePath: treePath,
+              requestedParentNodeId: parentNodeId,
+              requestedParentPath: parentPath,
+              warning: "Premiere created the bin, but readback did not find it inside the requested parent bin. Check treePath before using it."
+            });
+          }
+          return __result({
+            created: true,
+            verified: true,
+            outcome: "verified",
+            name: createdName,
+            nodeId: createdId,
+            treePath: treePath,
+            parentNodeId: parentNodeId,
+            parentPath: parentPath,
+            parentIsRoot: parentIsRoot
+          });
+        `);
+        return sendCommand(script, bridgeOptions);
+      },
+    },
+
+    move_item_to_bin: {
+      description: "Move a project item to a different bin and confirm where it landed",
+      parameters: {
+        type: "object" as const,
+        properties: {
+          item_id: {
+            type: "string",
+            description: "Node ID or name of the item to move",
+          },
+          target_bin: {
+            type: "string",
+            description: "Name or node ID of the target bin",
+          },
+        },
+        required: ["item_id", "target_bin"],
+      },
+      handler: async (args: { item_id: string; target_bin: string }) => {
+        const script = buildToolScript(`
+          var item = __findProjectItem("${escapeForExtendScript(args.item_id)}");
+          if (!item) return __error("Item not found: ${escapeForExtendScript(args.item_id)}");
+          
+          var targetIsRoot = "${escapeForExtendScript(args.target_bin)}" === "/" || "${escapeForExtendScript(args.target_bin)}".toLowerCase() === "root";
+          var targetBin = targetIsRoot ? app.project.rootItem : __findProjectItem("${escapeForExtendScript(args.target_bin)}");
+          if (!targetBin) return __error("Target bin not found: ${escapeForExtendScript(args.target_bin)}");
+          if (!targetIsRoot && !__isBinItem(targetBin)) return __error(targetBin.name + " is not a bin; nothing was moved.");
+          
+          item.moveBin(targetBin);
+          // treePath names the containing bin (live 25.2.3).
+          if (String(item.treePath) !== String(targetBin.treePath) + "\\\\" + item.name) {
+            return __error("Premiere did not move " + item.name + " into " + targetBin.name + "; it is at " + item.treePath + ".");
+          }
+          return __result({ moved: true, verified: true, item: item.name, toBin: targetBin.name });
+        `);
+        return sendCommand(script, bridgeOptions);
+      },
+    },
+
+    relink_media: {
+      description: "Legacy CEP relink can block Premiere indefinitely, even for an existing file on Premiere 26.5.2. Prefer relink_offline_media_uxp, which checks capability and reads the result back. This CEP route refuses by default; allow_unsafe_cep_relink must be explicitly true to attempt it, and its result is never reported as verified.",
+      parameters: {
+        type: "object" as const,
+        properties: {
+          item_id: {
+            type: "string",
+            description: "Node ID or name of the item to relink",
+          },
+          new_path: {
+            type: "string",
+            description: "New file path for the media",
+          },
+          allow_unsafe_cep_relink: {
+            type: "boolean",
+            description: "Explicitly permit the legacy CEP changeMediaPath call. It can wedge Premiere even when the target file exists; prefer relink_offline_media_uxp.",
+          },
+        },
+        required: ["item_id", "new_path"],
+      },
+      handler: async (args: { item_id: string; new_path: string; allow_unsafe_cep_relink?: boolean }) => {
+        if (args.allow_unsafe_cep_relink !== true) {
+          return { success: false as const, error: "CEP relink_media is disabled by default because changeMediaPath can block Premiere indefinitely on a valid path (#729). Use relink_offline_media_uxp, or explicitly set allow_unsafe_cep_relink: true if you accept that host risk." };
+        }
+        if (!args.new_path || !args.new_path.trim()) {
+          return { success: false as const, error: "new_path must be a non-empty file path." };
+        }
+        const path = resolve(args.new_path);
+        try {
+          if (!existsSync(path) || !statSync(path).isFile()) {
+            return { success: false as const, error: `Relink target is not an existing file: ${path}. Nothing was sent to Premiere.` };
+          }
+        } catch {
+          return { success: false as const, error: `Relink target could not be inspected: ${path}. Nothing was sent to Premiere.` };
+        }
+        const script = buildToolScript(`
+          var item = __findProjectItem("${escapeForExtendScript(args.item_id)}");
+          if (!item) return __error("Item not found: ${escapeForExtendScript(args.item_id)}");
+          
+          var success = item.changeMediaPath("${escapeForExtendScript(path)}", true);
+          if (success !== true && success !== 0) return __error("Premiere did not confirm the CEP relink. The item may have changed; inspect it before continuing and do not retry automatically.", { outcome: "committed_unverified", item: item.name, newPath: "${escapeForExtendScript(path)}" });
+          return __result({ relinked: true, outcome: "committed_unverified", verified: false, item: item.name, newPath: "${escapeForExtendScript(path)}", warning: "Legacy CEP relink has no path/online readback here. Inspect the item before continuing; do not retry automatically." });
+        `);
+        return sendCommand(script, bridgeOptions);
+      },
+    },
+
+    refresh_media: {
+      description: "Refresh a project item to pick up changes to the source file. The interpreted frame rate is read before and after; if the refresh leaves an implausible rate (seen on stills, e.g. 29.97 becoming 2.75e-8), the previous rate is restored and read back. Reports frameRateBefore, frameRateAfter and repaired.",
+      parameters: {
+        type: "object" as const,
+        properties: {
+          item_id: {
+            type: "string",
+            description: "Node ID or name of the item to refresh",
+          },
+        },
+        required: ["item_id"],
+      },
+      handler: async (args: { item_id: string }) => {
+        const script = buildToolScript(`
+          var item = __findProjectItem("${escapeForExtendScript(args.item_id)}");
+          if (!item) return __error("Item not found: ${escapeForExtendScript(args.item_id)}");
+          // Some hosts corrupt the interpreted frame rate of stills on refresh
+          // (#642). Snapshot it, and restore it only when the new value is not a
+          // usable rate, so a real change in the source file is kept.
+          var readRate = function () {
+            try {
+              var interp = item.getFootageInterpretation();
+              var rate = interp ? Number(interp.frameRate) : NaN;
+              return isFinite(rate) ? rate : null;
+            } catch (eRate) { return null; }
+          };
+          var usableRate = function (rate) { return rate !== null && rate >= 1 && rate <= 1000; };
+          var before = readRate();
+          item.refreshMedia();
+          var after = readRate();
+          if (!usableRate(before) || usableRate(after)) {
+            return __result({ refreshed: true, item: item.name, frameRateBefore: before, frameRateAfter: after, repaired: false });
+          }
+          try {
+            var restore = item.getFootageInterpretation();
+            restore.frameRate = before;
+            item.setFootageInterpretation(restore);
+          } catch (eRestore) {}
+          var restored = readRate();
+          if (restored === null || Math.abs(restored - before) > 0.001) {
+            return __error("refresh_media refreshed " + item.name + ", but its frame rate changed from " + before + " to " + after + " and could not be restored (read back " + restored + "). Set it with set_footage_interpretation frame_rate " + before + ".");
+          }
+          return __result({ refreshed: true, item: item.name, frameRateBefore: before, frameRateAfter: restored, frameRateAfterRefresh: after, repaired: true });
+        `);
+        return sendCommand(script, bridgeOptions);
+      },
+    },
+
+    check_offline_media: {
+      description: "Check for offline (missing) media in the project",
+      parameters: {},
+      handler: async () => {
+        const script = buildToolScript(`
+          var offlineItems = [];
+          
+          function checkItem(item) {
+            if (item.type === 1) {
+              try {
+                if (item.isOffline && item.isOffline()) {
+                  offlineItems.push({
+                    nodeId: item.nodeId,
+                    name: item.name,
+                    mediaPath: item.getMediaPath ? item.getMediaPath() : ""
+                  });
+                }
+              } catch(e) {}
+            }
+            if (item.type === 2 && item.children) {
+              for (var i = 0; i < item.children.numItems; i++) {
+                checkItem(item.children[i]);
+              }
+            }
+          }
+          
+          var root = app.project.rootItem;
+          for (var i = 0; i < root.children.numItems; i++) {
+            checkItem(root.children[i]);
+          }
+          
+          return __result({ offlineCount: offlineItems.length, items: offlineItems });
+        `);
+        return sendCommand(script, bridgeOptions);
+      },
+    },
+    set_offline: {
+      description: "Set a project item offline, or ask Premiere to refresh it back online when offline is false.",
+      parameters: {
+        type: "object" as const,
+        properties: {
+          item_id: {
+            type: "string",
+            description: "Node ID or name of the project item",
+          },
+          offline: {
+            type: "boolean",
+            description: "true to take media offline (default); false to refresh an existing offline item",
+          },
+        },
+        required: ["item_id"],
+      },
+      handler: async (args: { item_id: string; offline?: boolean }) => {
+        const offline = args.offline !== false;
+        const script = buildToolScript(`
+          var item = __findProjectItem("${escapeForExtendScript(args.item_id)}");
+          if (!item) return __error("Item not found: ${escapeForExtendScript(args.item_id)}");
+          ${offline
+            ? `item.setOffline();`
+            : `item.refreshMedia();`
+          }
+          var observedOffline = !!item.isOffline();
+          if (observedOffline !== ${offline}) {
+            return __error(${offline
+              ? `"Premiere did not take the project item offline."`
+              : `"Premiere could not refresh this item online. Use relink_media with the known media path if the source has moved."`
+            });
+          }
+          return __result({ offline: observedOffline, item: item.name, verified: true });
+        `);
+        return sendCommand(script, bridgeOptions);
+      },
+    },
+
+    has_proxy: {
+      description: "Check if a project item has a proxy attached",
+      parameters: {
+        type: "object" as const,
+        properties: {
+          item_id: {
+            type: "string",
+            description: "Node ID or name of the project item",
+          },
+        },
+        required: ["item_id"],
+      },
+      handler: async (args: { item_id: string }) => {
+        const script = buildToolScript(`
+          var item = __findProjectItem("${escapeForExtendScript(args.item_id)}");
+          if (!item) return __error("Item not found");
+          
+          var info = { item: item.name };
+          try { info.hasProxy = item.hasProxy(); } catch(e) { info.hasProxy = false; }
+          try { info.canProxy = item.canProxy(); } catch(e) { info.canProxy = false; }
+          try { info.proxyPath = item.getProxyPath(); } catch(e) {}
+          
+          return __result(info);
+        `);
+        return sendCommand(script, bridgeOptions);
+      },
+    },
+
+    detach_proxy: {
+      description: "Detach/remove the proxy from a project item and read hasProxy back; unavailable readback reports committed_unverified.",
+      parameters: {
+        type: "object" as const,
+        properties: {
+          item_id: {
+            type: "string",
+            description: "Node ID or name of the project item",
+          },
+        },
+        required: ["item_id"],
+      },
+      handler: async (args: { item_id: string }) => {
+        if (typeof args.item_id !== "string" || !args.item_id.trim()) return { success: false as const, error: "item_id must be non-empty" };
+        const script = buildToolScript(`
+          var item = __findProjectItem("${escapeForExtendScript(args.item_id)}");
+          if (!item) return __error("Item not found");
+          item.detachProxy();
+          var hasProxy = null;
+          try { var proxyReadback = item.hasProxy(); if (proxyReadback === true || proxyReadback === 1) hasProxy = true; else if (proxyReadback === false || proxyReadback === 0) hasProxy = false; } catch (eRead) {}
+          if (hasProxy === true) return __error("Premiere kept the proxy attached.", { detached: false, item: item.name, hasProxy: true, verified: false, outcome: "failed" });
+          return __result({ detached: hasProxy === false ? true : null, item: item.name, hasProxy: hasProxy,
+            verified: hasProxy === false, outcome: hasProxy === false ? "verified" : "committed_unverified" });
+        `);
+        return sendCommand(script, bridgeOptions);
+      },
+    },
+
+    set_override_frame_rate: {
+      description: "Override the frame rate of a project item (useful for image sequences or misinterpreted media) and read it back",
+      parameters: {
+        type: "object" as const,
+        properties: {
+          item_id: {
+            type: "string",
+            description: "Node ID or name of the project item",
+          },
+          frame_rate: {
+            type: "number",
+            description: "Frame rate to set (e.g., 23.976, 24, 29.97, 30, 60)",
+          },
+        },
+        required: ["item_id", "frame_rate"],
+      },
+      handler: async (args: { item_id: string; frame_rate: number }) => {
+        // A rate of 0 reset an item to ~0 fps on Premiere 25.2.
+        if (typeof args.frame_rate !== "number" || !Number.isFinite(args.frame_rate) || args.frame_rate <= 0) {
+          return { success: false, error: "frame_rate must be a positive number." };
+        }
+        const script = buildToolScript(`
+          var item = __findProjectItem("${escapeForExtendScript(args.item_id)}");
+          if (!item) return __error("Item not found");
+          item.setOverrideFrameRate(${args.frame_rate});
+          var interp = null;
+          try { interp = item.getFootageInterpretation(); } catch (eRead) {}
+          var observed = interp && typeof interp.frameRate === "number" ? interp.frameRate : NaN;
+          if (!isFinite(observed)) return __error("Frame rate was written but the stored interpretation is unreadable. Inspect before retrying.", { outcome: "committed_unverified", verified: false });
+          if (!(Math.abs(observed - ${args.frame_rate}) < 0.001)) return __error("Premiere's frame rate reads " + observed + " fps instead of ${args.frame_rate}.");
+          return __result({ set: true, verified: true, item: item.name, frameRate: observed });
+        `);
+        return sendCommand(script, bridgeOptions);
+      },
+    },
+
+    set_override_pixel_aspect_ratio: {
+      description: "Override the pixel aspect ratio of a project item and read it back",
+      parameters: {
+        type: "object" as const,
+        properties: {
+          item_id: {
+            type: "string",
+            description: "Node ID or name of the project item",
+          },
+          numerator: {
+            type: "number",
+            description: "PAR numerator (e.g., 1 for square pixels)",
+          },
+          denominator: {
+            type: "number",
+            description: "PAR denominator (e.g., 1 for square pixels)",
+          },
+        },
+        required: ["item_id", "numerator", "denominator"],
+      },
+      handler: async (args: { item_id: string; numerator: number; denominator: number }) => {
+        if (!Number.isSafeInteger(args.numerator) || args.numerator <= 0 || !Number.isSafeInteger(args.denominator) || args.denominator <= 0) {
+          return { success: false, error: "numerator and denominator must be positive integers." };
+        }
+        const script = buildToolScript(`
+          var item = __findProjectItem("${escapeForExtendScript(args.item_id)}");
+          if (!item) return __error("Item not found");
+          item.setOverridePixelAspectRatio(${args.numerator}, ${args.denominator});
+          var interp = null;
+          try { interp = item.getFootageInterpretation(); } catch (eRead) {}
+          var observed = interp && typeof interp.pixelAspectRatio === "number" ? interp.pixelAspectRatio : NaN;
+          if (!isFinite(observed)) return __error("Pixel aspect was written but the stored interpretation is unreadable. Inspect before retrying.", { outcome: "committed_unverified", verified: false });
+          if (!(Math.abs(observed - ${args.numerator / args.denominator}) < 0.0001)) return __error("Premiere's pixel aspect ratio reads " + observed + " instead of ${args.numerator}:${args.denominator}.");
+          return __result({ set: true, verified: true, item: item.name, par: "${args.numerator}:${args.denominator}", pixelAspectRatio: observed });
+        `);
+        return sendCommand(script, bridgeOptions);
+      },
+    },
+
+    set_scale_to_frame_size: {
+      description:
+        "Enable 'Scale to Frame Size' so media fills the sequence frame. Accepts a timeline clip node ID " +
+        "(active sequence, same IDs as get_clip_properties) or a project item node ID or name. A timeline " +
+        "clip is resolved first and its source project item is updated through ProjectItem.setScaleToFrameSize(). " +
+        "ExtendScript exposes no getter for this flag, so the result is committed_unverified unless the timeline " +
+        "clip's Motion > Scale reads back changed (verified). Check with get_clip_properties.",
+      parameters: {
+        type: "object" as const,
+        properties: {
+          item_id: {
+            type: "string",
+            description: "Timeline clip node ID in the active sequence, or project item node ID or name",
+          },
+        },
+        required: ["item_id"],
+      },
+      handler: async (args: { item_id: string }) => {
+        const script = buildToolScript(`
+          var requestedId = "${escapeForExtendScript(args.item_id)}";
+          function __motionScale(trackItem) {
+            try {
+              var comps = trackItem.components;
+              for (var ci = 0; ci < comps.numItems; ci++) {
+                var comp = comps[ci];
+                if (comp.displayName !== "Motion" && comp.matchName !== "AE.ADBE Motion") continue;
+                var matches = [];
+                for (var pi = 0; pi < comp.properties.numItems; pi++) {
+                  var prop = comp.properties[pi];
+                  if (__propertyNameMatches(prop.displayName, "Scale", comp)) matches.push({ property: prop, index: pi });
+                }
+                if (matches.length > 1) return { ambiguousPropertyIndices: matches.map(function (match) { return match.index; }) };
+                if (matches.length === 1) return { value: matches[0].property.getValue() };
+              }
+            } catch (e) {}
+            return { value: null };
+          }
+          var target = "projectItem";
+          var trackItem = null;
+          var trackInfo = null;
+          var item = null;
+          var found = __findClip(requestedId);
+          if (found) {
+            target = "timelineClip";
+            trackItem = found.clip;
+            trackInfo = { trackType: found.trackType, trackIndex: found.trackIndex, clipIndex: found.clipIndex };
+            try { item = trackItem.projectItem; } catch (e) { item = null; }
+            if (!item) return __error("Timeline clip " + requestedId + " has no source project item");
+          } else {
+            item = __findProjectItem(requestedId);
+          }
+          if (!item) return __error("Item not found: no timeline clip in the active sequence or project item matches " + requestedId);
+          var scaleBefore = trackItem ? __motionScale(trackItem) : null;
+          if (scaleBefore && scaleBefore.ambiguousPropertyIndices) return __error("Motion Scale is ambiguous at property indices [" + scaleBefore.ambiguousPropertyIndices.join(", ") + "]; nothing was changed.");
+          var beforeValue = scaleBefore ? scaleBefore.value : null;
+          item.setScaleToFrameSize();
+          var scaleAfter = trackItem ? __motionScale(trackItem) : null;
+          if (scaleAfter && scaleAfter.ambiguousPropertyIndices) return __error("Motion Scale became ambiguous at property indices [" + scaleAfter.ambiguousPropertyIndices.join(", ") + "] after the operation.");
+          var afterValue = scaleAfter ? scaleAfter.value : null;
+          var changed = beforeValue !== null && afterValue !== null && beforeValue !== afterValue;
+          var out = {
+            set: true,
+            target: target,
+            item: item.name,
+            projectItemNodeId: __nodeIdOf(item),
+            status: changed ? "verified" : "committed_unverified",
+            motionScaleBefore: beforeValue,
+            motionScaleAfter: afterValue
+          };
+          if (trackItem) {
+            out.clipNodeId = String(trackItem.nodeId);
+            out.clipName = trackItem.name;
+            out.trackType = trackInfo.trackType;
+            out.trackIndex = trackInfo.trackIndex;
+            out.clipIndex = trackInfo.clipIndex;
+          }
+          if (!changed) out.note = "ExtendScript has no getter for Scale to Frame Size; confirm with get_clip_properties.";
+          return __result(out);
+        `);
+        return sendCommand(script, bridgeOptions);
+      },
+    },
+
+    get_item_info: {
+      description: "Get detailed type info about a project item (is it a sequence, multicam, merged clip, etc.)",
+      parameters: {
+        type: "object" as const,
+        properties: {
+          item_id: {
+            type: "string",
+            description: "Node ID or name of the project item",
+          },
+        },
+        required: ["item_id"],
+      },
+      handler: async (args: { item_id: string }) => {
+        const script = buildToolScript(`
+          var item = __findProjectItem("${escapeForExtendScript(args.item_id)}");
+          if (!item) return __error("Item not found");
+          
+          var info = {
+            name: item.name,
+            nodeId: item.nodeId,
+            type: __projectItemKind(item),
+            treePath: item.treePath
+          };
+          try { info.isSequence = item.isSequence(); } catch(e) {}
+          try { info.isMulticamClip = item.isMulticamClip(); } catch(e) {}
+          try { info.isMergedClip = item.isMergedClip(); } catch(e) {}
+          try { info.isOffline = item.isOffline(); } catch(e) {}
+          try { info.mediaPath = item.getMediaPath(); } catch(e) {}
+          try { info.hasProxy = item.hasProxy(); } catch(e) {}
+          try { info.canProxy = item.canProxy(); } catch(e) {}
+          
+          return __result(info);
+        `);
+        return sendCommand(script, bridgeOptions);
+      },
+    },
+
+    select_item: {
+      description: "Select a project item and verify its node ID in the current Project-panel selection. Missing or unreadable selection readback remains committed_unverified.",
+      parameters: {
+        type: "object" as const,
+        properties: {
+          item_id: {
+            type: "string",
+            description: "Node ID or name of the project item to select",
+          },
+        },
+        required: ["item_id"],
+      },
+      handler: async (args: { item_id: string }) => {
+        const script = buildToolScript(`
+          var item = __findProjectItem("${escapeForExtendScript(args.item_id)}");
+          if (!item) return __error("Item not found");
+          var accepted = item.select();
+          if (accepted === false) return __error("Premiere rejected project-item selection.", { selected: false, item: item.name, verified: false, outcome: "failed" });
+          var selection = null, readable = false, found = false;
+          try {
+            if (typeof app.getCurrentProjectViewSelection === "function") selection = app.getCurrentProjectViewSelection();
+            if (selection && typeof selection.length === "number" && selection.length >= 0 && selection.length <= 10000 && Math.floor(selection.length) === selection.length && item.nodeId !== undefined && String(item.nodeId) !== "") {
+              readable = true;
+              for (var si = 0; si < selection.length; si++) {
+                var selectedItem = selection[si];
+                if (!selectedItem || selectedItem.nodeId === undefined || String(selectedItem.nodeId) === "") { readable = false; continue; }
+                if (String(selectedItem.nodeId) === String(item.nodeId)) found = true;
+              }
+            }
+          } catch (selectionError) { readable = false; }
+          if (found) return __result({ selected: true, item: item.name, nodeId: String(item.nodeId), verified: true, outcome: "verified", verification: "project_selection_node_id" });
+          if (!readable) return __result({ selected: null, item: item.name, verified: false, outcome: "committed_unverified", limitation: "The current Project-panel selection could not be read reliably; inspect it before a selection-dependent operation." });
+          return __error("The requested item is absent from the current Project-panel selection.", { selected: false, item: item.name, verified: false, outcome: "failed" });
+        `);
+        return sendCommand(script, bridgeOptions);
+      },
+    },
+
+    set_start_time: {
+      description: "Set the start time (timecode offset) for a project item",
+      parameters: {
+        type: "object" as const,
+        properties: {
+          item_id: {
+            type: "string",
+            description: "Node ID or name of the project item",
+          },
+          start_seconds: {
+            type: "number",
+            description: "Start time in seconds",
+          },
+        },
+        required: ["item_id", "start_seconds"],
+      },
+      handler: (args: { item_id: string; start_seconds: number }) => setProjectItemStartTime(args, bridgeOptions),
+    },
+  };
+}

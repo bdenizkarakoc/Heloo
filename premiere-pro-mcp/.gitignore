@@ -1,0 +1,48 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+coverage/
+.coverage-*/
+artifacts/
+installer/**/bin/
+installer/**/obj/
+.rnd
+
+# Source maps
+*.js.map
+*.d.ts.map
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment
+.env*
+!.env.example
+!.env.template
+*.pem
+*.key
+*.pfx
+*.p12
+.npmrc
+
+# Logs
+*.log
+npm-debug.log*
+
+# Temp bridge files (runtime)
+*.jsx.response.json
+
+# Local browser verification artifacts
+.playwright-cli/
+output/playwright/

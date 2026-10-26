@@ -1,0 +1,99 @@
+name: Publish npm
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: npm dist-tag to publish
+        required: true
+        default: latest
+      skip_tests:
+        description: Skip tests after build
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  build-signed-cep:
+    name: Build signed CEP package
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Build and verify signed ZXP
+        shell: pwsh
+        run: ./scripts/build-signed-cep.ps1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: signed-cep
+          path: artifacts/MCPBridgeCEP.zxp
+          if-no-files-found: error
+
+  publish:
+    name: Publish package
+    needs: build-signed-cep
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: signed-cep
+          path: artifacts
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org/
+          package-manager-cache: false
+      - run: npm install --global npm@latest
+      - run: npm ci
+      - run: npm run premiere:docs-inventory:check
+      - run: npm run build
+      - if: ${{ inputs.skip_tests != 'true' }}
+        run: npm test
+      - run: npm run pack:check
+      - name: Fail if version is already published
+        shell: bash
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          if npm view "premiere-pro-mcp@${VERSION}" version >/dev/null 2>&1; then
+            echo "premiere-pro-mcp@${VERSION} is already published."
+            exit 1
+          fi
+      - name: Publish to npm
+        env:
+          NPM_DIST_TAG: ${{ inputs.tag }}
+        shell: bash
+        run: |
+          if [[ ! "$NPM_DIST_TAG" =~ ^[a-z][a-z0-9_-]{0,63}$ ]]; then
+            echo "Invalid npm dist-tag: use a lowercase letter followed by up to 63 lowercase letters, digits, underscores or hyphens."
+            exit 1
+          fi
+          npm publish --provenance --access public --tag "$NPM_DIST_TAG"
+      # The website (leancoderkavy/premiere-pro-mcp-site) syncs published facts
+      # from npm every 6 hours. This dispatch only makes that sync start sooner.
+      # The package is already published here, so a missing token or a failed
+      # dispatch is reported without failing the release.
+      - name: Ask the website to sync the published facts
+        if: ${{ inputs.tag == 'latest' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.SITE_REPO_DISPATCH_TOKEN }}
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::notice::SITE_REPO_DISPATCH_TOKEN is not set; premiere-pro-mcp.com will pick up v${VERSION} on its next scheduled sync."
+            exit 0
+          fi
+          if gh api --method POST repos/leancoderkavy/premiere-pro-mcp-site/dispatches \
+            -f event_type=package-published \
+            -f "client_payload[version]=${VERSION}" >/dev/null; then
+            echo "Requested a website facts sync for v${VERSION}."
+          else
+            echo "::warning::Website sync dispatch failed; premiere-pro-mcp.com will pick up v${VERSION} on its next scheduled sync."
+          fi
