@@ -54,7 +54,7 @@ Gmail yoksa bağlantıları ve özeti son mesajında yaz — çalışma bitince 
 
 ## Kurallar
 - Ücretli API/kredi harcama (ör. Higgsfield) yok; `.env` anahtarı yoksa ücretsiz yöntemler kullanılır.
-- Kod dalına yalnızca `selftest` ile doğrulanmış düzeltmeler gönderilir; `reels-videos` dalına yalnızca `deliver.sh`.
+- Kod dalına yalnızca `selftest` ile doğrulanmış düzeltmeler gönderilir; `reels-videos` dalına yalnızca `deliver.sh` ve `inbox.sh`.
 - Gerçek kişileri yüz tanımayla tanımlama; kişi görselleri metin kanıtıyla doğrulanır (SKILL.md).
 - Uydurma bilgi yok; doğrulanamayan iddia senaryoya girmez.
 - Sonunda kısa bir özet yaz: üretilen videolar, bağlantılar, yapılan düzeltmeler, sorunlar.
