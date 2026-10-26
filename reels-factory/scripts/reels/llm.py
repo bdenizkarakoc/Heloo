@@ -150,3 +150,78 @@ def generate(brief: dict, cfg: Config, state: dict) -> tuple[dict, dict]:
             raise StageError("senaryo doğrulanamadı: " + "; ".join(probs))
     script["category"] = brief["category"]
     return script, data
+
+
+# ----------------------------------------------------------------------------
+# Claude Code komut satırı (bilgisayarda kurulu ve girişli `claude`) ile senaryo
+# ----------------------------------------------------------------------------
+
+def claude_cli() -> str | None:
+    import shutil
+    return shutil.which("claude")
+
+
+def resolve_provider(cfg: Config) -> str:
+    """auto: ANTHROPIC_API_KEY varsa anthropic, yoksa kurulu Claude Code (claude_cli), yoksa manual."""
+    p = str(cfg.get_path("llm.provider", "auto"))
+    if p in ("anthropic", "claude_cli", "manual"):
+        return p
+    if p == "claude_code":  # eski ad: senaryoyu oturumdaki ajan elle yazar
+        return "manual"
+    if available():
+        return "anthropic"
+    if claude_cli():
+        return "claude_cli"
+    return "manual"
+
+
+CLI_PROMPT = """Sen bu klasördeki otonom Reels fabrikasının senaryo adımını yürütüyorsun.
+skills/reels-production/SKILL.md ve skills/reels-production/script-format.md dosyalarını oku ve
+SKILL.md'deki 2. (araştırma), 3. (senaryo) ve 4. (görseller) adımları uygula:
+
+- Görev: {job}  (klasör: projects/{job}/, brif: projects/{job}/brief.json)
+- Konu ipucu: {topic}
+- WebSearch/WebFetch ile güvenilir kaynaklardan araştır; her sayıyı doğrula.
+- projects/{job}/script.json dosyasını yaz ve `{py} scripts/factory.py validate {job}` hatasız olana kadar düzelt.
+- Gerekirse `{py} scripts/factory.py candidates {job} <sahne>` ile görsel adaylarını incele ve visual.pick ile seç.
+- `produce` komutunu ÇALIŞTIRMA; üretimi uygulama yapacak.
+- Bitirince yalnızca kısa bir özet yaz: başlık ve kullanılan kaynaklar.
+"""
+
+
+def generate_via_claude_cli(job_id: str, job_dir, topic: str | None, cfg: Config, on_line=None) -> dict:
+    import subprocess
+    import sys
+    exe = claude_cli()
+    if not exe:
+        raise StageError("Claude Code (`claude`) bulunamadı; https://claude.com/claude-code kurun ve giriş yapın")
+    py = "python" if sys.platform.startswith("win") else "python3"
+    tools = ["Read", "Write", "Edit", "Glob", "Grep", "WebSearch", "WebFetch",
+             f"Bash({py} scripts/factory.py validate:*)", f"Bash({py} scripts/factory.py candidates:*)"]
+    cmd = [exe, "-p", CLI_PROMPT.format(job=job_id, topic=topic or "yok — brief.json'a göre sen seç", py=py),
+           "--permission-mode", "acceptEdits", "--allowedTools", *tools]
+    timeout = int(cfg.get_path("llm.claude_cli.timeout_sec", 1800))
+    L.info("Claude Code ile senaryo yazılıyor (en fazla %d dk)...", timeout // 60)
+    proc = subprocess.Popen(cmd, cwd=str(ROOT), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            stdin=subprocess.DEVNULL, text=True, encoding="utf-8", errors="replace")
+    try:
+        for line in proc.stdout:  # type: ignore[union-attr]
+            line = line.rstrip()
+            if line:
+                L.info("claude │ %s", line[:300])
+                if on_line:
+                    on_line(line)
+        proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        proc.kill()
+        raise StageError("Claude Code zaman aşımı") from exc
+    if proc.returncode != 0:
+        raise StageError(f"Claude Code hata kodu {proc.returncode}")
+    path = job_dir / "script.json"
+    if not path.exists():
+        raise StageError("Claude Code script.json yazmadı")
+    script = normalize(json.loads(path.read_text(encoding="utf-8")), cfg)
+    probs = errors_only(validate(script, cfg))
+    if probs:
+        raise StageError("Claude Code'un senaryosu doğrulanamadı: " + "; ".join(probs))
+    return script

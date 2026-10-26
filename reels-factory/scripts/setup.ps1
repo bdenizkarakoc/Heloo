@@ -18,3 +18,6 @@ Write-Host "> Render tarayicisi"; npx hyperframes browser ensure
 npx hyperframes telemetry disable 2>$null | Out-Null
 if (-not (Test-Path .env)) { Copy-Item .env.example .env; Write-Host "> .env olusturuldu" }
 python scripts/factory.py doctor
+
+# Uygulama: masaustu kisayolu + Windows acilisinda arka planda baslatma (otomatik mod icin)
+powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "install-app.ps1") -Startup

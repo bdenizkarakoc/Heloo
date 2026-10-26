@@ -88,6 +88,31 @@ Yalnızca `.env` dosyasına yazın (git'e eklenmez, loglarda maskelenir):
 
 ---
 
+## Uygulama (kontrol paneli + otomatik mod)
+
+```bash
+python app/server.py --open        # Windows: start-app.bat  ·  macOS/Linux: ./start-app.sh
+```
+
+Tarayıcıda `http://127.0.0.1:8765/` açılır (yalnızca bu bilgisayardan erişilir). Panelden konu/kategori
+girip **Üret** dersiniz; ilerleme ve log canlı izlenir, biten videolar oynatılır ve indirilir.
+**Otomatik mod** açıkken uygulama belirlediğiniz aralıkla (ör. her 6 saatte, günde en fazla 4) kendi
+kendine konu seçer, araştırır, senaryo yazar ve video üretir; görevler sırayla işlenir.
+
+Senaryo adımı için şunlardan biri gerekir (uygulama otomatik seçer, `llm.provider: auto`):
+1. `.env` → `ANTHROPIC_API_KEY` (Claude API), veya
+2. bilgisayarda kurulu ve giriş yapılmış **Claude Code** (`claude` komutu; ayrı anahtar gerekmez).
+
+Windows'ta `scripts\setup.ps1` sonunda masaüstüne **Reels Fabrikasi** kısayolu oluşturulur ve uygulama
+Windows açılışında arka planda başlar (otomatik modun çalışması için). Sonradan kurmak/kaldırmak:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\install-app.ps1 -Startup   # kısayol + açılışta başlat
+powershell -ExecutionPolicy Bypass -File scripts\install-app.ps1 -Remove    # kaldır
+```
+
+Bilgisayar uykudayken veya kapalıyken üretim yapılmaz; açıldığında zamanı geçmiş üretim ilk fırsatta başlar.
+
 ## Kullanım
 
 ### A) Claude Code ile (önerilen, anahtar gerektirmez)

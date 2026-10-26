@@ -43,10 +43,11 @@ def cmd_doctor(args, cfg) -> int:
 
 def cmd_new(args, cfg) -> int:
     job = pipeline.new_job(cfg, args.category, args.topic)
-    provider = cfg.get_path("llm.provider", "claude_code")
-    if provider == "anthropic":
+    from reels.llm import resolve_provider
+    provider = resolve_provider(cfg)
+    if provider != "manual" and not args.manual:
         pipeline.auto_script(job, cfg)
-        print(f"Görev {job.id}: senaryo Claude API ile yazıldı → {job.script_path.relative_to(ROOT)}")
+        print(f"Görev {job.id}: senaryo {provider} ile yazıldı → {job.script_path.relative_to(ROOT)}")
     else:
         print(f"Görev oluşturuldu: {job.id}")
         print(f"Brif: {(job.dir / 'brief.json').relative_to(ROOT)}")
@@ -80,8 +81,9 @@ def cmd_produce(args, cfg) -> int:
 
 
 def cmd_run(args, cfg) -> int:
-    if cfg.get_path("llm.provider") != "anthropic":
-        print("Tam otonom mod için config/settings.yaml → llm.provider: anthropic ve ANTHROPIC_API_KEY gerekir.\n"
+    from reels.llm import resolve_provider
+    if resolve_provider(cfg) == "manual":
+        print("Tam otonom mod için ANTHROPIC_API_KEY ya da kurulu ve girişli Claude Code (`claude`) gerekir.\n"
               "Claude Code oturumunda 'reels-production' becerisini kullanın.")
         return 2
     failures = 0
@@ -148,6 +150,7 @@ def main() -> int:
     p = sub.add_parser("new", help="yeni üretim görevi")
     p.add_argument("--category")
     p.add_argument("--topic")
+    p.add_argument("--manual", action="store_true", help="senaryoyu otomatik yazma (ajan elle yazacak)")
     p = sub.add_parser("validate", help="senaryoyu doğrula")
     p.add_argument("job")
     p = sub.add_parser("produce", help="senaryodan videoya üretim")

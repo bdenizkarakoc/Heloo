@@ -79,15 +79,21 @@ def new_job(cfg: Config, category: str | None = None, topic: str | None = None) 
     return job
 
 
-def auto_script(job: Job, cfg: Config) -> dict:
-    """llm.provider = anthropic ise senaryoyu Claude API ile üretir."""
+def auto_script(job: Job, cfg: Config, on_line=None) -> dict:
+    """Senaryoyu insansız yazar: Claude API (anthropic) veya bilgisayardaki Claude Code (claude_cli)."""
     from . import llm
+    provider = llm.resolve_provider(cfg)
+    if provider == "manual":
+        raise StageError("Otomatik senaryo için ANTHROPIC_API_KEY ya da kurulu Claude Code (`claude`) gerekir")
     brief = read_json(job.dir / "brief.json") or make_brief(job, cfg)
     with job.stage("script") as info:
-        script, research = llm.generate(brief, cfg, job.state)
-        write_json(job.dir / "research.json", research)
-        write_json(job.script_path, script)
-        info.update({"provider": "anthropic", "title": script.get("title"), "scenes": len(script["scenes"])})
+        if provider == "anthropic":
+            script, research = llm.generate(brief, cfg, job.state)
+            write_json(job.dir / "research.json", research)
+            write_json(job.script_path, script)
+        else:
+            script = llm.generate_via_claude_cli(job.id, job.dir, job.state.get("topic_hint"), cfg, on_line)
+        info.update({"provider": provider, "title": script.get("title"), "scenes": len(script["scenes"])})
     return script
 
 
@@ -290,6 +296,9 @@ def stage_export(job: Job, script: dict, final: Path, music: dict | None, cfg: C
     with job.stage("export") as info:
         date = dt.date.today().strftime("%Y%m%d")
         slug = f"{date}-{slugify(script.get('title', job.id))}"
+        owners = {h.get("output"): h.get("job") for h in history()}
+        if owners.get(f"output/videos/{slug}.mp4", job.id) != job.id:
+            slug = f"{slug}-{job.id[-4:]}"  # aynı gün aynı başlık: başka görevin dosyasının üzerine yazma
         vid = OUT / "videos" / f"{slug}.mp4"
         vid.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(final, vid)

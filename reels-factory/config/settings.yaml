@@ -149,7 +149,11 @@ script:
 #  anthropic   : Claude API ile tam otonom çalışma — ANTHROPIC_API_KEY gerekir
 # ---------------------------------------------------------------------
 llm:
-  provider: claude_code
+  # auto: ANTHROPIC_API_KEY varsa Claude API, yoksa bilgisayarda kurulu ve girişli Claude Code (`claude -p`),
+  #       ikisi de yoksa manual (senaryoyu Claude Code oturumundaki ajan elle yazar)
+  provider: auto
+  claude_cli:
+    timeout_sec: 1800
   anthropic:
     model: claude-opus-5-5
     effort: high

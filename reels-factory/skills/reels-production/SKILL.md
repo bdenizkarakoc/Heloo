@@ -23,10 +23,11 @@ kullanma; kullanıcıya hangi yöntemin kullanılamadığını ve yerine ne yap�
 ## 1. Görev ve brif
 
 ```bash
-python scripts/factory.py new [--category bilim-uzay] [--topic "isteğe bağlı konu"]
+python scripts/factory.py new --manual [--category bilim-uzay] [--topic "isteğe bağlı konu"]
 ```
 
-Kategori verilmezse sistem, ayarlardaki ağırlıklara göre en az kullanılan kategoriyi seçer.
+`--manual`: senaryoyu sen yazacaksın (aksi halde komut, Claude API'yi veya kurulu Claude Code'u
+arka planda çağırır). Kategori verilmezse sistem, ayarlardaki ağırlıklara göre en az kullanılan kategoriyi seçer.
 `projects/<görev>/brief.json` dosyasını oku: ton, hedef kitle, örnek konular, **daha önce işlenen
 başlıklar** (tekrarlama), hedef süre ve görsel sağlayıcı sırası.
 

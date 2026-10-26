@@ -8,11 +8,12 @@ Video üretme isteklerinde `skills/reels-production/SKILL.md` akışını izle; 
 
 ```bash
 python scripts/factory.py doctor                 # ortam/hizmet denetimi
-python scripts/factory.py new --category <kat>   # görev + brief.json
+python scripts/factory.py new --manual --category <kat>   # görev + brief.json (senaryoyu ajan yazar)
 python scripts/factory.py validate <görev>       # script.json doğrulama
 python scripts/factory.py candidates <görev> <sahne> [--query ...]
 python scripts/factory.py produce <görev> [--from <adım>]
-python scripts/factory.py run --count N          # tam otonom (llm.provider: anthropic + ANTHROPIC_API_KEY)
+python scripts/factory.py run --count N          # tam otonom (Claude API anahtarı veya kurulu Claude Code)
+python app/server.py --open                      # yerel uygulama (kontrol paneli + otomatik mod)
 python scripts/factory.py status [<görev>]
 ```
 

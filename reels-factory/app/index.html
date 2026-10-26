@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reels Fabrikası</title>
+<style>
+  :root { --bg:#0b0f1a; --card:#141b2d; --line:#253049; --ink:#eef2fb; --muted:#9aa6c2; --acc:#ffd23f; --acc2:#4fd1c5; --bad:#ff6b6b; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { display: flex; align-items: center; gap: 14px; padding: 16px 22px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--bg); z-index: 5; }
+  header h1 { font-size: 19px; margin: 0; letter-spacing: .02em; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); display: inline-block; }
+  .dot.ok { background: var(--acc2); box-shadow: 0 0 10px var(--acc2); } .dot.bad { background: var(--bad); }
+  main { display: grid; grid-template-columns: minmax(300px, 380px) 1fr; gap: 18px; padding: 18px 22px; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin-bottom: 18px; }
+  .card h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 12px; }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
+  input, select { width: 100%; padding: 9px 10px; border-radius: 9px; border: 1px solid var(--line); background: #0e1424; color: var(--ink); font: inherit; }
+  button { cursor: pointer; border: 0; border-radius: 10px; padding: 10px 14px; font: 600 14px system-ui, sans-serif; background: var(--acc); color: #111; }
+  button.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+  button:disabled { opacity: .45; cursor: default; }
+  .row { display: flex; gap: 10px; align-items: center; } .row > * { flex: 1; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; background: #1d2740; color: var(--muted); }
+  .pill.done { background: #133a36; color: var(--acc2); } .pill.failed { background: #3d1c22; color: var(--bad); }
+  .pill.producing, .pill.running { background: #3b331a; color: var(--acc); }
+  pre { background: #070a12; border: 1px solid var(--line); border-radius: 10px; padding: 10px; height: 260px; overflow: auto; font-size: 12px; white-space: pre-wrap; margin: 8px 0 0; }
+  .stages { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+  .st { font-size: 11px; padding: 2px 6px; border-radius: 6px; background: #1d2740; color: var(--muted); }
+  .st.done { color: var(--acc2); } .st.failed { color: var(--bad); background: #3d1c22; } .st.running { color: var(--acc); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 14px; }
+  .vid { background: #0e1424; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .vid video { width: 100%; aspect-ratio: 9/16; background: #000; display: block; }
+  .vid .meta { padding: 8px 10px; font-size: 13px; } .vid a { color: var(--acc2); text-decoration: none; margin-right: 10px; font-size: 12px; }
+  .job { border-top: 1px solid var(--line); padding: 10px 0; } .job:first-child { border-top: 0; }
+  .err { color: var(--bad); font-size: 12px; margin-top: 4px; } .warn { color: #e8c46a; font-size: 12px; }
+  .switch { display: flex; align-items: center; gap: 10px; } .switch input { width: auto; transform: scale(1.3); }
+  .cats { display: flex; flex-wrap: wrap; gap: 6px; } .cats label { display: flex; gap: 5px; align-items: center; margin: 0; color: var(--ink); font-size: 13px; background:#0e1424; border:1px solid var(--line); padding:4px 8px; border-radius:8px; }
+  .cats input { width: auto; }
+</style>
+</head>
+<body>
+<header>
+  <span id="dot" class="dot"></span>
+  <h1>Reels Fabrikası</h1>
+  <span id="statusText" class="muted">bağlanıyor…</span>
+  <span style="flex:1"></span>
+  <span id="autoBadge" class="pill">otomatik mod kapalı</span>
+</header>
+<main>
+  <section>
+    <div class="card">
+      <h2>Yeni video</h2>
+      <label>Konu (boş bırakırsan sistem seçer)</label>
+      <input id="topic" placeholder="ör. Cem Karaca, Venüs'te bir gün…">
+      <div class="row">
+        <div><label>Kategori</label><select id="category"><option value="">Otomatik</option></select></div>
+        <div style="max-width:90px"><label>Adet</label><input id="count" type="number" min="1" max="10" value="1"></div>
+      </div>
+      <div style="margin-top:14px"><button id="btnNew">Üret</button></div>
+      <p class="muted" id="providerNote"></p>
+    </div>
+
+    <div class="card">
+      <h2>Otomatik mod</h2>
+      <div class="switch"><input type="checkbox" id="autoOn"><span>Aktif — kendi kendine video üret</span></div>
+      <div class="row">
+        <div><label>Her … saatte bir</label><input id="interval" type="number" min="0.5" step="0.5" value="6"></div>
+        <div><label>Günlük en fazla</label><input id="dailyMax" type="number" min="1" value="4"></div>
+      </div>
+      <label>Kategoriler (seçilmezse ağırlıklara göre)</label>
+      <div class="cats" id="autoCats"></div>
+      <div style="margin-top:12px" class="row"><button class="ghost" id="btnAuto">Kaydet</button></div>
+      <p class="muted" id="nextRun"></p>
+    </div>
+
+    <div class="card">
+      <h2>Sistem</h2>
+      <div id="caps" class="muted"></div>
+      <p class="muted" id="licenseNote"></p>
+    </div>
+  </section>
+
+  <section>
+    <div class="card">
+      <h2>Şu an</h2>
+      <div id="current" class="muted">Boşta.</div>
+      <div id="queue" class="muted"></div>
+      <pre id="log"></pre>
+    </div>
+    <div class="card">
+      <h2>Videolar</h2>
+      <div class="grid" id="videos"><span class="muted">Henüz video yok.</span></div>
+    </div>
+    <div class="card">
+      <h2>Görevler</h2>
+      <div id="jobs" class="muted">—</div>
+    </div>
+  </section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const api = async (p, body) => {
+  const r = await fetch(p, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {});
+  return r.json();
+};
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const STAGE_TR = { script: "senaryo", voice: "ses", captions: "altyazı", visuals: "görsel", music: "müzik", compose: "kurgu", render: "render", mix: "miks", qc: "kalite", export: "çıktı" };
+const PROV_TR = { anthropic: "Claude API", claude_cli: "bilgisayardaki Claude Code", manual: "YOK" };
+let catsLoaded = false, logJob = null, autoInit = false;
+
+async function refreshStatus() {
+  let s;
+  try { s = await api("/api/status"); } catch { $("statusText").textContent = "uygulama kapalı"; $("dot").className = "dot bad"; return; }
+  $("dot").className = "dot " + (s.ready ? "ok" : "bad");
+  $("statusText").textContent = s.ready ? "hazır" : "eksik: " + s.missing.join(", ");
+  $("providerNote").innerHTML = s.provider === "manual"
+    ? "<span style='color:var(--bad)'>Otomatik senaryo için Claude API anahtarı (.env) veya kurulu ve giriş yapılmış Claude Code gerekir.</span>"
+    : "Senaryo: " + PROV_TR[s.provider];
+  $("btnNew").disabled = s.provider === "manual";
+  $("caps").innerHTML = Object.entries(s.capabilities).map(([k, v]) => `<div><b>${esc(k)}</b>: ${esc(v)}</div>`).join("");
+  $("licenseNote").textContent = `Lisans modu — görsel: ${s.license.visuals}, müzik: ${s.license.music}` +
+    (s.license.visuals === "any" || s.license.music === "any" ? " (telif riski sizde)" : "");
+  if (!catsLoaded) {
+    for (const [k, v] of Object.entries(s.categories)) {
+      $("category").insertAdjacentHTML("beforeend", `<option value="${esc(k)}">${esc(v)}</option>`);
+      $("autoCats").insertAdjacentHTML("beforeend", `<label><input type="checkbox" value="${esc(k)}">${esc(v)}</label>`);
+    }
+    catsLoaded = true;
+  }
+  const a = s.auto;
+  if (!autoInit) {
+    $("autoOn").checked = a.enabled; $("interval").value = a.interval_hours; $("dailyMax").value = a.daily_max;
+    document.querySelectorAll("#autoCats input").forEach((i) => (i.checked = (a.categories || []).includes(i.value)));
+    autoInit = true;
+  }
+  $("autoBadge").textContent = a.enabled ? `otomatik mod açık · her ${a.interval_hours} saatte` : "otomatik mod kapalı";
+  $("autoBadge").className = "pill" + (a.enabled ? " done" : "");
+  $("nextRun").textContent = a.enabled && a.next_run ? "Sonraki üretim: " + new Date(a.next_run).toLocaleString("tr-TR") : "";
+  const c = s.current;
+  $("current").innerHTML = c
+    ? `<span class="pill running">çalışıyor</span> ${esc(c.kind === "new" ? (c.topic || "yeni konu") : "yeniden üretim")} · ${esc(c.job || "görev hazırlanıyor")} · başladı ${new Date(c.started).toLocaleTimeString("tr-TR")}`
+    : "Boşta.";
+  $("queue").textContent = s.pending.length ? `Sırada: ${s.pending.length} görev` : "";
+  logJob = c && c.job ? c.job : logJob;
+}
+
+async function refreshJobs() {
+  const jobs = await api("/api/jobs");
+  const vids = jobs.filter((j) => j.outputs && j.outputs.video);
+  $("videos").innerHTML = vids.length ? vids.map((j) => `
+    <div class="vid">
+      <video src="/${esc(j.outputs.video)}" poster="/${esc(j.outputs.thumbnail || "")}" controls preload="none"></video>
+      <div class="meta"><div>${esc(j.title)}</div>
+        <a href="/${esc(j.outputs.video)}" download>indir</a><a href="/${esc(j.outputs.post)}" target="_blank">paylaşım metni</a><a href="/${esc(j.outputs.srt)}" download>altyazı</a></div>
+    </div>`).join("") : '<span class="muted">Henüz video yok.</span>';
+  $("jobs").innerHTML = jobs.length ? jobs.map((j) => `
+    <div class="job">
+      <div class="row" style="align-items:flex-start">
+        <div><b>${esc(j.title || j.id)}</b> <span class="pill ${esc(j.status)}">${esc(j.status)}</span><div class="muted">${esc(j.id)}</div></div>
+        <div style="flex:0 0 auto" class="row">
+          <button class="ghost" onclick="showLog('${esc(j.id)}')">log</button>
+          ${j.status !== "producing" ? `<button class="ghost" onclick="reproduce('${esc(j.id)}')">yeniden üret</button>` : ""}
+        </div>
+      </div>
+      <div class="stages">${Object.entries(j.stages).map(([k, v]) => `<span class="st ${esc(v)}">${esc(STAGE_TR[k] || k)}</span>`).join("")}</div>
+      ${Object.entries(j.errors).map(([k, v]) => `<div class="err">✖ ${esc(STAGE_TR[k] || k)}: ${esc(String(v).slice(0, 300))}</div>`).join("")}
+      ${j.warnings.map((w) => `<div class="warn">! ${esc(w)}</div>`).join("")}
+    </div>`).join("") : "Henüz görev yok.";
+}
+
+async function refreshLog() {
+  if (!logJob) return;
+  const r = await api("/api/log/" + encodeURIComponent(logJob));
+  const pre = $("log"), atBottom = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 30;
+  pre.textContent = r.log || "(log henüz yok)";
+  if (atBottom) pre.scrollTop = pre.scrollHeight;
+}
+
+window.showLog = (id) => { logJob = id; refreshLog(); };
+window.reproduce = async (id) => { await api("/api/produce", { job: id }); refreshStatus(); };
+$("btnNew").onclick = async () => {
+  await api("/api/new", { topic: $("topic").value, category: $("category").value, count: +$("count").value || 1 });
+  $("topic").value = ""; refreshStatus();
+};
+$("btnAuto").onclick = async () => {
+  const cats = [...document.querySelectorAll("#autoCats input:checked")].map((i) => i.value);
+  await api("/api/auto", { enabled: $("autoOn").checked, interval_hours: +$("interval").value, daily_max: +$("dailyMax").value, categories: cats });
+  refreshStatus();
+};
+refreshStatus(); refreshJobs();
+setInterval(refreshStatus, 3000); setInterval(refreshJobs, 8000); setInterval(refreshLog, 2500);
+</script>
+</body>
+</html>

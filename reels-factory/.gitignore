@@ -26,3 +26,6 @@ assets/music/*
 !assets/music/licenses.yaml
 assets/sfx/*
 !assets/sfx/README.md
+
+# Uygulama durumu (otomatik mod ayarları)
+config/app.json
