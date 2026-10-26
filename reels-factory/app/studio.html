@@ -71,8 +71,9 @@
 
     <div class="card">
       <h2>2 · Videomu düzenle</h2>
-      <p class="lead">Kendi videonu yükle (kısa ya da 20+ dakika). Konuşmayı yazıya döker, boşlukları keser, seçtiğin stille altyazı, başlık ve efektleri ekler.</p>
-      <div class="drop" id="ownDrop"><input type="file" accept="video/*" id="ownFile"><b>Kendi videonu bırak</b><br><span class="muted">veya tıklayıp seç</span></div>
+      <p class="lead">Kendi videolarını ve fotoğraflarını yükle (bir veya birden çok; kısa ya da 20+ dakika). Birden çok dosya sırasıyla tek montajda birleşir; fotoğraflar hafif hareketli sahne olur. Konuşmayı yazıya döker, boşlukları keser, sesi iyileştirir, seçtiğin stille altyazı, başlık ve efektleri ekler. Telefon videoları (dikey, HEVC, HDR) ve iPhone fotoğrafları (HEIC) desteklenir.</p>
+      <div class="drop" id="ownDrop"><input type="file" accept="video/*,image/*,.heic,.heif" id="ownFile" multiple><b>Videolarını / fotoğraflarını bırak</b><br><span class="muted">veya tıklayıp seç (birden çok seçebilirsin)</span></div>
+      <div id="ownList" class="muted" style="margin-top:6px"></div>
       <div class="bar" id="ownBar"><div></div></div>
       <div id="ownStatus" class="muted" style="margin-top:8px"></div>
 
@@ -117,6 +118,17 @@
     </div>
 
     <div class="card">
+      <h2>4 · Sesi iyileştir</h2>
+      <p class="lead">Ses kaydı (wav, mp3, m4a, telefon kaydı…) veya video yükle: uğultu, fan/klima, hışırtı ve tıkırtıyı azaltır, kırpılmayı onarır, sesi netleştirir ve seviyeyi dengeler. Videoda görüntü aynen kalır. Öncesi/sonrası dinlenir.</p>
+      <div class="drop" id="audDrop"><input type="file" accept="audio/*,video/*" id="audFile" multiple><b>Ses kaydı veya video bırak</b><br><span class="muted">veya tıklayıp seç</span></div>
+      <label>Güç</label>
+      <select id="audStrength"><option value="orta">orta (önerilen)</option><option value="hafif">hafif — doğal, az müdahale</option><option value="güçlü">güçlü — çok gürültülü kayıtlar</option></select>
+      <div class="bar" id="audBar"><div></div></div>
+      <div id="audStatus" class="muted" style="margin-top:6px"></div>
+      <div id="audList" style="margin-top:10px"></div>
+    </div>
+
+    <div class="card">
       <h2>Stillerim</h2>
       <div id="styles" class="muted">—</div>
     </div>
@@ -136,7 +148,7 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const api = async (p, body) => (await fetch(p, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {})).json();
 const fmt = (s) => s >= 60 ? `${Math.floor(s / 60)} dk ${Math.round(s % 60)} sn` : `${Math.round(s)} sn`;
-let ownFile = null, refProject = null, namedProjects = new Set(), logPid = null;
+let ownFiles = [], ownFile = null, refProject = null, namedProjects = new Set(), logPid = null;
 
 function upload(file, bar, status) {
   return new Promise((resolve, reject) => {
@@ -153,11 +165,13 @@ function upload(file, bar, status) {
 }
 
 function dropzone(zone, input, onFile) {
+  // birden çok dosya seçilirse sırayla yüklenir
+  const many = async (list) => { for (const f of list) await onFile(f); input.value = ""; };
   zone.onclick = () => input.click();
-  input.onchange = () => input.files[0] && onFile(input.files[0]);
+  input.onchange = () => input.files.length && many([...input.files]);
   zone.ondragover = (e) => { e.preventDefault(); zone.classList.add("over"); };
   zone.ondragleave = () => zone.classList.remove("over");
-  zone.ondrop = (e) => { e.preventDefault(); zone.classList.remove("over"); e.dataTransfer.files[0] && onFile(e.dataTransfer.files[0]); };
+  zone.ondrop = (e) => { e.preventDefault(); zone.classList.remove("over"); e.dataTransfer.files.length && many([...e.dataTransfer.files]); };
 }
 
 dropzone($("refDrop"), $("refFile"), async (f) => {
@@ -201,6 +215,25 @@ window.toVideo = async (path, idea) => {
 };
 loadNotes(); setInterval(loadNotes, 8000);
 
+dropzone($("audDrop"), $("audFile"), async (f) => {
+  try {
+    const up = await upload(f, $("audBar"), $("audStatus"));
+    if (up.kind === "image") { $("audStatus").innerHTML = '<span class="err">Fotoğrafın sesi yok.</span>'; return; }
+    if (!up.audio) { $("audStatus").innerHTML = '<span class="err">Bu videoda ses yok.</span>'; return; }
+    const r = await api("/api/audio/enhance", { file: up.file, strength: $("audStrength").value });
+    $("audStatus").textContent = r.error ? r.error : `${f.name} iyileştiriliyor…`;
+  } catch (e) { $("audStatus").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+});
+async function loadAudio() {
+  const list = await api("/api/audio/list");
+  $("audList").innerHTML = list.slice(0, 8).map((x) => `<div class="style" style="display:block"><b>${esc(x.name)}</b> <span class="muted">${esc(x.strength)} · ${esc(x.at.slice(11, 16))}</span>
+    <div class="muted">${esc((x.steps || []).join(" · "))}</div>
+    <div class="muted" style="margin-top:4px">Öncesi</div><audio controls preload="none" src="/${esc(x.original)}" style="width:100%;height:34px"></audio>
+    <div class="muted">Sonrası</div>${x.kind === "video" ? `<video controls preload="none" src="/${esc(x.output)}" style="width:100%;max-height:260px;background:#000"></video>` : `<audio controls preload="none" src="/${esc(x.output)}" style="width:100%;height:34px"></audio>`}
+    <a class="lnk" href="/${esc(x.output)}" download>indir</a></div>`).join("") || '<span class="muted">Henüz iyileştirilmiş dosya yok.</span>';
+}
+loadAudio(); setInterval(loadAudio, 6000);
+
 $("btnUrl").onclick = async () => {
   const url = $("refUrl").value.trim();
   if (!url) return;
@@ -210,14 +243,22 @@ $("btnUrl").onclick = async () => {
   refresh();
 };
 
+function renderOwn() {
+  const total = ownFiles.reduce((s, x) => s + (x.kind === "image" ? 3.5 : x.duration), 0);
+  $("ownList").innerHTML = ownFiles.map((x, i) => `<div>${i + 1}. ${x.kind === "image" ? "🖼️" : "🎬"} ${esc(x.label)} · ${x.kind === "image" ? "fotoğraf" : fmt(x.duration)}${x.kind === "video" && !x.audio ? " · <span class='err'>ses yok</span>" : ""}${x.hdr ? " · HDR" : ""} <a href="#" class="lnk" onclick="dropOwn(${i});return false">kaldır</a></div>`).join("")
+    + (ownFiles.length > 1 ? `<div style="margin-top:4px">Toplam ~${fmt(total)} · sırasıyla tek montaj</div>` : "");
+  $("btnEdit").disabled = !ownFiles.length;
+  if (ownFiles.length && total < 75) { document.querySelector("input[name=mode][value=full]").checked = true; syncMode(); }
+}
+window.dropOwn = (i) => { ownFiles.splice(i, 1); renderOwn(); };
 dropzone($("ownDrop"), $("ownFile"), async (f) => {
   try {
     const up = await upload(f, $("ownBar"), $("ownStatus"));
-    ownFile = up.file;
-    $("ownStatus").innerHTML = `✔ <b>${esc(f.name)}</b> hazır · ${fmt(up.duration)} · ${up.width}×${up.height}${up.audio ? "" : " · <span class='err'>ses yok</span>"}`;
-    if (up.duration < 75) { document.querySelector("input[name=mode][value=full]").checked = true; syncMode(); }
-    $("btnEdit").disabled = false;
-  } catch (e) { $("ownStatus").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+    if (up.kind === "audio") { $("ownStatus").innerHTML = `<span class="err">${esc(f.name)}: yalnızca ses — sesi iyileştirmek için 4. bölümü kullan</span>`; return; }
+    ownFiles.push({ ...up, label: f.name }); ownFile = ownFiles[0].file;
+    $("ownStatus").textContent = `✔ ${ownFiles.length} dosya hazır`;
+    renderOwn();
+  } catch (e) { $("ownStatus").innerHTML = `<span class="err">${esc(f.name)}: ${esc(e.message)}</span>`; }
 });
 
 function syncMode() { $("clipOpts").style.display = document.querySelector("input[name=mode]:checked").value === "clips" ? "flex" : "none"; }
@@ -225,7 +266,7 @@ document.querySelectorAll("input[name=mode]").forEach((r) => (r.onchange = syncM
 
 $("btnEdit").onclick = async () => {
   const mode = document.querySelector("input[name=mode]:checked").value;
-  const body = { file: ownFile, style: $("style").value, mode, count: +$("count").value, min_sec: +$("minSec").value,
+  const body = { files: ownFiles.map((x) => x.file), style: $("style").value, mode, count: +$("count").value, min_sec: +$("minSec").value,
     max_sec: +$("maxSec").value, aspect: $("aspect").value, captions: $("captions").checked,
     improve_rounds: +$("improve").value, notes: $("notes").value.trim(), enhance: $("enhance").checked };
   if ($("frame").value) body.frame = $("frame").value;

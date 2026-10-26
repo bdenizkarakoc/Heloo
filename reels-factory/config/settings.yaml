@@ -64,7 +64,8 @@ brand:
 
 # ---------------------------------------------------------------------
 # İçerik kategorileri. Sistem bunlar arasından ağırlıklı ve sıralı seçim yapar.
-# visual_providers: sahne görselleri için denenecek kaynak sırası
+# visual_providers: sahne görselleri için denenecek kaynak sırası (gerçek görüntü önce; AI üretimi yalnızca yedek —
+#   gerçek kişi/olay/yer anlatan videolarda AI görüntüsü yanıltıcı olabilir)
 # ---------------------------------------------------------------------
 categories:
   bilim-uzay:
@@ -73,7 +74,7 @@ categories:
     weight: 3
     tone: "meraklı, şaşırtıcı ama kesinlikle doğru; abartısız"
     audience: "genel izleyici, 16-45 yaş"
-    visual_providers: [agent_media, ai_video, ai_image, nasa, pexels, openverse]
+    visual_providers: [agent_media, nasa, pexels, pixabay, openverse, ai_video, ai_image]
     music_queries: ["ambient space", "cinematic ambient", "ambient"]
     seed_topics:
       - "Venüs'te bir günün bir yıldan uzun olması"
@@ -87,7 +88,7 @@ categories:
     weight: 2
     tone: "hayranlık uyandıran, sıcak, bilimsel olarak doğru"
     audience: "genel izleyici"
-    visual_providers: [agent_media, ai_video, pexels, ai_image, openverse]
+    visual_providers: [agent_media, pexels, pixabay, openverse, ai_video, ai_image]
     music_queries: ["ambient nature", "cinematic", "piano ambient"]
     seed_topics:
       - "Ahtapotların üç kalbi ve mavi kanı"
@@ -99,7 +100,7 @@ categories:
     weight: 2
     tone: "hikâye anlatan, merak uyandıran, kaynaklara sadık"
     audience: "genel izleyici"
-    visual_providers: [agent_media, wikipedia, openverse, ai_image, pexels]
+    visual_providers: [agent_media, wikipedia, openverse, pexels, pixabay, ai_image]
     music_queries: ["cinematic documentary", "cinematic ambient"]
     seed_topics:
       - "Göbeklitepe'nin yaşı ve önemi"
@@ -110,7 +111,7 @@ categories:
     weight: 1
     tone: "saygılı, hikâye anlatan, belgelere dayalı; magazin ve spekülasyon yok"
     audience: "genel izleyici, müzikseverler"
-    visual_providers: [agent_media, wikipedia, openverse, ai_image, pexels]
+    visual_providers: [agent_media, wikipedia, openverse, pexels, pixabay, ai_image]
     music_queries: ["rock instrumental", "psychedelic rock instrumental", "cinematic"]
     seed_topics:
       - "Cem Karaca ve Anadolu rock"
@@ -121,7 +122,7 @@ categories:
     weight: 1
     tone: "anlaşılır, günlük hayata bağlanan, bilimsel kanıta dayalı"
     audience: "genel izleyici"
-    visual_providers: [agent_media, ai_video, ai_image, pexels, openverse]
+    visual_providers: [agent_media, pexels, pixabay, openverse, ai_video, ai_image]
     music_queries: ["lofi", "ambient"]
     seed_topics:
       - "Baader-Meinhof (frekans yanılsaması) etkisi"
@@ -215,9 +216,11 @@ visuals:
     model: gpt-image-1
     size: 1024x1536
     quality: medium
-  replicate:
-    image_model: ""          # ör. "black-forest-labs/flux-schnell"
-    video_model: ""          # ör. bir metinden/görselden videoya model; boşsa kullanılmaz
+  huggingface:
+    image_model: black-forest-labs/FLUX.1-schnell   # HF_TOKEN (ücretsiz hesap, küçük aylık kota); Apache-2.0
+  replicate:                 # REPLICATE_API_TOKEN gerekir (ücretli; bütçe: budget.max_ai_*)
+    image_model: black-forest-labs/flux-schnell     # ~0.003 $/görsel
+    video_model: wan-video/wan-2.2-t2v-fast         # ~0.05 $ / 5 sn 480p klip (Replicate fiyatı değişebilir)
   pexels:
     orientation: portrait
 

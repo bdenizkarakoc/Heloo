@@ -25,7 +25,7 @@ FONT_FAMILY = "RF Studio"
 
 DEFAULT_STYLE: dict = {
     "name": "Fabrika", "description": "Kalın büyük harf altyazı, sarı kelime vurgusu, kesimlerde zoom, canlı renk.",
-    "pacing": {"max_pause": 0.45, "pad": 0.10},
+    "pacing": {"max_pause": 0.45, "pad": 0.10, "keep_gaps": 4.0},
     "frame": {"mode": "blur"},
     "grade": {"contrast": 1.06, "saturation": 1.15, "brightness": 0.0, "gamma": 1.0, "warmth": 0.0,
               "vignette": True},
@@ -105,19 +105,24 @@ def font_file(weight: int) -> Path:
 # ----------------------------------------------------------------------------
 
 def plan_pieces(words: list[dict], start: float, end: float, style: dict) -> list[tuple[float, float]]:
-    """Pencere içindeki konuşmayı tutar, max_pause'tan uzun boşlukları keser."""
+    """Konuşmadaki duraksamaları (max_pause'tan uzun) keser; ama keep_gaps saniyeden uzun konuşmasız bölümleri
+    KORUR — bunlar bilinçli görüntülerdir (fotoğraf, ara görüntü, müzikli sahne), "boşluk" değil."""
     mp, pad = style["pacing"]["max_pause"], style["pacing"]["pad"]
+    keep = float(style["pacing"].get("keep_gaps", 4.0))
     ws = [w for w in words if w["end"] > start and w["start"] < end]
     if not ws:
         return [(start, end)]
     pieces: list[list[float]] = []
-    cur = [max(start, ws[0]["start"] - pad), None]
+    lead = ws[0]["start"] - start
+    cur = [start if lead >= keep else max(start, ws[0]["start"] - pad), None]
     for a, b in zip(ws, ws[1:]):
-        if b["start"] - a["end"] > mp:
+        gap = b["start"] - a["end"]
+        if mp < gap < keep:
             cur[1] = min(end, a["end"] + pad)
             pieces.append(cur)
             cur = [max(start, b["start"] - pad), None]
-    cur[1] = min(end, ws[-1]["end"] + pad + 0.25)
+    tail = end - ws[-1]["end"]
+    cur[1] = end if tail >= keep else min(end, ws[-1]["end"] + pad + 0.25)
     pieces.append(cur)
     merged: list[list[float]] = []
     for p in pieces:  # çok kısa parçaları komşuyla birleştir
@@ -267,9 +272,11 @@ def target_size(src_w: int, src_h: int, aspect: str) -> tuple[int, int]:
 
 
 def video_filter(style: dict, W: int, H: int, pieces_out: list[tuple[float, float]], total: float,
-                 select: str, fps: int) -> str:
+                 select: str, fps: int, hdr: bool = False) -> str:
     fr, g = style["frame"]["mode"], style["grade"]
-    chain = [f"[0:v]fps={fps},select='{select}',setpts=N/{fps}/TB,setsar=1"]
+    from .studio import HDR_TO_SDR
+    tone = (HDR_TO_SDR + ",") if hdr else ""  # iPhone HDR: soluk/gri görünmesin
+    chain = [f"[0:v]{tone}fps={fps},select='{select}',setpts=N/{fps}/TB,setsar=1"]
     if fr == "blur":
         graph = (f"{chain[0]},split[a][b];"
                  f"[a]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},gblur=sigma=40,"
@@ -310,16 +317,14 @@ def video_filter(style: dict, W: int, H: int, pieces_out: list[tuple[float, floa
 
 def render_clip(src: Path, window: tuple[float, float], words: list[dict], title: str | None, style: dict,
                 work: Path, dest: Path, cfg: Config, aspect: str = "9:16", music: bool | None = None,
-                enhance_voice: bool = True) -> dict:
+                enhance_voice: bool | str = True) -> dict:
     """Bir pencereyi stile göre düzenleyip dest'e yazar. Dönen: süre, parçalar, srt girdileri."""
     style = full_style(style)
     work.mkdir(parents=True, exist_ok=True)
-    info = ffprobe(src)
-    vs = next((s for s in info["streams"] if s.get("codec_type") == "video"), None)
-    if not vs:
-        raise StageError("videoda görüntü akışı yok")
-    has_audio = any(s.get("codec_type") == "audio" for s in info["streams"])
-    W, H = target_size(int(vs["width"]), int(vs["height"]), aspect)
+    from .studio import probe
+    pinfo = probe(src)  # döndürme etiketi ve HDR hesaba katılır
+    has_audio = pinfo["audio"]
+    W, H = target_size(pinfo["width"], pinfo["height"], aspect)
     fps = int(cfg.get_path("output.fps", 30))
     start, end = window
     pieces = plan_pieces(words, start, end, style)
@@ -343,9 +348,19 @@ def render_clip(src: Path, window: tuple[float, float], words: list[dict], title
     # --- ses
     voice = work / "voice.wav"
     if has_audio:
-        from .voice import ENHANCE_CORE
-        af = f"aselect='{sel}',asetpts=N/SR/TB" + (f",{ENHANCE_CORE}" if enhance_voice else "")
-        run(["ffmpeg", "-y", "-v", "error", *seek, "-vn", "-af", af, "-ar", "48000", "-ac", "2", voice.name], cwd=work)
+        raw = work / "voice_raw.wav"
+        run(["ffmpeg", "-y", "-v", "error", *seek, "-vn", "-af", f"aselect='{sel}',asetpts=N/SR/TB", "-ar", "48000",
+             "-ac", "2", raw.name], cwd=work)
+        if enhance_voice:  # gürültü/uğultu/yankı azaltma + netlik + seviye dengeleme (audiofx)
+            from .audiofx import enhance
+            strength = enhance_voice if isinstance(enhance_voice, str) else "orta"
+            try:
+                enhance(raw, voice, strength, normalize=False, channels=2)
+            except StageError as exc:
+                L.warning("ses iyileştirilemedi, özgün ses kullanılıyor: %s", exc)
+                raw.replace(voice)
+        else:
+            raw.replace(voice)
     else:
         run(["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-t", f"{total:.3f}", "-i",
              "anullsrc=r=48000:cl=stereo", voice.name], cwd=work)
@@ -370,7 +385,7 @@ def render_clip(src: Path, window: tuple[float, float], words: list[dict], title
     audio = loudnorm_two_pass(mix_src, work / "mix.wav", cfg)
 
     # --- görüntü
-    graph = video_filter(style, W, H, out_pieces, total, sel, fps)
+    graph = video_filter(style, W, H, out_pieces, total, sel, fps, hdr=pinfo.get("hdr", False))
     dest.parent.mkdir(parents=True, exist_ok=True)
     run(["ffmpeg", "-y", "-v", "error", *seek, "-i", str(audio.resolve()), "-filter_complex", graph,
          "-map", "[v]", "-map", "1:a:0", "-c:v", "libx264", "-preset", cfg.get_path("output.preset", "medium"),

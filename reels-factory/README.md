@@ -144,7 +144,10 @@ Panelin üstündeki **🎬 Stüdyo** bağlantısı (`http://127.0.0.1:8765/studi
    hareket, baskın vurgu renkleri, konuşma ve müzik ölçülür; kareler Claude'a gösterilip altyazı, başlık,
    ilerleme çubuğu ve efekt stili çıkarılır. Sistem "Bu stile ne isim verelim?" diye sorar; ad verip kaydedersin
    (`studio/styles/<ad>.json`). Claude bağlı değilse stil yalnızca ölçümlerden çıkarılır (sayfada belirtilir).
-2. **Videomu düzenle:** Kendi videonu yükle (birkaç saniyeden 20+ dakikaya). Konuşma faster-whisper ile kelime
+2. **Videomu düzenle:** Kendi videonu yükle (birkaç saniyeden 20+ dakikaya). Birden çok video ve fotoğraf
+   (JPG/PNG/iPhone HEIC) birlikte seçilebilir: sırayla tek montajda birleştirilir — fotoğraflar kamera hareketiyle
+   gösterilir, dik/yatık telefon videoları doğru döndürülür, iPhone HDR videoları soluk/patlak görünmesin diye SDR'a
+   çevrilir; fotoğraf bölümleri "sessiz yer" diye kesilmez. Konuşma faster-whisper ile kelime
    kelime yazıya dökülür, sonra:
    - **En iyi anlardan kısa klipler:** Claude dökümü okuyup tek başına anlaşılır, güçlü açılışlı anları seçer ve
      başlık yazar (Claude yoksa kurallarla seçilir), ya da
@@ -152,7 +155,17 @@ Panelin üstündeki **🎬 Stüdyo** bağlantısı (`http://127.0.0.1:8765/studi
    Her klipte konuşma boşlukları kesilir (jump cut), görüntü 9:16'ya getirilir (bulanık arka plan / kırpma /
    siyah boşluk) veya kendi oranında kalır; stile göre renk düzenleme, kesimlerde zoom, kelime vurgulu altyazı,
    açılış başlığı, ilerleme çubuğu, beyaz flaş ve isteğe bağlı (konuşmaya göre kısılan) müzik eklenir; ses
-   iyileştirilir (gürültü azaltma, EQ, de-esser, kompresör) ve -14 LUFS'a normalize edilir.
+   iyileştirilir ve -14 LUFS'a normalize edilir (ayrıntı aşağıda).
+4. **Sesi iyileştir:** Herhangi bir video ya da ses kaydını (mp4/mov/m4a/mp3/wav…) yükle; ses temizlenir. Videoda
+   görüntüye dokunulmaz, yalnızca ses değiştirilir. Önce/sonra dinlenebilir; çıktılar `output/enhanced/`
+   (özgün ses ayrıca `-ozgun.m4a` olarak saklanır). Güç: hafif / orta / güçlü.
+
+**Ses iyileştirme zinciri** (`scripts/reels/audiofx.py`; stüdyo, Sesim ve "Sesi iyileştir" aynı zinciri kullanır):
+önce kayıt ölçülür (gürültü tabanı, SNR, kırpılma, 50/60 Hz uğultu), sonra yalnızca gerekenler uygulanır —
+alçak geçiren temizlik, kırpılma onarımı, tık temizliği, uğultu çentikleri, konuşmayı koruyan Wiener gürültü
+azaltma (uzun kayıtlarda parça parça), konuşma EQ'su, de-esser, seviye eşitleme (uzak/yakın konuşma), kompresör,
+sınırlayıcı ve iki geçişli loudnorm. Ölçümler (orta güç, eski zincire göre): elektrik uğultusu bastırma 13 → 35 dB,
+fan gürültüsü 6 → 15 dB, ASR hata oranı %25 → %20; temiz kayıt bozulmaz.
 3. **Kendi kendini geliştirme:** İlk klip üretildikten sonra Claude çıktının karelerini referansla karşılaştırır
    (okunabilirlik, güvenli alan, yüzleri kapatma, referansa benzerlik, senin yazdığın istekler), stili düzeltir ve
    klibi yeniden üretir; iyileşen stil yeni sürüm olarak kaydedilir (eski sürüm `.bak` olarak saklanır).
@@ -293,6 +306,27 @@ geçmeli (`video_min_relevance`); NASA arşiv klipleri sıklıkla üzerine yazı
 kişi içerdiğinden Claude üç karesini denetler ve uygun değilse kullanılmaz (Claude yoksa arşiv klibi hiç
 kullanılmaz). Uzun kliplerde giriş/jenerik atlanır, kısa klipler döngülenir. Uygun klip yoksa fotoğraf + kamera
 hareketi + hareketli grafik kullanılır.
+
+### Kendi fotoğraf/videolarınla yeni video
+
+Panelde "Yeni video" formundaki **Kendi medyam** alanından fotoğraf, video ve müzik yükleyebilirsin. Bunlar
+görevin `user_media/` klasörüne kopyalanır, senaryo yazılırken Claude'a bildirilir ve önce `visual.user` ile
+işaretli sahnelere, sonra boş fotoğraf/video sahnelerine yerleştirilir (stok aramasının önüne geçer). Yüklenen
+ses dosyası müzik olarak kullanılır.
+
+### Yapay zekâ görsel ve video (isteğe bağlı)
+
+`doctor` çıktısında `ai_gorsel: YOK` / `ai_video: YOK` görünüyorsa anahtar tanımlı değildir; o zaman gerçek
+kaynaklar + kamera hareketi + hareketli grafik kullanılır. Etkinleştirmek için **📤 Yayın → Ayarlar → Yapay zekâ
+görsel ve video** kartına anahtar gir:
+
+| Anahtar | Ne açar | Maliyet |
+|---|---|---|
+| `HF_TOKEN` (huggingface.co → Settings → Access Tokens, "Make calls to Inference Providers" izni) | FLUX.1-schnell görsel | Ücretsiz hesapta küçük aylık kota; bitince 402 alınır ve atlanır |
+| `REPLICATE_API_TOKEN` | FLUX görsel (~0,003 $) + Wan 2.2 video klip (~0,05 $ / 5 sn) | Ücretli; `budget.max_ai_images_per_video` (8) / `max_ai_video_clips_per_video` (4) ile video başına sınırlı |
+| `OPENAI_API_KEY` | gpt-image görsel | Ücretli |
+
+Yapay zekâ yalnızca gerçek kaynak bulunamayınca devreye girer (kategori `visual_providers` listesinde en sonda).
 
 ## Bulutta otomatik çalışma (Claude Code on the web)
 
@@ -471,6 +505,7 @@ reels-factory/
 
 | Belirti | Çözüm |
 |---|---|
+| Windows'ta sürekli CMD penceresi açılıp kapanıyor | Kurulum komutunu yeniden çalıştırıp güncelleyin; alt süreçler (ffmpeg, git, node, claude) artık penceresiz başlatılır. |
 | `edge-tts ... CERTIFICATE_VERIFY_FAILED` | Kurumsal proxy/CA: `SSL_CERT_FILE` ortam değişkenini CA paketine yönlendirin (sistem otomatik ekler). |
 | `tr-TR-AhmetNeural ses döndürmedi` | Hizmet tarafı geçici sorun; zincirdeki sonraki ses kullanılır. |
 | Openverse `401 page_size` | Anonim istek sınırı (20); sistem buna uyar. Günlük 200 arama sınırı vardır. |

@@ -656,7 +656,9 @@ def status_summary() -> dict:
     return {"telegram": {"bot": bool(secret("TELEGRAM_BOT_TOKEN")), "chat": bool(tg_chat())},
             "youtube_client": bool(secret("YOUTUBE_CLIENT_ID") and secret("YOUTUBE_CLIENT_SECRET")),
             "tiktok_client": bool(secret("TIKTOK_CLIENT_KEY") and secret("TIKTOK_CLIENT_SECRET")),
-            "stock": {"pexels": bool(secret("PEXELS_API_KEY")), "pixabay": bool(secret("PIXABAY_API_KEY"))},
+            "stock": {"pexels": bool(secret("PEXELS_API_KEY")), "pixabay": bool(secret("PIXABAY_API_KEY")),
+                      "hf": bool(secret("HF_TOKEN")), "replicate": bool(secret("REPLICATE_API_TOKEN")),
+                      "openai": bool(secret("OPENAI_API_KEY"))},
             **settings()}
 
 

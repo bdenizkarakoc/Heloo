@@ -91,6 +91,26 @@ class Factory:
                     self.current = None
 
     def _run(self, task: dict) -> None:
+        if task["kind"] == "audiofx":
+            from reels import audiofx
+            src = studio.UPLOADS / task["file"]
+            kind = studio.media_info(src)["kind"]
+            outdir = ROOT / "output" / "enhanced"
+            outdir.mkdir(parents=True, exist_ok=True)
+            stem = Path(task["file"]).stem
+            dest = outdir / f"{stem}-iyilestirilmis{'.mp4' if kind == 'video' else '.wav'}"
+            rep = audiofx.enhance_media(src, dest, task.get("strength", "orta"))
+            # karşılaştırma için özgün sesin dinlenebilir kopyası
+            orig = outdir / f"{stem}-ozgun.m4a"
+            from reels.util import run as _run
+            _run(["ffmpeg", "-y", "-v", "error", "-i", src, "-vn", "-c:a", "aac", "-b:a", "160k", orig])
+            lst = read_json(outdir / "list.json", []) or []
+            lst.insert(0, {"name": task["file"], "kind": kind, "strength": task.get("strength", "orta"),
+                           "output": dest.relative_to(ROOT).as_posix(), "original": orig.relative_to(ROOT).as_posix(),
+                           "steps": rep["steps"], "analysis": rep["analysis"], "at": now().isoformat(timespec="seconds")})
+            write_json(outdir / "list.json", lst[:50])
+            L.info("✔ Ses iyileştirildi: %s (%s)", dest.name, "; ".join(rep["steps"]))
+            return
         if task["kind"] == "knowledge":
             res = knowledge.build_graph()
             L.info("✔ Bilgi haritası: %s kavram, %s bağ", res.get("nodes"), res.get("edges"))
@@ -145,8 +165,10 @@ class Factory:
             return
         cfg = load_config()
         if task["kind"] == "new":
+            media = [studio.UPLOADS / Path(f).name for f in (task.get("media") or [])
+                     if (studio.UPLOADS / Path(f).name).is_file()]
             job = pipeline.new_job(cfg, task.get("category") or None, task.get("topic") or None,
-                                   text=task.get("text") or None, draw=bool(task.get("draw")))
+                                   text=task.get("text") or None, draw=bool(task.get("draw")), media=media or None)
             with self.lock:
                 self.current["job"] = job.id
             handler = log.attach_job_log(job.id)
@@ -412,6 +434,8 @@ class Handler(BaseHTTPRequestHandler):
             return None
         if path == "/api/knowledge":
             return self._json(knowledge.info())
+        if path == "/api/audio/list":
+            return self._json(read_json(ROOT / "output" / "enhanced" / "list.json", []) or [])
         if path == "/api/notes":
             return self._json({"vault": str(notes.vault()), "notes": notes.list_notes()})
         if path == "/api/publish/items":
@@ -544,11 +568,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": "yükleme yarıda kesildi"}, 400)
         tmp.replace(dest)
         try:
-            info = studio.probe(dest)
+            info = studio.media_info(dest)  # video, fotoğraf (HEIC dahil) veya ses
         except Exception as exc:  # noqa: BLE001
             dest.unlink(missing_ok=True)
-            return self._json({"error": f"video okunamadı: {exc}"}, 400)
-        L.info("Video yüklendi: %s (%.0f sn)", name, info["duration"])
+            return self._json({"error": f"dosya okunamadı: {exc}"}, 400)
+        L.info("Yüklendi: %s (%s, %.0f sn)", name, info["kind"], info["duration"])
         return self._json({"file": name, **info})
 
     # --- POST
@@ -575,6 +599,13 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"ok": True})
             threading.Timer(0.5, lambda: os._exit(0)).start()
             return None
+        if path == "/api/audio/enhance":  # ses kaydı veya videonun sesini iyileştir
+            name = Path(str(data.get("file", ""))).name
+            if not (studio.UPLOADS / name).is_file():
+                return self._json({"error": "önce dosya yükleyin"}, 400)
+            strength = data.get("strength") if data.get("strength") in ("hafif", "orta", "güçlü") else "orta"
+            return self._json({"queued": [FACTORY.enqueue("audiofx", file=name, strength=strength,
+                                                          topic=f"ses iyileştirme: {name}")]})
         if path.startswith("/api/notes/"):
             try:
                 act = path[len("/api/notes/"):]
@@ -604,8 +635,9 @@ class Handler(BaseHTTPRequestHandler):
             text = (data.get("text") or "").strip() or None
             tasks = [FACTORY.enqueue("new", category=data.get("category") or None,
                                      topic=(data.get("topic") or "").strip() or None, text=text,
-                                     draw=bool(data.get("draw")), source="elle")
-                     for _ in range(1 if text else n)]
+                                     draw=bool(data.get("draw")), source="elle",
+                                     media=[Path(str(f)).name for f in (data.get("media") or [])])
+                     for _ in range(1 if (text or data.get("media")) else n)]
             return self._json({"queued": tasks})
         if path == "/api/produce":
             t = FACTORY.enqueue("produce", job=data["job"], from_stage=data.get("from_stage") or None)
@@ -633,11 +665,17 @@ class Handler(BaseHTTPRequestHandler):
                 FACTORY.enqueue("studio_analyze", project=proj["id"], topic=link)
                 return self._json(proj)
             if action in ("analyze", "edit"):
-                src = studio.UPLOADS / Path(str(data.get("file", ""))).name
-                if not src.is_file():
-                    return self._json({"error": "önce video yükleyin"}, 400)
+                files = [Path(str(f)).name for f in (data.get("files") or [data.get("file", "")]) if f]
+                files = [f for f in files if (studio.UPLOADS / f).is_file()]
+                if not files:
+                    return self._json({"error": "önce video veya fotoğraf yükleyin"}, 400)
+                src = studio.UPLOADS / files[0]
+                if action == "analyze" and studio.media_info(src)["kind"] != "video":
+                    return self._json({"error": "stil öğrenmek için bir video gerekli"}, 400)
                 opts = {k: data[k] for k in ("style", "mode", "count", "min_sec", "max_sec", "aspect", "frame",
                                              "music", "captions", "improve_rounds", "notes", "title", "enhance") if k in data}
+                if action == "edit":
+                    opts["files"] = files
                 proj = studio.new_project(action, src, opts)
                 FACTORY.enqueue(f"studio_{action}", project=proj["id"], topic=src.name)
                 return self._json(proj)
@@ -681,7 +719,8 @@ class Handler(BaseHTTPRequestHandler):
 
     # Uygulamadan girilebilecek gizli değerler (başka ad yazılamaz; değerler asla geri gönderilmez)
     SECRET_NAMES = {"YOUTUBE_CLIENT_ID", "YOUTUBE_CLIENT_SECRET", "TIKTOK_CLIENT_KEY", "TIKTOK_CLIENT_SECRET",
-                    "TELEGRAM_BOT_TOKEN", "PEXELS_API_KEY", "PIXABAY_API_KEY"}
+                    "TELEGRAM_BOT_TOKEN", "PEXELS_API_KEY", "PIXABAY_API_KEY", "HF_TOKEN", "REPLICATE_API_TOKEN",
+                    "OPENAI_API_KEY"}
 
     def _publish_post(self, action: str, data: dict):
         from reels.config import set_secret

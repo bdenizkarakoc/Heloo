@@ -335,6 +335,28 @@ def _ai_image(scene: dict, job_dir: Path, cfg: Config, budget: Budget) -> list[d
             download(data["data"][0]["url"], dest)
         return [{"path": str(dest), "provider": "ai_image:openai", "kind": "photo", "title": prompt[:80],
                  "license": "AI üretimi (OpenAI kullanım koşulları)", "credit": "", "source": "generated"}]
+    hf_model = cfg.get_path("visuals.huggingface.image_model", "black-forest-labs/FLUX.1-schnell")
+    if secret("HF_TOKEN") and hf_model:
+        # Hugging Face Inference (ücretsiz hesapta küçük aylık kota); FLUX.1-schnell Apache-2.0: ticari kullanım serbest
+        if not budget.take("ai_images"):
+            return []
+        import requests
+        try:
+            r = requests.post(f"https://router.huggingface.co/hf-inference/models/{hf_model}", timeout=180,
+                              headers={"Authorization": f"Bearer {secret('HF_TOKEN')}", "Accept": "image/jpeg"},
+                              json={"inputs": prompt + style, "parameters": {"width": 768, "height": 1344}})
+        except requests.RequestException as exc:
+            raise TransientError(f"Hugging Face: {type(exc).__name__}") from exc
+        if r.status_code == 402:
+            L.warning("Hugging Face aylık ücretsiz kotası doldu; AI görsel atlandı")
+        elif r.status_code >= 400 or not r.headers.get("content-type", "").startswith("image/"):
+            L.warning("Hugging Face görsel üretemedi (%s): %s", r.status_code, r.text[:200])
+        else:
+            dest = job_dir / "visuals" / f"{scene['id']}_ai.jpg"
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(r.content)
+            return [{"path": str(dest), "provider": f"ai_image:hf:{hf_model}", "kind": "photo", "title": prompt[:80],
+                     "license": "AI üretimi (FLUX.1-schnell, Apache-2.0)", "credit": "", "source": "generated"}]
     model = cfg.get_path("visuals.replicate.image_model")
     if secret("REPLICATE_API_TOKEN") and model:
         if not budget.take("ai_images"):
@@ -352,7 +374,13 @@ def _ai_video(scene: dict, job_dir: Path, cfg: Config, budget: Budget) -> list[d
         return []
     if not budget.take("ai_videos"):
         return []
-    url = _replicate_run(model, {"prompt": prompt, "aspect_ratio": "9:16"}, cfg, timeout=900)
+    full = prompt + ", vertical 9:16, cinematic, smooth camera motion, no text, no watermark"
+    try:
+        url = _replicate_run(model, {"prompt": full, "aspect_ratio": "9:16"}, cfg, timeout=900)
+    except StageError as exc:  # model aspect_ratio girdisini tanımıyorsa yalnızca prompt ile dene
+        if "aspect" not in str(exc).lower() and "422" not in str(exc):
+            raise
+        url = _replicate_run(model, {"prompt": full}, cfg, timeout=900)
     return [{"url": url, "provider": f"ai_video:replicate:{model}", "kind": "video", "title": prompt[:80],
              "license": "AI üretimi (model lisansına bakın)", "credit": "", "source": "generated"}]
 
@@ -375,7 +403,7 @@ def _replicate_run(model: str, inputs: dict, cfg: Config, timeout: int = 300) ->
 
 
 SEARCH_PROVIDERS = {"nasa", "nasa_video", "openverse", "pexels", "pixabay", "wikipedia"}
-VIDEO_PROVIDERS = ["pexels", "pixabay", "nasa_video"]
+VIDEO_PROVIDERS = ["pexels", "pixabay", "nasa_video", "ai_video"]  # gerçek klip önce; AI video yalnızca yedek
 # Konudan çok "etkinlik/insan" fotoğrafı olduğunu düşündüren kelimeler (otomatik seçimde geri plana itilir)
 OFFTOPIC = re.compile(r"\b(viewing|visitors?|students?|people|crowd|team|briefing|conference|press|award|"
                       r"ceremony|workshop|event|portrait|poster|logo|diagram|chart|graph|illustration of the team|"
@@ -598,7 +626,7 @@ def _fetch(scene: dict, job_dir: Path, cfg: Config, providers: list[str], used: 
                 L.info("%s: '%s' doğrulanamadı (%s), atlandı", scene["id"], c.get("title", "")[:50], why)
                 continue
             c["verified"] = why
-            if scene["visual"].get("min_relevance") and \
+            if scene["visual"].get("min_relevance") and name in SEARCH_PROVIDERS and \
                     relevance(c, scene["visual"].get("query", "")) < scene["visual"]["min_relevance"]:
                 continue  # otomatik video denemesi: konuyla ilgisi zayıf klip yerine fotoğrafa dönülür
             if c.get("w") and c.get("h") and min(c["w"], c["h"]) < min_side:

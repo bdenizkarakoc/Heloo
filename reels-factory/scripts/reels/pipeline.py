@@ -69,6 +69,15 @@ def make_brief(job: Job, cfg: Config) -> dict:
         "script_path": str(job.script_path.relative_to(ROOT)),
         "format_doc": "skills/reels-production/script-format.md",
     }
+    if job.state.get("user_media"):
+        brief["user_media"] = {
+            "folder": str((job.dir / "user_media").relative_to(ROOT)),
+            "items": job.state["user_media"],
+            "note": "Kullanıcının kendi fotoğraf/videoları: HEPSİ videoda kullanılmalı. Dosyalara bak (Read), içeriğine "
+                    "uygun sahneye ata: sahnenin visual'ına \"user\": \"<dosya adı>\" ekle. Senaryo bu medyayla uyumlu "
+                    "olmalı. Atamadıkların sırayla boş fotoğraf sahnelerine yerleştirilir."}
+    if job.state.get("user_music"):
+        brief["user_music"] = "Kullanıcı kendi müziğini yükledi; arka plan müziği o olacak (music alanını boş bırakabilirsin)."
     try:  # Graphify içerik haritası varsa: işlenmiş kavramlar (tekrar etme, bağlantılardan yeni konu)
         from .knowledge import brief_context
         km = brief_context()
@@ -81,18 +90,103 @@ def make_brief(job: Job, cfg: Config) -> dict:
 
 
 def new_job(cfg: Config, category: str | None = None, topic: str | None = None,
-            text: str | None = None, draw: bool = False) -> Job:
+            text: str | None = None, draw: bool = False, media: list[Path] | None = None) -> Job:
     """text: kullanıcının yazdığı metin (incelenip doğrulanarak senaryoya çevrilir).
-    draw: görselleri ajan kendisi SVG illüstrasyon olarak çizer."""
+    draw: görselleri ajan kendisi SVG illüstrasyon olarak çizer.
+    media: kullanıcının kendi fotoğraf/video/müzik dosyaları — videoda mutlaka kullanılır."""
     cat = pick_category(cfg, category)
     job = Job.create(cat, topic or (text.strip().splitlines()[0][:80] if text else None))
     if text:
         job.state["user_text"] = text.strip()
     job.state["draw"] = bool(draw)
+    if media:
+        add_user_media(job, media)
     job.save()
     make_brief(job, cfg)
     L.info("Yeni görev: %s (kategori: %s)", job.id, cat)
     return job
+
+
+def add_user_media(job: Job, files: list[Path]) -> None:
+    """Kullanıcı medyasını göreve kopyalar: fotoğraflar JPG'ye (HEIC dahil, EXIF yönüyle), videolar olduğu gibi,
+    ses dosyası arka plan müziği olarak."""
+    import shutil
+    from .studio import media_info, normalize_image
+    dest = job.dir / "user_media"
+    dest.mkdir(parents=True, exist_ok=True)
+    items = []
+    for i, f in enumerate(files, 1):
+        try:
+            info = media_info(f)
+        except StageError as exc:
+            job.warn(f"yüklenen dosya okunamadı, atlandı: {f.name} ({exc})")
+            continue
+        if info["kind"] == "audio":
+            target = dest / f"muzik{f.suffix.lower()}"
+            shutil.copy(f, target)
+            job.state["user_music"] = str(target.relative_to(job.dir))
+            continue
+        if info["kind"] == "image":
+            src = normalize_image(f) if f.suffix.lower() not in (".jpg", ".jpeg") else f
+            target = dest / f"{i:02d}.jpg"
+        else:
+            src, target = f, dest / f"{i:02d}{f.suffix.lower()}"
+        shutil.copy(src, target)
+        items.append({"file": target.name, "kind": "photo" if info["kind"] == "image" else "video",
+                      "width": info["width"], "height": info["height"], "duration": round(info["duration"], 1),
+                      "original": f.name})
+    job.state["user_media"] = items
+
+
+def assign_user_media(job: Job, script: dict) -> list[str]:
+    """Kullanıcı medyasını sahnelere yerleştirir. Senaryo `visual.user` ile atadıysa ona, kalanları sırayla
+    fotoğraf/video sahnelerine. Hiçbir yüklenen dosya boşa gitmez; sahne sayısı yetmezse uyarılır."""
+    items = job.state.get("user_media") or []
+    if not items:
+        return []
+    import json as _json
+    import shutil
+    media_dir = job.dir / "media"
+    media_dir.mkdir(exist_ok=True)
+    names = {it["file"]: it for it in items}
+    used, placed = set(), []
+
+    def place(sc: dict, it: dict) -> None:
+        src = job.dir / "user_media" / it["file"]
+        ext = src.suffix.lower()
+        for old in media_dir.glob(f"{sc['id']}.*"):
+            old.unlink()
+        shutil.copy(src, media_dir / f"{sc['id']}{ext}")
+        (media_dir / f"{sc['id']}.json").write_text(_json.dumps(
+            {"provider": "user", "title": it.get("original", it["file"]), "license": "kullanıcının kendi medyası",
+             "credit": "", "source": ""}, ensure_ascii=False), encoding="utf-8")
+        vis = sc["visual"]
+        for k in ("pick", "crop", "skip", "url", "reuse"):  # eski aday seçimleri kullanıcı medyasını ezmesin
+            vis.pop(k, None)
+        vis.update(kind=it["kind"], providers=["agent_media"])
+        vis.setdefault("fit", "cover" if it["height"] >= it["width"] else "auto")
+        if it["kind"] == "video":
+            vis.setdefault("start", 0.0)
+        used.add(it["file"])
+        placed.append(f"{sc['id']} ← {it.get('original', it['file'])}")
+
+    asked = []  # `user: true` (ya da bilinmeyen ad): sıradaki kullanılmamış dosya
+    for sc in script["scenes"]:
+        want = sc["visual"].get("user")
+        if isinstance(want, str) and want in names and want not in used:
+            place(sc, names[want])
+        elif want:
+            asked.append(sc)
+    free = asked + [sc for sc in script["scenes"] if sc["visual"].get("kind") in ("photo", "video")
+                    and not sc["visual"].get("user") and not sc["visual"].get("reuse")]
+    free += [sc for sc in script["scenes"] if sc["visual"].get("kind") == "graphic" and sc["layout"] not in
+             ("list", "compare", "stat") and sc not in free]
+    for it in [it for it in items if it["file"] not in used]:
+        if not free:
+            job.warn(f"yüklenen dosya için uygun sahne kalmadı: {it.get('original', it['file'])}")
+            continue
+        place(free.pop(0), it)
+    return placed
 
 
 def auto_script(job: Job, cfg: Config, on_line=None) -> dict:
@@ -173,6 +267,9 @@ def stage_captions(job: Job, script: dict, metas: dict, cfg: Config) -> tuple[di
 def stage_visuals(job: Job, script: dict, tl: dict, cfg: Config) -> dict:
     from .util import http
     http(cfg.get_path("visuals.user_agent"))
+    placed = assign_user_media(job, script)
+    if placed:
+        L.info("Kullanıcı medyası yerleştirildi: %s", "; ".join(placed))
     cat = cfg.get_path(f"categories.{job.state['category']}", {})
     providers = cat.get("visual_providers", ["openverse"])
     used = {"sources": set(), "hashes": []}
@@ -226,8 +323,14 @@ def stage_music(job: Job, script: dict, tl: dict, cfg: Config) -> dict | None:
     subject = mcfg.get("subject") or next((sc["visual"].get("subject") for sc in script["scenes"]
                                             if sc["visual"].get("subject")), None)
     with job.stage("music") as info:
-        music = audio.pick_music(cfg, queries, job.d("audio"), tl["total"], {x for x in recent if x},
-                                 want=mcfg.get("file"), subject=subject)
+        if job.state.get("user_music"):  # kullanıcının yüklediği müzik her zaman öncelikli
+            path = job.dir / job.state["user_music"]
+            music = {"path": path, "provider": "user", "title": path.stem, "artist": "", "credit": "", "source": "",
+                     "license": "kullanıcının kendi müziği", "license_checked": True,
+                     "vocals": audio._looks_vocal(path)}
+        else:
+            music = audio.pick_music(cfg, queries, job.d("audio"), tl["total"], {x for x in recent if x},
+                                     want=mcfg.get("file"), subject=subject)
         if music and not music.get("license_checked", True):
             job.warn(f"müziğin kullanım hakkı doğrulanmadı ({music.get('title')}) — telif riski kullanıcıda")
         if music:

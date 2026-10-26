@@ -137,6 +137,15 @@
         <div class="row" style="margin-top:8px"><input id="pixKey" type="password" placeholder="Pixabay API anahtarı"><button class="ghost" style="flex:0 0 auto" onclick="saveSecret('PIXABAY_API_KEY', 'pixKey')">Kaydet</button></div>
         <div id="stStock" class="muted" style="margin-top:6px"></div>
       </div>
+      <div class="card">
+        <h2>Yapay zekâ görsel ve video</h2>
+        <p class="muted"><b>AI görsel:</b> Hugging Face hesabı (ücretsiz) → huggingface.co/settings/tokens → "Read" belirteci. FLUX.1-schnell kullanılır (Apache-2.0, ticari kullanım serbest); ücretsiz hesapta aylık kota küçüktür.<br>
+        <b>AI video:</b> Replicate (ücretli, kart gerekir) → replicate.com/account/api-tokens. Wan 2.2: 5 sn'lik klip ≈ 0,05 $. Video başına en fazla 4 klip, 8 görsel (bütçe sınırı).</p>
+        <div class="row"><input id="hfKey" type="password" placeholder="Hugging Face belirteci (hf_...)"><button class="ghost" style="flex:0 0 auto" onclick="saveSecret('HF_TOKEN', 'hfKey')">Kaydet</button></div>
+        <div class="row" style="margin-top:8px"><input id="repKey" type="password" placeholder="Replicate API belirteci (r8_...)"><button class="ghost" style="flex:0 0 auto" onclick="saveSecret('REPLICATE_API_TOKEN', 'repKey')">Kaydet</button></div>
+        <div class="row" style="margin-top:8px"><input id="oaiKey" type="password" placeholder="OpenAI API anahtarı (isteğe bağlı, gpt-image)"><button class="ghost" style="flex:0 0 auto" onclick="saveSecret('OPENAI_API_KEY', 'oaiKey')">Kaydet</button></div>
+        <div id="stAi" class="muted" style="margin-top:6px"></div>
+      </div>
     </div>
   </section>
 </main>
@@ -288,6 +297,7 @@ async function loadStatus() {
   const s = await api("/api/publish/status");
   $("stTg").innerHTML = s.telegram.bot ? (s.telegram.chat ? '<span class="good">✓ bağlı</span>' : "Bot kaydedildi — şimdi Telegram'da botuna /start gönder") : "bağlı değil";
   $("audAuto").value = s.audience_auto; if (document.activeElement !== $("mfUrl")) $("mfUrl").value = s.mirofish_url || "";
+  $("stAi").textContent = `AI görsel: ${s.stock.openai ? "OpenAI ✓" : s.stock.hf ? "Hugging Face ✓" : s.stock.replicate ? "Replicate ✓" : "kapalı"} · AI video: ${s.stock.replicate ? "Replicate ✓" : "kapalı (Replicate gerekli)"}`;
   $("stStock").textContent = `Pexels: ${s.stock.pexels ? "✓" : "yok"} · Pixabay: ${s.stock.pixabay ? "✓" : "yok"} · NASA video: her zaman`;
   $("ytRedirect").textContent = location.origin.replace("localhost", "127.0.0.1") + "/oauth/youtube";
 }

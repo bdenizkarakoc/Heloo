@@ -34,8 +34,9 @@ python scripts/factory.py status [<görev>]
 | `scripts/reels/audio.py` | Müzik (kütüphane/Openverse/prosedürel), ducking, SFX, iki geçişli loudnorm, mux |
 | `scripts/reels/compose.py` | Metin ölçümü (gerçek font), güvenli alan yerleşimi, HyperFrames proje üretimi, render |
 | `scripts/reels/qc.py` | Teknik QC, ASR ile anlaşılırlık/senkron, kontak tablosu, otomatik düzeltmeler |
-| `scripts/reels/studio.py` | Stüdyo: referanstan stil öğrenme (ölçüm + Claude görsel analizi), kullanıcı videosunu düzenleme, klip seçimi, stil iyileştirme |
+| `scripts/reels/studio.py` | Stüdyo: referanstan stil öğrenme (ölçüm + Claude görsel analizi), kullanıcı videosunu düzenleme, çoklu video/fotoğraf (HEIC/HDR/döndürme) montajı, klip seçimi, stil iyileştirme |
 | `scripts/reels/studio_render.py` | Stüdyo render: jump cut, 9:16 çerçeve, renk, zoom, ASS kelime vurgulu altyazı, ilerleme çubuğu, müzik ducking |
+| `scripts/reels/audiofx.py` | Ortak konuşma sesi iyileştirme: analiz, uğultu çentiği, Wiener gürültü azaltma, EQ, seviye, loudnorm; video sesini değiştirme |
 | `scripts/reels/voice.py` | Sesim: sohbetle ses toplama, ses iyileştirme, profil (perde/hız), kNN-VC ile kendi sesinle seslendirme (`my_voice` TTS) |
 | `scripts/reels/knnvc/` | kNN-VC (MIT) model kodu — torch.hub yok, ağırlıklar `weights_only` ile yüklenir |
 | `app/voice.html` | Sesim sayfası (`/voice`): onay, sesli sohbet, profil, deneme okuma |
@@ -53,6 +54,8 @@ python scripts/factory.py status [<görev>]
 
 ## Kurallar
 
+- `scripts/reels/__init__.py` Windows'ta bütün alt süreçleri `CREATE_NO_WINDOW` ile başlatır; bilerek pencere açan
+  çağrı `creationflags` vermeli.
 - Gizli bilgiler yalnızca `.env` dosyasında; loglar `SecretFilter` ile maskelenir. Asla koda yazma.
 - Ücretli API çağrıları yalnızca anahtar tanımlıysa ve `budget.*` sınırları içinde yapılır; MCP
   üzerinden kredi harcayan araçları kullanıcı onayı olmadan çağırma.

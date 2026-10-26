@@ -82,10 +82,12 @@ def capabilities(cfg: Config) -> dict:
                     "manual": "Claude Code oturumunda elle (SKILL.md)"}[resolve_provider(cfg)],
         "seslendirme": _voice_label() + (" + ElevenLabs" if secret("ELEVENLABS_API_KEY") else ""),
         "ai_gorsel": "OpenAI" if secret("OPENAI_API_KEY") else
-                     ("Replicate" if secret("REPLICATE_API_TOKEN") and cfg.get_path("visuals.replicate.image_model")
-                      else "YOK (anahtar tanımlı değil)"),
-        "ai_video": "Replicate" if secret("REPLICATE_API_TOKEN") and cfg.get_path("visuals.replicate.video_model")
-                    else "YOK — fotoğraf + kamera hareketi + hareketli grafik kullanılır",
+                     ("Hugging Face FLUX.1-schnell" if secret("HF_TOKEN") else
+                      ("Replicate" if secret("REPLICATE_API_TOKEN") and cfg.get_path("visuals.replicate.image_model")
+                       else "YOK — Yayın → Ayarlar'dan Hugging Face (ücretsiz) veya Replicate anahtarı girin")),
+        "ai_video": (f"Replicate ({cfg.get_path('visuals.replicate.video_model')})"
+                     if secret("REPLICATE_API_TOKEN") and cfg.get_path("visuals.replicate.video_model")
+                     else "YOK — Replicate anahtarı yok; stok/NASA video + fotoğraf + kamera hareketi kullanılır"),
         "stok": "Pexels + NASA + Openverse" if secret("PEXELS_API_KEY") else "NASA + Openverse (anahtarsız)",
         "muzik": "kütüphane / Openverse CC0-CC BY / prosedürel",
         "kurgu": "HyperFrames + GSAP (HTML → MP4)",

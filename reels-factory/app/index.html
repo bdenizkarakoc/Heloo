@@ -67,6 +67,9 @@
       <label>Metnimden video (isteğe bağlı) — metin incelenir, doğrulanır, senaryoya çevrilir</label>
       <textarea id="text" rows="4" style="width:100%;padding:9px 10px;border-radius:9px;border:1px solid var(--line);background:#0e1424;color:var(--ink);font:inherit" placeholder="Kendi metnini buraya yaz…"></textarea>
       <div class="switch" style="margin-top:8px"><input type="checkbox" id="draw"><span>Görselleri kendisi çizsin (özgün illüstrasyon)</span></div>
+      <label>Kendi fotoğraf / video / müziğim (isteğe bağlı) — hepsi videoda kullanılır</label>
+      <input type="file" id="media" multiple accept="image/*,video/*,audio/*,.heic,.heif">
+      <div id="mediaList" class="muted" style="margin-top:4px"></div>
       <div style="margin-top:14px"><button id="btnNew">Üret</button></div>
       <p class="muted" id="providerNote"></p>
     </div>
@@ -270,10 +273,21 @@ $("btnQuit").onclick = async () => {
 };
 window.showLog = (id) => { logJob = id; refreshLog(); };
 window.reproduce = async (id) => { await api("/api/produce", { job: id }); refreshStatus(); };
+let mediaFiles = [];
+$("media").onchange = async () => {
+  for (const f of [...$("media").files]) {
+    $("mediaList").textContent = `${f.name} yükleniyor…`;
+    const r = await (await fetch("/api/studio/upload?name=" + encodeURIComponent(f.name), { method: "PUT", body: f })).json();
+    if (r.error) { alert(f.name + ": " + r.error); continue; }
+    mediaFiles.push({ file: r.file, name: f.name, kind: r.kind });
+  }
+  $("media").value = "";
+  $("mediaList").innerHTML = mediaFiles.map((m) => `${m.kind === "image" ? "🖼️" : m.kind === "video" ? "🎬" : "🎵"} ${esc(m.name)}`).join(" · ");
+};
 $("btnNew").onclick = async () => {
   await api("/api/new", { topic: $("topic").value, category: $("category").value, count: +$("count").value || 1,
-                          text: $("text").value, draw: $("draw").checked });
-  $("topic").value = ""; $("text").value = ""; refreshStatus();
+                          text: $("text").value, draw: $("draw").checked, media: mediaFiles.map((m) => m.file) });
+  $("topic").value = ""; $("text").value = ""; mediaFiles = []; $("mediaList").textContent = ""; refreshStatus();
 };
 $("btnClaudeInstall").onclick = async () => {
   const r = await api("/api/claude/install", {});

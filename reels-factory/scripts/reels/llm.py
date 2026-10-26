@@ -139,10 +139,20 @@ SENARYO BİÇİMİ VE KURALLARI:
 KANCA (ilk sahnenin narration'ı) — şu kalıplardan birine göre yaz; ilk 2 saniyede kapanmayan bir soru aç,
 izleyiciye seslen, somut bir sayı/isim/tarih kullan (araştırmada varsa), 7-20 kelime:
 {hook_guide()}
-Başlık ile ilk sahnenin headline'ı (kapak) aynı kelimeleri tekrar etmesin; başlık ≤60 karakter.{fix}
+Başlık ile ilk sahnenin headline'ı (kapak) aynı kelimeleri tekrar etmesin; başlık ≤60 karakter.
+{user_media_note(brief)}{fix}
 
 Yalnızca script.json içeriğini (tek bir JSON nesnesi) döndür."""
     return extract_json(_call(cfg, state, prompt, web=False))
+
+
+def user_media_note(brief: dict) -> str:
+    um = brief.get("user_media")
+    if not um:
+        return ""
+    rows = "\n".join(f"- {it['file']} ({it['kind']}, özgün ad: {it.get('original', '')})" for it in um["items"])
+    return ("\nKULLANICININ KENDİ MEDYASI (hepsi kullanılacak; sahnelere visual.user ile ata, dosya adından "
+            f"içeriği tahmin et):\n{rows}\n")
 
 
 def hook_guide(limit: int = 21) -> str:
@@ -244,6 +254,8 @@ SKILL.md'deki 2. (araştırma), 3. (senaryo) ve 4. (görseller) adımları uygul
 
 - Görev: {job}  (klasör: projects/{job}/, brif: projects/{job}/brief.json)
 - Konu ipucu: {topic}
+- brief.json'da `user_media` varsa: kullanıcının kendi fotoğraf/videoları — HEPSİNİ kullan. Read ile bak, içeriğine uygun
+  sahnelere `"visual": {{"kind": "photo"|"video", "user": "<dosya>"}}` olarak ata; senaryo bu medyayla uyumlu olsun.
 - brief.json'da `knowledge_map` varsa: işlenmiş kavramları tekrarlama; ayrıntı için knowledge/corpus/graphify-out/GRAPH_REPORT.md.
 - WebSearch/WebFetch ile güvenilir kaynaklardan araştır; her sayıyı doğrula.
 - projects/{job}/script.json dosyasını yaz ve `{py} scripts/factory.py validate {job}` hatasız olana kadar düzelt.

@@ -87,6 +87,7 @@ Ekran yazıları kısa tutulur; sığmazsa kompozitör puntoyu küçültür, yin
 | `prompt` | İngilizce üretim istemi (AI görsel/video sağlayıcısı tanımlıysa kullanılır). |
 | `providers` | Bu sahne için sağlayıcı sırası (kategori varsayılanını ezer). |
 | `pick` | `"nasa:3"` — `factory.py candidates` çıktısındaki aday. |
+| `user` | `true` veya `"03.jpg"` — kullanıcının yüklediği medyayı (brief `user_media`) bu sahneye koy; `pick`/arama yok sayılır. |
 | `skip` | Kullanılmayacak kaynak URL'leri. |
 | `crop` | `[x0, y0, x1, y1]` (0–1 kesirleri) — ör. çok panelli görselden tek panel. |
 | `fit` | `auto` (varsayılan), `cover` (tam ekran, kamera hareketi), `card` (kart), `contain` (kesmeden, yumuşak kenarlı; uzay/obje fotoğrafları için ideal). |

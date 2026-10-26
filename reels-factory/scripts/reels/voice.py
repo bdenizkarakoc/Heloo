@@ -73,9 +73,10 @@ def now() -> str:
 # Yardımcılar
 # ----------------------------------------------------------------------------
 
-def enhance(src: Path, dest: Path, sr: int = 48000) -> Path:
-    """Konuşma iyileştirme: uğultu/gürültü azaltma, çamur kesme, netlik, sibilans, kompresör, seviye."""
-    run(["ffmpeg", "-y", "-v", "error", "-i", src, "-af", ENHANCE, "-ac", "1", "-ar", str(sr), dest])
+def enhance(src: Path, dest: Path, sr: int = 48000, strength: str = "orta") -> Path:
+    """Konuşma iyileştirme (audiofx): uğultu, gürültü (Wiener), tıkırtı/kırpılma, netlik, seviye dengeleme."""
+    from .audiofx import enhance as fx
+    fx(src, dest, strength, target_lufs=-18.0, sr=sr)
     return dest
 
 
@@ -382,7 +383,7 @@ def speak(slug: str, text: str, dest: Path) -> Path:
     tmp = dest.with_suffix(".base.mp3")
     tts_raw(slug, text, tmp)
     out = convert(tmp, dest.with_suffix(".vc.wav"), slug)
-    enhance(out, dest)
+    enhance(out, dest, strength="hafif")  # dönüştürülmüş ses temizdir: yalnızca ton ve seviye
     tmp.unlink(missing_ok=True)
     out.unlink(missing_ok=True)
     return dest

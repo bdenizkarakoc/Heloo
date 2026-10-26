@@ -35,7 +35,9 @@ UPLOADS, STYLES, PROJECTS = BASE / "uploads", BASE / "styles", BASE / "projects"
 BUILTIN_STYLES = ROOT / "assets" / "styles"
 OUT = ROOT / "output" / "studio"
 FONT = ROOT / "assets" / "fonts" / "Montserrat-VariableFont_wght.ttf"
-VIDEO_EXT = {".mp4", ".mov", ".m4v", ".mkv", ".webm", ".avi"}
+VIDEO_EXT = {".mp4", ".mov", ".m4v", ".mkv", ".webm", ".avi", ".3gp", ".mts", ".m2ts", ".ts", ".wmv", ".flv"}
+AUDIO_EXT = {".wav", ".mp3", ".m4a", ".aac", ".ogg", ".opus", ".flac", ".wma", ".amr", ".webm"}
+IMAGE_EXT = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif", ".bmp", ".gif", ".tif", ".tiff"}
 ANALYZE_SECONDS = 180  # referansın ilk 3 dakikası stil için yeterli
 
 
@@ -180,13 +182,118 @@ def ask_ai(cfg: Config, prompt: str, images: list[Path], out_file: Path, timeout
 # Ölçümler
 # ----------------------------------------------------------------------------
 
+def _rotation(v: dict) -> int:
+    rot = 0
+    for sd in v.get("side_data_list") or []:
+        if "rotation" in sd:
+            rot = int(float(sd["rotation"]))
+    if not rot and (v.get("tags") or {}).get("rotate"):
+        rot = int(float(v["tags"]["rotate"]))
+    return abs(rot) % 180
+
+
 def probe(src: Path) -> dict:
+    """Video bilgisi. Telefon videolarındaki döndürme etiketi hesaba katılır (dikey çekim dikey görünür);
+    HDR (iPhone HLG/Dolby Vision, PQ) işaretlenir — render'da SDR'a ton eşlemesi yapılır."""
     info = ffprobe(src)
-    v = next((s for s in info["streams"] if s.get("codec_type") == "video"), None)
+    v = next((s for s in info["streams"] if s.get("codec_type") == "video"
+              and (s.get("disposition") or {}).get("attached_pic") != 1), None)
     if not v:
         raise StageError("dosyada video akışı yok")
-    return {"duration": float(info["format"].get("duration") or 0), "width": int(v["width"]),
-            "height": int(v["height"]), "audio": any(s.get("codec_type") == "audio" for s in info["streams"])}
+    w, h = int(v["width"]), int(v["height"])
+    if _rotation(v) == 90:
+        w, h = h, w
+    hdr = v.get("color_transfer") in ("smpte2084", "arib-std-b67") or v.get("color_primaries") == "bt2020"
+    return {"duration": float(info["format"].get("duration") or 0), "width": w, "height": h, "hdr": bool(hdr),
+            "audio": any(s.get("codec_type") == "audio" for s in info["streams"])}
+
+
+def media_info(path: Path) -> dict:
+    """Yüklenen dosyanın türü: video / audio / image (+ boyut, süre)."""
+    ext = path.suffix.lower()
+    if ext in IMAGE_EXT:
+        from PIL import Image, ImageOps
+        try:
+            import pillow_heif  # iPhone HEIC/HEIF fotoğrafları
+            pillow_heif.register_heif_opener()
+        except ImportError:
+            pass
+        with Image.open(path) as im:
+            im = ImageOps.exif_transpose(im)
+            return {"kind": "image", "width": im.width, "height": im.height, "duration": 0.0, "audio": False}
+    info = ffprobe(path)
+    streams = info["streams"]
+    if any(s.get("codec_type") == "video" and (s.get("disposition") or {}).get("attached_pic") != 1 for s in streams):
+        return {"kind": "video", **probe(path)}
+    if any(s.get("codec_type") == "audio" for s in streams):
+        return {"kind": "audio", "duration": float(info["format"].get("duration") or 0), "audio": True,
+                "width": 0, "height": 0}
+    raise StageError("dosya okunamadı (desteklenen: video, fotoğraf, ses)")
+
+
+def normalize_image(path: Path) -> Path:
+    """HEIC/WEBP/PNG vb. fotoğrafı EXIF yönüne göre döndürülmüş JPG'ye çevirir (ffmpeg her yerde okuyabilsin)."""
+    from PIL import Image, ImageOps
+    try:
+        import pillow_heif
+        pillow_heif.register_heif_opener()
+    except ImportError:
+        pass
+    dest = path.with_suffix(".jpg") if path.suffix.lower() != ".jpg" else path.with_name(path.stem + "_n.jpg")
+    with Image.open(path) as im:
+        ImageOps.exif_transpose(im).convert("RGB").save(dest, quality=93)
+    return dest
+
+
+HDR_TO_SDR = ("zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=hable:desat=0,"
+              "zscale=t=bt709:m=bt709:r=tv,format=yuv420p")
+
+
+def combine_sources(files: list[Path], dest: Path, photo_sec: float = 3.5) -> dict:
+    """Birden çok video/fotoğrafı tek bir montaj kaynağında birleştirir (sırasıyla).
+
+    Tuval çoğunluğun yönüne göre seçilir (dikey 1080x1920 / yatay 1920x1080); farklı oranlı parçalar bulanık
+    arka planla sığdırılır. Fotoğraflar hafif yakınlaşmayla (Ken Burns) photo_sec saniyelik sahne olur. HDR
+    videolar SDR'a ton eşlenir, sesi olmayan parçalara sessizlik eklenir."""
+    infos = [media_info(f) for f in files]
+    items = [(f, i) for f, i in zip(files, infos) if i["kind"] in ("video", "image")]
+    if not items:
+        raise StageError("birleştirilecek video veya fotoğraf yok")
+    portrait = sum(1 for _, i in items if i["height"] >= i["width"]) >= len(items) / 2
+    W, H = (1080, 1920) if portrait else (1920, 1080)
+    work = dest.with_suffix(".parts")
+    work.mkdir(parents=True, exist_ok=True)
+    parts = []
+    for n, (f, i) in enumerate(items):
+        part = work / f"p{n:03d}.mp4"
+        fill = (f"split[a][b];[a]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},gblur=sigma=40,"
+                f"eq=brightness=-0.08[bg];[b]scale={W}:{H}:force_original_aspect_ratio=decrease[fg];"
+                f"[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1,fps=30,format=yuv420p")
+        if i["kind"] == "image":
+            src = normalize_image(f) if f.suffix.lower() not in (".jpg", ".jpeg") else f
+            frames = int(photo_sec * 30)
+            zoom = (f"scale={W * 2}:{H * 2}:force_original_aspect_ratio=increase,crop={W * 2}:{H * 2},"
+                    f"zoompan=z='1+0.08*on/{frames}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d={frames}:s={W}x{H}:fps=30")
+            ratio = i["width"] / max(1, i["height"])
+            vf = zoom if abs(ratio - W / H) < 0.15 else fill  # oranı tutmayan fotoğraf: bulanık arka planla
+            run(["ffmpeg", "-y", "-v", "error", "-loop", "1", "-t", f"{photo_sec}", "-i", src, "-f", "lavfi", "-t",
+                 f"{photo_sec}", "-i", "anullsrc=r=48000:cl=stereo", "-filter_complex", f"[0:v]{vf}[v]",
+                 "-map", "[v]", "-map", "1:a", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+                 "-pix_fmt", "yuv420p", "-c:a", "aac", "-ar", "48000", "-ac", "2", "-shortest", part])
+        else:
+            pre = (HDR_TO_SDR + ",") if i.get("hdr") else ""
+            audio = ["-map", "0:a:0"] if i["audio"] else ["-map", "1:a"]
+            run(["ffmpeg", "-y", "-v", "error", "-i", f, "-f", "lavfi", "-t", f"{i['duration']:.3f}", "-i",
+                 "anullsrc=r=48000:cl=stereo", "-filter_complex", f"[0:v]{pre}{fill}[v]", "-map", "[v]", *audio,
+                 "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p", "-c:a", "aac",
+                 "-ar", "48000", "-ac", "2", "-shortest", part])
+        parts.append(part)
+    lst = work / "list.txt"
+    lst.write_text("".join(f"file '{p.as_posix()}'\n" for p in parts), encoding="utf-8")
+    run(["ffmpeg", "-y", "-v", "error", "-f", "concat", "-safe", "0", "-i", lst, "-c", "copy", "-movflags", "+faststart",
+         dest])
+    shutil.rmtree(work, ignore_errors=True)
+    return {"file": dest, "parts": len(parts), "size": [W, H]}
 
 
 def scene_cuts(src: Path, limit: float) -> list[float]:
@@ -652,6 +759,14 @@ def run_edit(pid: str) -> dict:
     proj["status"] = "running"
     handler = log.attach_job_log(pid)
     try:
+        files = [UPLOADS / Path(f).name for f in (o.get("files") or []) if (UPLOADS / Path(f).name).is_file()]
+        if len(files) > 1 or (files and files[0].suffix.lower() in IMAGE_EXT):
+            set_stage(proj, f"{len(files)} dosya birleştiriliyor (videolar + fotoğraflar)")
+            comb = combine_sources(files, UPLOADS / f"{pid}-montaj.mp4")
+            src = comb["file"]
+            proj.update(source=str(src.relative_to(ROOT)), source_name=f"{len(files)} dosyalık montaj")
+            proj["notes"].append(f"{comb['parts']} parça tek montajda birleştirildi ({comb['size'][0]}x{comb['size'][1]}).")
+            save_project(proj)
         set_stage(proj, "video inceleniyor")
         info = probe(src)
         proj["source_duration"] = round(info["duration"], 1)
@@ -661,6 +776,8 @@ def run_edit(pid: str) -> dict:
             style["captions"]["enabled"] = False
         if o.get("frame"):
             style["frame"]["mode"] = o["frame"]
+        if proj.get("source_name", "").endswith("dosyalık montaj"):
+            style["pacing"]["keep_gaps"] = 2.0  # montajda konuşmasız fotoğraf/video sahneleri kesilmez
         set_stage(proj, f"konuşma yazıya dökülüyor ({info['duration'] / 60:.1f} dk video; uzun videolarda birkaç dakika sürer)")
         words = transcribe(src, work, cfg) if info["audio"] else []
         if not words:
@@ -740,5 +857,5 @@ def run_edit(pid: str) -> dict:
 
 def safe_upload_name(name: str) -> str:
     p = Path(name or "video.mp4")
-    ext = p.suffix.lower() if p.suffix.lower() in VIDEO_EXT else ".mp4"
+    ext = p.suffix.lower() if p.suffix.lower() in VIDEO_EXT | AUDIO_EXT | IMAGE_EXT else ".mp4"
     return f"{dt.datetime.now():%Y%m%d-%H%M%S}-{slugify(p.stem, 50)}{ext}"
