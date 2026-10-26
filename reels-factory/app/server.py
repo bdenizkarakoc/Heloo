@@ -341,6 +341,7 @@ class Factory:
 
 FACTORY: Factory | None = None
 _caps_cache: dict = {}
+KESIM_API = 2  # Kesim'in beklediği uç sürümü; Kesim daha eski bir fabrika görürse (boşta ise) yeniden başlatır
 KESIM_RESULTS: dict = {}  # Kesim'in yan işleri (altyazı, AI planı, ses) -> durum/sonuç
 
 
@@ -514,6 +515,7 @@ class Handler(BaseHTTPRequestHandler):
             st = kesim.status()
             st["styles"] = [{"slug": x["slug"], "name": x["name"], "version": x["version"]} for x in studio.list_styles()]
             st["projects"] = [p for p in studio.list_projects(15) if p.get("options", {}).get("kesim")][:8]
+            st["api"] = KESIM_API
             return self._json(st)
         if path in ("/studio", "/studio.html"):
             return self._file(ROOT / "app" / "studio.html")

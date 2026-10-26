@@ -18,8 +18,10 @@ function loadConfig() {
   return { root, python: cfg.python || (process.platform === "win32" ? "pythonw" : "python3"), port: Number(cfg.port) || 8765 };
 }
 
+const API = 2;   // bu Kesim sürümünün beklediği fabrika uçları (server.py KESIM_API)
+
 class Factory {
-  constructor(cfg = loadConfig()) { this.cfg = cfg; this.starting = null; }
+  constructor(cfg = loadConfig()) { this.cfg = cfg; this.starting = null; this.checked = false; }
 
   request(method, p, { body, json, stream, length, timeout = 60000, raw = false } = {}) {
     return new Promise((resolve, reject) => {
@@ -35,6 +37,7 @@ class Factory {
         res.on("end", () => {
           const buf = Buffer.concat(chunks);
           if (raw) return res.statusCode < 400 ? resolve(buf) : reject(new Error(`HTTP ${res.statusCode}`));
+          if (res.statusCode === 404) { this.checked = false; return reject(new Error("fabrika bu özelliği tanımıyor: eski sürüm çalışıyor olabilir, bir sonraki denemede yeniden başlatılır")); }
           let data = {};
           try { data = buf.length ? JSON.parse(buf.toString("utf8")) : {}; } catch { return reject(new Error(`geçersiz yanıt (HTTP ${res.statusCode})`)); }
           if (res.statusCode >= 400 || (data && data.error)) return reject(new Error((data && data.error) || `HTTP ${res.statusCode}`));
@@ -50,9 +53,27 @@ class Factory {
 
   async alive() { try { await this.request("GET", "/api/jobs", { timeout: 3000 }); return true; } catch { return false; } }
 
-  /** Fabrika kapalıysa arka planda penceresiz başlatır ve hazır olmasını bekler. */
+  /** Çalışan fabrika eski sürümse (git pull sonrası yeniden başlatılmamış) ve boştaysa kapatıp yenisini başlatır. */
+  async upToDate(restart = true) {
+    if (this.checked) return true;
+    let api = 0;
+    try { api = Number((await this.request("GET", "/api/kesim", { timeout: 10000 })).api) || 0; } catch { /* eski: uç yok */ }
+    if (api >= API) { this.checked = true; return true; }
+    if (!restart) throw new Error("Reels Fabrikası dosyaları eski: Heloo klasöründe 'git pull' çalıştırıp Kesim'i yeniden açın");
+    const st = await this.request("GET", "/api/status", { timeout: 10000 }).catch(() => ({}));
+    if (st.current || (st.pending && st.pending.length)) {
+      throw new Error("fabrika eski sürümle çalışıyor ve şu an bir iş yapıyor; iş bitince tekrar deneyin (o zaman yeniden başlatılır)");
+    }
+    await this.request("POST", "/api/shutdown", { json: {}, timeout: 5000 }).catch(() => { /* kapanırken bağlantı kopabilir */ });
+    for (let i = 0; i < 40 && (await this.alive()); i++) await new Promise((r) => setTimeout(r, 250));
+    return false;
+  }
+
+  /** Fabrika kapalıysa arka planda penceresiz başlatır ve hazır olmasını bekler; eski sürümse yeniler. */
   async ensure() {
-    if (await this.alive()) return true;
+    if (await this.alive()) {
+      if (await this.upToDate()) return true;
+    }
     if (!this.starting) {
       this.starting = (async () => {
         const server = path.join(this.cfg.root, "app", "server.py");
@@ -61,7 +82,10 @@ class Factory {
           { cwd: this.cfg.root, detached: true, stdio: "ignore", windowsHide: true });
         child.on("error", () => { /* aşağıdaki bekleme zaman aşımıyla bildirir */ });
         child.unref();
-        for (let i = 0; i < 60; i++) { await new Promise((r) => setTimeout(r, 500)); if (await this.alive()) return true; }
+        for (let i = 0; i < 60; i++) {
+          await new Promise((r) => setTimeout(r, 500));
+          if (await this.alive()) { this.checked = false; return this.upToDate(false); }
+        }
         throw new Error("Reels Fabrikası başlatılamadı (python ve kurulum yolunu denetleyin)");
       })().finally(() => { this.starting = null; });
     }
