@@ -1,0 +1,14 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>SelfEdit doğrulama</title>
+<script src="recipe-core.js"></script>
+<script src="recipe-runtime.js"></script>
+<script src="check.js"></script>
+<script>
+  // Gizli pencere: ağ yok, Node yok. Tarifi gerçek canvas'ta sınar ve sonucu döndürür.
+  window.__check = (recipe) => Promise.resolve(SECheck.check(
+    recipe,
+    (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; },
+    () => performance.now()
+  ));
+</script>

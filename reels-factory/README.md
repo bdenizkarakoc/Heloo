@@ -328,6 +328,32 @@ görsel ve video** kartına anahtar gir:
 
 Yapay zekâ yalnızca gerçek kaynak bulunamayınca devreye girer (kategori `visual_providers` listesinde en sonda).
 
+## ✂ Kesim masaüstü programı + 🏭 Fabrika sekmesi
+
+Kesim (Electron video editörü; kaynak `../kesim-kaynak/`, SelfEdit dahil) fabrikaya bağlanır. Kurulum betiği
+(`scripts/install-kesim.ps1`, `install-all` de çalıştırır) Kesim.exe'yi bulur (Masaüstü\kesim, İndirilenler\Kesim_SelfEdit),
+`resources\app` klasörünü **bir kez** `app.fabrika-yedek` olarak yedekler ve `kesim-app/` dosyalarını kopyalar.
+Geri almak için `install-kesim.ps1 -Restore`.
+
+Kesim'de sol paneldeki **🏭 Fabrika** sekmesi:
+
+| Özellik | Ne yapar |
+|---|---|
+| Otomatik montaj | Bırakılan ya da zaman çizelgesindeki medyayı fabrikada montajlar (boşluk kesme, 9:16, altyazı, renk, ses, müzik), sonucu Kesim'e alır |
+| Şu videoyu yap | Konudan araştırmalı, seslendirmeli video üretir; bitince Kesim'e alınır |
+| Otomatik altyazı | Seçili klibin konuşmasını yazıya döker (faster-whisper), fabrika stilinde metin parçaları ekler |
+| Sesi temizle | Seçili klibin sesini temizler (uğultu, gürültü, seviye) ve klibi temiz sürümle değiştirir |
+| Fabrikanın öğrendiği stil | Stüdyo stilinin renk düzenlemesini tüm kliplere uygular; altyazılar o stille eklenir |
+| AI asistan | Fabrikanın Claude bağlantısıyla (Claude Code ya da API) Kesim'in kendi araçlarıyla düzenleme planı yapıp uygular |
+| Dışa aktarma | Çıktılar Masaüstü\kesim\Hazır'a kaydedilir; fabrika bunlardan "Kesim" stilini öğrenir (kapatılabilir) |
+
+**Claude ile Kesim'i yönetme (Premiere MCP yerine):** Kesim açıkken `reels-fabrikasi` MCP sunucusundaki
+`kesim_editor_durum`, `kesim_editor_araclari`, `kesim_editor` (add_text, add_effect, edit_clip, add_transition,
+split_at, remove_item, add_sound, smart_tool), `kesim_editor_ice_aktar`, `kesim_editor_disa_aktar` açık projeyi
+düzenler. Kesim yalnızca 127.0.0.1'de, her açılışta yenilenen bir belirteçle (`%APPDATA%\kesim\fabrika-kontrol.json`)
+dinler; sayfa yalnızca izin verilen fabrika uçlarını çağırabilir (yayın onayı gibi işlemler hariç).
+`../premiere-pro-mcp/` Adobe Premiere içindir ve Premiere kurulu değilse çalışmaz; Kesim için gerekmez.
+
 ## ✂ Kesim (sade montaj programı)
 
 Masaüstündeki **Kesim** simgesi (ve `Masaüstü\kesim\Kesim.lnk`) adres çubuğu olmayan küçük bir pencere açar:

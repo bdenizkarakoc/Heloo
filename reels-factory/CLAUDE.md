@@ -51,6 +51,7 @@ python scripts/factory.py status [<görev>]
 | `scripts/reels/knowledge.py` | Graphify: içerik bilgi haritası (brief → knowledge_map) ve kod haritası |
 | `scripts/reels/kesim.py` | Kesim: bırak→montaj (pencere + Montaja at klasörü), öğrenilen en güncel stil, Hazır'a teslim, eski Kesim.exe çıktılarından stil öğrenme |
 | `scripts/reels/kesim_edit.py` | Kesim düzenleme araçları (Premiere yerine): kes, aralık sil, birleştir+geçiş, yazı, renk, hız, çerçeve, müzik, ses, kapak |
+| `kesim-app/` | Kesim masaüstü programına kurulan dosyalar: SelfEdit + `fabrika/` (client.js fabrika istemcisi, host.js IPC + Claude kontrol kapısı, ui.js Fabrika sekmesi); `scripts/install-kesim.ps1` kurar |
 | `app/kesim.html` | Sade Kesim penceresi (`/kesim`, `server.py --open --page kesim`) |
 | `app/mcp_server.py` | MCP sunucusu (stdio): fabrikayı Claude Code/Desktop'a araç olarak açar; yayın yalnızca onay kuyruğuna |
 | `scripts/reels/mcp_setup.py` | `factory.py mcp`: MCP sunucularını (reels-fabrikasi, playwright, memory, filesystem, fetch, git, github, sentry, context7, brave-search, postgres) Claude Code'a kaydeder |
@@ -63,6 +64,9 @@ python scripts/factory.py status [<görev>]
 
 - `scripts/reels/__init__.py` Windows'ta bütün alt süreçleri `CREATE_NO_WINDOW` ile başlatır; bilerek pencere açan
   çağrı `creationflags` vermeli.
+- Kesim açıksa projeyi `kesim_editor*` MCP araçlarıyla düzenle (değişiklikler Kesim'de geri alınabilir).
+  `kesim-app/index.html` ve `selfedit/` kullanıcının Kesim kaynağından (`../kesim-kaynak/`) gelir; Kesim kodunu
+  değiştirirken `fabrika/` altında kal, sayfaya dinamik metni yalnızca textContent ile yaz.
 - Montaj/video düzenleme isteklerinde Adobe Premiere değil Kesim kullanılır (`kesim_*` MCP araçları ya da
   `factory.py kesim`). Kullanıcı sohbette video/fotoğraf yükleyip montaj isterse `factory.py kesim` ile yap ve çıktıyı gönder.
   Kullanıcının `Masaüstü\kesim` klasöründeki mevcut dosyalarına (Kesim.exe dahil) dokunma.

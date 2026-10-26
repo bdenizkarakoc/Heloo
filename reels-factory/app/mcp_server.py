@@ -40,8 +40,10 @@ mcp = FastMCP("reels-fabrikasi", instructions=(
     "tek adımda her şey için kesim_montaj; adım adım düzenleme için kesim_kes, kesim_aralik_sil, kesim_birlestir, "
     "kesim_yazi_ekle, kesim_renk, kesim_hiz, kesim_cerceve, kesim_muzik_ekle, kesim_ses_ayarla, "
     "kesim_ses_iyilestir, kesim_kapak; her araç yeni dosya üretir (girdiye yazmaz), sonucu bir sonraki araca ver; "
-    "bitince kesim_hazira_koy. Yeni içerik videosu için kesim_video_yap. Yayınlamak yerine yayina_hazirla "
-    "(yalnızca onay kuyruğu)."))
+    "bitince kesim_hazira_koy. Yeni içerik videosu için kesim_video_yap. Kullanıcının açık Kesim programındaki "
+    "projeyi düzenlemek için kesim_editor_durum → kesim_editor_araclari → kesim_editor (metin, efekt, filtre, "
+    "geçiş, kesme), dosya almak için kesim_editor_ice_aktar, kaydetmek için kesim_editor_disa_aktar. "
+    "Yayınlamak yerine yayina_hazirla (yalnızca onay kuyruğu)."))
 
 
 def _call(method: str, path: str, body: dict | None = None, data: bytes | None = None, timeout: float = 60):
@@ -279,6 +281,71 @@ def kesim_hazira_koy(dosya: str) -> str:
     if not p.is_file():
         raise ToolError(f"dosya bulunamadı: {dosya}")
     return kesim.to_ready(p)
+
+
+# ----------------------------------------------------------------------------
+# Açık Kesim programını yönetme (Kesim'in yerel kontrol kapısı; Premiere MCP'nin Kesim karşılığı)
+# ----------------------------------------------------------------------------
+
+def _kesim_control(route: str, body: dict | None = None, timeout: float = 120):
+    """Kesim penceresi açıkken %APPDATA%\\kesim\\fabrika-kontrol.json'daki kapı ve belirteçle konuşur."""
+    appdata = Path(os.environ.get("APPDATA") or Path.home() / ".config")
+    files = [appdata / "kesim" / "fabrika-kontrol.json", appdata / "Kesim" / "fabrika-kontrol.json",
+             *appdata.glob("*/fabrika-kontrol.json")]
+    info = next((json.loads(f.read_text(encoding="utf-8")) for f in files if f.is_file()), None)
+    if not info:
+        raise ToolError("Kesim açık değil (ya da Fabrika eklentisi kurulu değil). Kesim'i açıp tekrar deneyin.")
+    req = urllib.request.Request(f"http://127.0.0.1:{info['port']}{route}", method="POST",
+                                 data=json.dumps(body or {}).encode(),
+                                 headers={"Content-Type": "application/json", "X-Kesim-Token": info["token"]})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:  # noqa: S310 — yalnızca yerel Kesim
+            res = json.loads(r.read())
+    except urllib.error.HTTPError as exc:
+        res = json.loads(exc.read() or b"{}")
+    except (urllib.error.URLError, OSError) as exc:
+        raise ToolError(f"Kesim'e bağlanılamadı ({exc}); Kesim kapanmış olabilir") from exc
+    if res.get("error"):
+        raise ToolError(res["error"])
+    return res.get("result")
+
+
+@mcp.tool()
+def kesim_editor_durum() -> dict:
+    """Açık Kesim projesinin durumu: klipler (sıra, süre, hız), metinler, efektler, müzik, toplam süre."""
+    return _kesim_control("/state")
+
+
+@mcp.tool()
+def kesim_editor_araclari() -> list:
+    """Kesim editörünün araçları ve parametreleri (add_text, add_effect, edit_clip, add_transition, split_at,
+    remove_item, add_sound, smart_tool...). kesim_editor ile çağrılır."""
+    return _kesim_control("/tools")
+
+
+@mcp.tool()
+def kesim_editor(arac: str, argumanlar: dict | None = None) -> dict:
+    """Açık Kesim projesinde bir düzenleme aracını çalıştırır (ör. arac="add_text",
+    argumanlar={"text": "Merhaba", "start": 0, "dur": 3, "style": "Başlık"}). Her değişiklik Kesim'de Geri al ile
+    kaldırılabilir. Önce kesim_editor_araclari ile parametrelere bak."""
+    return _kesim_control("/call", {"tool": arac, "args": argumanlar or {}})
+
+
+@mcp.tool()
+def kesim_editor_ice_aktar(dosya: str, zaman_cizelgesine: bool = True) -> dict:
+    """Bilgisayardaki video/fotoğraf/ses dosyasını açık Kesim projesine alır (isteğe bağlı zaman çizelgesinin sonuna)."""
+    p = Path(dosya).expanduser()
+    p = p if p.is_absolute() else ROOT / p
+    if not p.is_file():
+        raise ToolError(f"dosya bulunamadı: {dosya}")
+    return _kesim_control("/import", {"path": str(p), "timeline": zaman_cizelgesine}, timeout=600)
+
+
+@mcp.tool()
+def kesim_editor_disa_aktar(bicimler: list[str] | None = None, cozunurluk: int = 1080, fps: int = 30) -> dict:
+    """Açık Kesim projesini dışa aktarır ve Masaüstü\\kesim\\Hazır klasörüne kaydeder. bicimler: v (dikey 9:16),
+    h (yatay 16:9), sq (kare), p45 (4:5). Gerçek zamanlı çalışır: video ne kadar uzunsa o kadar sürer."""
+    return _kesim_control("/export", {"formats": bicimler or ["v"], "res": cozunurluk, "fps": fps}, timeout=3600)
 
 
 if __name__ == "__main__":

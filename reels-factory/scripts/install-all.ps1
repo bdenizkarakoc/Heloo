@@ -154,6 +154,8 @@ Step "Ortam denetimi"
 python scripts/factory.py doctor --offline
 Step "Kisayollar ve uygulama"
 powershell -ExecutionPolicy Bypass -File (Join-Path $App "scripts\install-app.ps1") -Startup
+# Kesim masaustu programi: Fabrika sekmesi + Claude kontrolu (Kesim.exe bulunursa; ozgun dosyalar yedeklenir)
+powershell -ExecutionPolicy Bypass -File (Join-Path $App "scripts\install-kesim.ps1")
 
 Write-Host ""
 Write-Host "TAMAM - Reels Fabrikasi kuruldu ve acildi: http://127.0.0.1:$Port/" -ForegroundColor Green

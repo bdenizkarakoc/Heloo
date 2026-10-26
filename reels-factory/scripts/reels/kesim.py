@@ -370,3 +370,94 @@ def montage(paths: list[Path], on_stage=None) -> dict:
     proj = studio.run_edit(holder["project"])
     proj["delivered"] = deliver(proj)
     return proj
+
+
+# ----------------------------------------------------------------------------
+# Kesim masaüstü programı (Electron) için yardımcılar: altyazı, stil, AI planı
+# ----------------------------------------------------------------------------
+
+def style_data(slug: str = "") -> dict:
+    """Fabrika stilini Kesim'in anlayacağı biçimde verir (renk düzenleme + altyazı görünümü)."""
+    from . import studio
+    from .studio_render import full_style
+    slug = slug or default_style()
+    s = full_style(studio.get_style(slug))
+    g, c = s["grade"], s["captions"]
+    return {"slug": slug, "name": s.get("name", slug), "version": s.get("version", 1),
+            "description": s.get("description", ""),
+            "clip_fx": {"b": round(100 + g["brightness"] * 250), "c": round(g["contrast"] * 100),
+                        "s": round(g["saturation"] * 100), "temp": round(g["warmth"] * 333),
+                        "vig": 35 if g.get("vignette") else 0},
+            "zoom": s["punch"]["scale"] if s["punch"]["enabled"] else 1.0,
+            "captions": {"color": c["color"], "highlight": c["highlight"], "uppercase": c["uppercase"],
+                         "words": c["words"], "y": c["y"], "size": round(c["size"] / 78 * 5.5, 1),
+                         "outline": c["outline"] > 0, "box": c["box"], "box_color": c["box_color"]}}
+
+
+def transcribe_segments(src: Path, words_per: int = 3) -> list[dict]:
+    """Konuşmayı kelime zamanlı yazıya döker ve altyazı parçalarına böler (Kesim'in "Otomatik altyazı"sı)."""
+    from . import studio
+    from .config import load_config
+    work = ROOT / "studio" / "cache" / "kesim-asr" / slugify(src.stem, 50)
+    work.mkdir(parents=True, exist_ok=True)
+    words = studio.transcribe(src, work, load_config())
+    segs, cur = [], []
+    for i, w in enumerate(words):
+        cur.append(w)
+        nxt = words[i + 1] if i + 1 < len(words) else None
+        end_sentence = w["word"].rstrip()[-1:] in ".?!,"
+        if len(cur) >= words_per or end_sentence or not nxt or nxt["start"] - w["end"] > 0.6:
+            segs.append({"start": round(cur[0]["start"], 2), "end": round(cur[-1]["end"], 2),
+                         "text": " ".join(x["word"].strip() for x in cur)})
+            cur = []
+    return segs
+
+
+ASSIST_PROMPT = """Sen "Kesim" video editörünün montaj asistanısın. Kullanıcı Türkçe yazar.
+Kullanıcının isteğini aşağıdaki araçlarla projeye uygulayacak bir PLAN yaz. Araçlar sırayla çalıştırılır.
+
+İstek: {request}
+
+Projenin şu anki durumu (JSON): {state}
+
+Kullanılabilir araçlar (ad, açıklama, parametreler): {tools}
+{rules}
+Kurallar: En çok 12 çağrı. Bir klibe en fazla 2-3 efekt. Zamanlar zaman çizelgesi saniyesidir, klip indeksleri 0'dan.
+İstek bir soru/başlık/fikir ise araç çağırma, yalnızca yanıt yaz. Görüntüler verildiyse içeriğe göre karar ver.
+Fabrikanın öğrendiği stil (tercih edilen görünüm): {style}
+
+Yanıtı YALNIZCA şu JSON biçiminde ver:
+{{"calls": [{{"tool": "araç_adı", "args": {{...}}}}], "summary": "ne yaptığını 2-4 cümleyle anlatan Türkçe metin"}}"""
+
+
+def assist(request: str, state: dict, tools: list[dict], rules: str, frames: list[bytes]) -> dict:
+    """Kesim'in AI sekmesi için Claude'dan (fabrikanın bağlantısıyla) araç çağrısı planı alır."""
+    import json as _json
+    from . import studio
+    from .config import load_config
+    cfg = load_config()
+    if studio.ai_mode(cfg) == "none":
+        raise RuntimeError("Fabrikada Claude bağlı değil (Claude Code ya da ANTHROPIC_API_KEY gerekir)")
+    work = ROOT / "studio" / "cache" / "kesim-ai" / time.strftime("%Y%m%d-%H%M%S")
+    work.mkdir(parents=True, exist_ok=True)
+    imgs = []
+    for i, data in enumerate(frames[:4]):
+        p = work / f"kare{i + 1}.jpg"
+        p.write_bytes(data)
+        imgs.append(p)
+    try:
+        st = style_data()
+    except Exception:  # noqa: BLE001
+        st = {}
+    tool_txt = _json.dumps([{"name": t.get("name"), "description": str(t.get("description", ""))[:400],
+                             "params": list((t.get("inputSchema") or {}).get("properties", {}).keys())}
+                            for t in tools][:40], ensure_ascii=False)
+    prompt = ASSIST_PROMPT.format(request=request[:2000], state=_json.dumps(state, ensure_ascii=False)[:6000],
+                                  tools=tool_txt, rules=(rules or "")[:4000],
+                                  style=_json.dumps({k: st.get(k) for k in ("name", "clip_fx", "captions")},
+                                                    ensure_ascii=False))
+    res = studio.ask_ai(cfg, prompt, imgs, work / "plan.json", timeout=600)
+    if not isinstance(res, dict):
+        raise RuntimeError("Claude geçerli bir plan döndürmedi")
+    calls = [c for c in res.get("calls") or [] if isinstance(c, dict) and c.get("tool")][:12]
+    return {"calls": calls, "summary": str(res.get("summary") or "")}

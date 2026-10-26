@@ -341,6 +341,7 @@ class Factory:
 
 FACTORY: Factory | None = None
 _caps_cache: dict = {}
+KESIM_RESULTS: dict = {}  # Kesim'in yan işleri (altyazı, AI planı, ses) -> durum/sonuç
 
 
 def job_summary(job: Job) -> dict:
@@ -502,6 +503,13 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": str(exc)}, 502)
         if path in ("/kesim", "/kesim.html"):
             return self._file(ROOT / "app" / "kesim.html")
+        if path.startswith("/api/kesim/result/"):
+            return self._json(KESIM_RESULTS.get(path.rsplit("/", 1)[-1], {"status": "unknown"}))
+        if path.startswith("/api/kesim/style"):
+            try:
+                return self._json(kesim.style_data(path[len("/api/kesim/style"):].strip("/")))
+            except Exception as exc:  # noqa: BLE001
+                return self._json({"error": str(exc)}, 400)
         if path == "/api/kesim":
             st = kesim.status()
             st["styles"] = [{"slug": x["slug"], "name": x["name"], "version": x["version"]} for x in studio.list_styles()]
@@ -688,8 +696,50 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"ok": True})
         return self.send_error(404)
 
+    def _kesim_side(self, kind: str, fn) -> dict:
+        """Kısa Kesim işlerini (altyazı, AI planı, ses) montaj kuyruğunu beklemeden ayrı iş parçacığında çalıştırır."""
+        tid = f"k{int(time.time() * 1000)}"
+        KESIM_RESULTS[tid] = {"status": "running", "kind": kind}
+
+        def work():
+            try:
+                KESIM_RESULTS[tid] = {"status": "done", "kind": kind, "result": fn()}
+            except Exception as exc:  # noqa: BLE001
+                L.warning("Kesim %s başarısız: %s", kind, exc)
+                KESIM_RESULTS[tid] = {"status": "failed", "kind": kind, "error": str(exc)[:600]}
+        threading.Thread(target=work, daemon=True, name=f"kesim-{kind}").start()
+        while len(KESIM_RESULTS) > 200:
+            KESIM_RESULTS.pop(next(iter(KESIM_RESULTS)))
+        return {"task": tid}
+
     def _kesim_post(self, action: str, data: dict):
         try:
+            if action in ("transcribe", "enhance", "learn"):
+                src = studio.UPLOADS / Path(str(data.get("file", ""))).name
+                if not src.is_file():
+                    return self._json({"error": "önce dosyayı yükleyin"}, 400)
+                if action == "transcribe":
+                    return self._json(self._kesim_side("transcribe", lambda: kesim.transcribe_segments(
+                        src, int(data.get("words") or 3))))
+                if action == "learn":  # Kesim'den dışa aktarılan videodan "Kesim" stilini öğren
+                    return self._json({"queued": [FACTORY.enqueue("kesim_learn", video=src.relative_to(ROOT).as_posix(),
+                                                                  topic=f"Kesim stilini öğren: {src.name}")]})
+
+                def enh():
+                    from reels import audiofx
+                    out = ROOT / "output" / "kesim" / "islem"
+                    out.mkdir(parents=True, exist_ok=True)
+                    kind = studio.media_info(src)["kind"]
+                    dest = out / f"{src.stem}-temizses{'.mp4' if kind == 'video' else '.wav'}"
+                    rep = audiofx.enhance_media(src, dest, data.get("strength") or "orta")
+                    return {"output": dest.relative_to(ROOT).as_posix(), "steps": rep["steps"]}
+                return self._json(self._kesim_side("enhance", enh))
+            if action == "assist":
+                import base64
+                frames = [base64.b64decode(str(f).split(",")[-1]) for f in (data.get("frames") or [])[:4]]
+                return self._json(self._kesim_side("assist", lambda: kesim.assist(
+                    str(data.get("request", "")), data.get("state") or {}, data.get("tools") or [],
+                    str(data.get("rules", "")), frames)))
             if action == "edit":  # yüklenen dosyalarla tek tık montaj
                 files = [studio.UPLOADS / Path(str(f)).name for f in (data.get("files") or [])]
                 files = [f for f in files if f.is_file()]

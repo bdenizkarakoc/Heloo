@@ -48,3 +48,4 @@ graphify-out/
 # Kesim (kullanıcıya özel ayar ve işlem çıktıları)
 config/kesim.json
 output/kesim/
+kesim-app/fabrika/config.json
