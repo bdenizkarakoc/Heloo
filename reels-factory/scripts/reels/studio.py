@@ -563,7 +563,10 @@ def pick_clips(cfg: Config, proj: dict, sents: list[dict], n: int, lo: float, hi
             f"çıkarılacak; her biri {lo:.0f}-{hi:.0f} saniye olmalı ve tek başına anlaşılmalı, güçlü bir açılış "
             "cümlesiyle başlamalı ve doğal bir yerde bitmeli. Klipler çakışmasın.\n"
             + (f"Kullanıcının isteği: {notes}\n" if notes else "")
-            + "Her klip için kısa, merak uyandıran bir Türkçe başlık yaz (en fazla 6 kelime, videoda söylenenden "
+            + "Seçim ilkeleri (yt-shorts): ilk cümle önceki dakikaya ihtiyaç duymayan tam bir düşünce olsun; içinde "
+              "bir dönüş olsun (iddia, sonra onu zorlayan/kanıtlayan bir şey); bir cümleyle bitsin, dağılarak değil.\n"
+              "Her klip için kısa, merak uyandıran bir Türkçe başlık yaz: ilk 2 saniye ekranda kalır, bu yüzden "
+              "klibin ilk cümlesindeki kelimeleri TEKRARLAMASIN (en fazla 6 kelime, videoda söylenenden "
               "fazlasını iddia etme).\nÇıktı: {\"clips\": [{\"start\": ilk_cümle_no, \"end\": son_cümle_no, "
               "\"title\": \"...\", \"why\": \"neden seçildi\"}]}\n\nDÖKÜM:\n" + listing)
         res = ask_ai(cfg, prompt, [], PROJECTS / proj["id"] / "ai_clips.json")
@@ -610,6 +613,29 @@ def improve_style(cfg: Config, proj: dict, style: dict, out_sheet: Path, rnd: in
     proj.setdefault("improvements", []).append({"round": rnd, "changes": res["changes"],
                                                 "reason": res.get("reason", "")})
     return new
+
+
+def youtube_extras(srt_entries: list, dest: Path, duration: float) -> dict:
+    """YouTube agent skill araçları: klibin ilk cümlesine kanca puanı; 3 dakikadan uzun videoda YouTube bölümleri."""
+    out: dict = {}
+    try:
+        from .yt_tools import chapters, hook_score
+    except Exception:  # noqa: BLE001
+        return out
+    first = ""
+    for _, _, txt in srt_entries:
+        first = (first + " " + txt).strip()
+        if first[-1:] in ".?!" or len(first.split()) >= 20:
+            break
+    if first:
+        h = hook_score(first)
+        out["hook"] = {"text": first, "score": h["verdict"], "band": h["band_tr"], "fix": h["fix"]}
+    if duration >= 180:
+        ch = chapters(dest.with_suffix(".srt"))
+        if ch.get("valid"):
+            dest.with_suffix(".chapters.txt").write_text(ch["text"] + "\n", encoding="utf-8")
+            out["chapters"] = ch["text"]
+    return out
 
 
 def output_sheet(video: Path, dest: Path, total: float) -> Path:
@@ -693,12 +719,13 @@ def run_edit(pid: str) -> dict:
             write_srt(res["srt"], dest.with_suffix(".srt"))
             checks = [qc.decode_check(dest), qc.black_frames(dest, cfg), qc.loudness_check(dest, cfg)]
             shutil.copy(shot, out_dir / f"{name}_sheet.jpg")
+            extra = youtube_extras(res["srt"], dest, res["duration"])
             clip.update(status="done", output=str(dest.relative_to(ROOT)), thumbnail=str(thumb.relative_to(ROOT)),
                         srt=str(dest.with_suffix(".srt").relative_to(ROOT)),
                         sheet=str((out_dir / f"{name}_sheet.jpg").relative_to(ROOT)),
                         duration=res["duration"], cut_seconds=res["cut_seconds"], music=res["music"],
                         render_sec=round(time.time() - t0), qc=[{"name": c["name"], "ok": c["ok"],
-                                                                  "detail": c["detail"]} for c in checks])
+                                                                  "detail": c["detail"]} for c in checks], **extra)
             save_project(proj)
         proj.update(status="done", stage="tamamlandı", style_used=style_slug)
         save_project(proj)

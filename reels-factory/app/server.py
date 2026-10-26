@@ -31,7 +31,7 @@ from urllib.parse import unquote, urlparse
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from reels import audience, claude_setup, notes, cloud_sync, doctor, log, pipeline, publish, publish_sources, studio, voice  # noqa: E402
+from reels import audience, claude_setup, knowledge, notes, cloud_sync, doctor, log, pipeline, publish, publish_sources, studio, voice  # noqa: E402
 from reels.config import load_config  # noqa: E402
 from reels.job import Job  # noqa: E402
 from reels.util import read_json, write_json  # noqa: E402
@@ -91,6 +91,10 @@ class Factory:
                     self.current = None
 
     def _run(self, task: dict) -> None:
+        if task["kind"] == "knowledge":
+            res = knowledge.build_graph()
+            L.info("✔ Bilgi haritası: %s kavram, %s bağ", res.get("nodes"), res.get("edges"))
+            return
         if task["kind"] == "note":
             src = studio.download_url(task["url"]) if task.get("url") else studio.UPLOADS / task["file"]
             notes.make_note(src, task.get("url") or src.name)
@@ -99,7 +103,8 @@ class Factory:
             info = publish_sources.info_for(task["video"])
             it = publish.enqueue(info["video"], task.get("title") or info["title"],
                                  task.get("caption") if task.get("caption") is not None else info["caption"],
-                                 info["text"], task.get("channel"), task.get("targets"), info["source"], info["sheet"])
+                                 info["text"], task.get("channel"), task.get("targets"), info["source"], info["sheet"],
+                                 info.get("chapters", ""))
             with self.lock:
                 self.current["job"] = it["id"]
             mode = publish.settings().get("audience_auto", "claude")
@@ -160,6 +165,17 @@ class Factory:
         L.info("✔ Video hazır: %s", out.get("video"))
         if out.get("video"):
             self.auto_queue(out["video"], "local")
+            self.maybe_refresh_knowledge()
+
+    def maybe_refresh_knowledge(self) -> None:
+        """Bilgi haritası 24 saatten eskiyse (ve Graphify + Claude varsa) arka planda günceller."""
+        try:
+            s = knowledge.summary(1)
+            fresh = s.get("ready") and time.time() - s.get("updated", 0) < 24 * 3600
+            if not fresh and knowledge.available() and knowledge.backend():
+                self.enqueue("knowledge", topic="bilgi haritası")
+        except Exception as exc:  # noqa: BLE001
+            L.debug("harita güncelleme denetimi: %s", exc)
 
     # --- yayın
     def auto_queue(self, video_rel: str, origin: str) -> None:
@@ -381,6 +397,21 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith("/channels/"):
             p = self._safe(ROOT / "channels", path[len("/channels/"):])
             return self._file(p) if p and p.suffix.lower() == ".png" else self.send_error(403)
+        if path in ("/knowledge", "/knowledge/graph.html"):
+            g = knowledge.OUT / "graph.html"
+            if g.exists():
+                return self._file(g)
+            body = ("<!doctype html><meta charset=utf-8><body style='font:16px system-ui;background:#0b0f1a;color:#eef2fb;"
+                    "padding:40px'>Bilgi haritası henüz kurulmadı. Kontrol panelinde <b>🧠 Harita</b> → "
+                    "<b>Haritayı kur</b>.</body>").encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return None
+        if path == "/api/knowledge":
+            return self._json(knowledge.info())
         if path == "/api/notes":
             return self._json({"vault": str(notes.vault()), "notes": notes.list_notes()})
         if path == "/api/publish/items":
@@ -530,6 +561,15 @@ class Handler(BaseHTTPRequestHandler):
             return self._voice_post(path[len("/api/voice/"):], data)
         if path.startswith("/api/publish/"):
             return self._publish_post(path[len("/api/publish/"):], data)
+        if path == "/api/knowledge/build":
+            if not knowledge.available():
+                return self._json({"error": "Graphify kurulu değil (kurulum komutunu tekrar çalıştırın)"}, 400)
+            return self._json({"queued": [FACTORY.enqueue("knowledge", topic="bilgi haritası")]})
+        if path == "/api/knowledge/query":
+            try:
+                return self._json({"answer": knowledge.query(str(data.get("q", ""))[:300])})
+            except Exception as exc:  # noqa: BLE001
+                return self._json({"error": str(exc)}, 400)
         if path == "/api/shutdown":  # paneldeki "Kapat": arka plandaki bütün işler durur
             L.info("Uygulama kullanıcı isteğiyle kapatılıyor")
             self._json({"ok": True})

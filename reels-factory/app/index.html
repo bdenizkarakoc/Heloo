@@ -50,6 +50,7 @@
   <a href="/studio" style="color:var(--acc2);text-decoration:none;font-weight:600">🎬 Stüdyo</a>
   <a href="/voice" style="color:var(--acc2);text-decoration:none;font-weight:600">🎙️ Sesim</a>
   <a href="/publish" style="color:var(--acc2);text-decoration:none;font-weight:600">📤 Yayın</a>
+  <a href="#" id="kmLink" style="color:var(--acc2);text-decoration:none;font-weight:600">🧠 Harita</a>
   <button class="ghost" id="btnQuit" title="Uygulamayı ve arka plandaki bütün işleri durdurur" style="padding:6px 10px">⏻ Kapat</button>
   <span id="autoBadge" class="pill">otomatik mod kapalı</span>
 </header>
@@ -92,6 +93,14 @@
       <div class="cats" id="autoCats"></div>
       <div style="margin-top:12px" class="row"><button class="ghost" id="btnAuto">Kaydet</button></div>
       <p class="muted" id="nextRun"></p>
+    </div>
+
+    <div class="card" id="kmCard">
+      <h2>🧠 Bilgi haritası (Graphify)</h2>
+      <div id="kmInfo" class="muted">—</div>
+      <div class="row" style="margin-top:10px"><button class="ghost" id="btnKmOpen">Haritayı aç</button><button class="ghost" id="btnKmBuild">Haritayı kur / güncelle</button></div>
+      <div class="row" style="margin-top:10px"><input id="kmQ" placeholder="Haritaya sor: ör. hangi konular birbirine bağlı?"><button class="ghost" style="flex:0 0 auto" id="btnKmQ">Sor</button></div>
+      <pre id="kmAns" style="display:none;height:auto;max-height:220px"></pre>
     </div>
 
     <div class="card">
@@ -240,6 +249,16 @@ async function refreshLog() {
   if (atBottom) pre.scrollTop = pre.scrollHeight;
 }
 
+async function refreshKm() {
+  const k = await api("/api/knowledge");
+  $("kmInfo").innerHTML = !k.available ? "Graphify kurulu değil (kurulum komutunu tekrar çalıştırın)."
+    : k.ready ? `${k.nodes} kavram, ${k.edges} bağ · en bağlantılılar: ${esc((k.top_concepts || []).slice(0, 6).join(", "))}<br>Son güncelleme: ${new Date(k.updated * 1000).toLocaleString("tr-TR")}. Yeni videolar konu seçerken bu haritaya bakar.`
+    : `Henüz kurulmadı.${k.backend ? "" : " Claude gerekli."}`;
+}
+$("btnKmOpen").onclick = $("kmLink").onclick = (e) => { e.preventDefault(); window.open("/knowledge", "_blank"); };
+$("btnKmBuild").onclick = async () => { const r = await api("/api/knowledge/build", {}); alert(r.error || "Harita kuruluyor (videolar, Reel notları ve geçmiş; 1-3 dk)."); };
+$("btnKmQ").onclick = async () => { const r = await api("/api/knowledge/query", { q: $("kmQ").value }); $("kmAns").style.display = "block"; $("kmAns").textContent = r.error || r.answer; };
+refreshKm(); setInterval(refreshKm, 30000);
 window.toPublish = async (video) => {
   const r = await api("/api/publish/queue", { video });
   alert(r.error ? r.error : "Onay kuyruğuna ekleniyor (logo/ad işleniyor, kitle testi yapılıyor). Yayın sayfasından izleyebilirsin.");

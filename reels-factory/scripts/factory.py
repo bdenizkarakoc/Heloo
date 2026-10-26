@@ -133,6 +133,46 @@ def cmd_selftest(args, cfg) -> int:
     return 0 if rep["ok"] else 1
 
 
+def cmd_hook(args, cfg) -> int:
+    from reels.yt_tools import hook_score
+    rows = sorted((hook_score(h) for h in args.hooks), key=lambda r: -r["verdict"])
+    for r in rows:
+        print(f"\n  {r['hook']}")
+        for k, v in r["properties"].items():
+            print(f"    {k:<12} {v:3d}  {'#' * (v // 5)}")
+        print(f"    PUAN         {r['verdict']:3d}  {r['band_tr']}   kalıp: {r['formula']}")
+        print(f"    en zayıf     {r['weakest']} → {r['fix']}")
+    if len(rows) > 1:
+        print(f"\n  kazanan: {rows[0]['hook']} ({rows[0]['verdict']})")
+    return 0
+
+
+def cmd_title(args, cfg) -> int:
+    from reels.yt_tools import title_check
+    for t in args.titles:
+        r = title_check(t, args.thumb)
+        print(f'\n  "{r["title"]}"  {r["chars"]} karakter, puan {r["score"]}/100')
+        for i in r["issues_tr"]:
+            print(f"    ✖ {i}")
+        for g in r["good"]:
+            print(f"    ✔ {g}")
+    return 0
+
+
+def cmd_chapters(args, cfg) -> int:
+    from reels.yt_tools import chapters, edl
+    if args.edl:
+        r = edl(Path(args.srt), args.floor)
+        for c in r["cuts"]:
+            print(f"  {c['kind']:<7} {c['start']:8.2f} → {c['end']:8.2f}  {c['why']}")
+        print(f"  {len(r['cuts'])} kesim, {r['removed']} sn çıkar → {r['out']} sn")
+        return 0
+    r = chapters(Path(args.srt), args.target)
+    print(r.get("text") or r.get("reason"))
+    print("✔ YouTube kurallarına uygun" if r["valid"] else "✖ geçersiz (en az 3 bölüm, 00:00 ile başlamalı, her biri ≥10 sn)")
+    return 0 if r["valid"] else 1
+
+
 def cmd_status(args, cfg) -> int:
     jobs = [Job.load(args.job)] if args.job else Job.all()
     for job in jobs:
@@ -180,6 +220,16 @@ def main() -> int:
     p.add_argument("--limit", type=int, default=10)
     p = sub.add_parser("selftest", help="sistemi örnek senaryo ile dene")
     p.add_argument("--render", action="store_true", help="render, miks ve kalite kontrolünü de dene")
+    p = sub.add_parser("hook", help="kanca puanı (YouTube agent skill, Türkçe uyarlama)")
+    p.add_argument("hooks", nargs="+", help="bir veya birden çok kanca cümlesi")
+    p = sub.add_parser("title", help="başlık + kapak yazısı denetimi")
+    p.add_argument("titles", nargs="+")
+    p.add_argument("--thumb", help="kapak yazısı")
+    p = sub.add_parser("chapters", help="SRT'den YouTube bölümleri (veya --edl: kesim listesi)")
+    p.add_argument("srt")
+    p.add_argument("--target", type=int, default=7)
+    p.add_argument("--edl", action="store_true", help="boşluk/dolgu/tekrar kesim listesi")
+    p.add_argument("--floor", type=float, default=0.45)
     p = sub.add_parser("status", help="görev durumları")
     p.add_argument("job", nargs="?")
     args = ap.parse_args()
@@ -187,7 +237,8 @@ def main() -> int:
     log.setup_logging(args.verbose)
     cfg = load_config()
     handlers = {"doctor": cmd_doctor, "new": cmd_new, "validate": cmd_validate, "produce": cmd_produce,
-                "run": cmd_run, "status": cmd_status, "candidates": cmd_candidates, "selftest": cmd_selftest}
+                "run": cmd_run, "status": cmd_status, "candidates": cmd_candidates, "selftest": cmd_selftest,
+                "hook": cmd_hook, "title": cmd_title, "chapters": cmd_chapters}
     try:
         return handlers[args.cmd](args, cfg)
     except (StageError, FileNotFoundError) as exc:

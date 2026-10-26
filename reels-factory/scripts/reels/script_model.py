@@ -179,7 +179,32 @@ def validate(script: dict, cfg: Config) -> list[str]:
         probs.append(f"tahmini süre {est:.0f} sn; çok uzun (en fazla {dmax} sn)")
     elif est > cfg.get_path("output.duration.max", 60):
         probs.append(f"UYARI: tahmini süre {est:.0f} sn; varsayılan üst sınırın üzerinde")
+    probs += packaging_warnings(script, cfg)
     return probs
+
+
+def packaging_warnings(script: dict, cfg: Config) -> list[str]:
+    """YouTube agent skill araçlarıyla (Türkçe uyarlama) kanca ve başlık/kapak denetimi — yalnızca uyarı."""
+    try:
+        from .yt_tools import hook_score, title_check
+    except Exception:  # noqa: BLE001 — beceri klasörü yoksa denetim atlanır
+        return []
+    out = []
+    scenes = script.get("scenes") or []
+    hook = (scenes[0].get("narration") or "") if scenes else ""
+    if hook:
+        h = hook_score(hook)
+        if h["verdict"] < int(cfg.get_path("script.min_hook_score", 45)):
+            out.append(f"UYARI: kanca puanı {h['verdict']}/100 ({h['band_tr']}; kalıp: {h['formula']}) — en zayıf: "
+                       f"{h['weakest']} → {h['fix']}. `factory.py hook \"...\"` ile alternatifleri puanla.")
+    title = script.get("title") or ""
+    cover = (scenes[0].get("headline") or "") if scenes else ""
+    if title:
+        t = title_check(title, cover or None)
+        bad = [i for k, i in zip([x[0] for x in t["issues"]], t["issues_tr"]) if k in ("duplicate", "length", "shouting")]
+        if bad:
+            out.append("UYARI: başlık/kapak — " + "; ".join(bad))
+    return out
 
 
 def errors_only(problems: list[str]) -> list[str]:

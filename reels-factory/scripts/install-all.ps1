@@ -85,6 +85,8 @@ python -m pip install -q --upgrade pip
 python -m pip install -q -r requirements.txt
 if ($LASTEXITCODE -ne 0) { Fail "Python paketleri kurulamadi." }
 Ok "requirements.txt"
+python -m pip install -q graphifyy
+if ($LASTEXITCODE -ne 0) { Warn "Graphify (bilgi haritasi) kurulamadi; diger her sey calisir." } else { Ok "Graphify (bilgi haritasi)" }
 
 if (-not $NoVoice) {
   Step "Ses motoru (kendi sesinle seslendirme; PyTorch CPU ~250 MB, bir kez)"
@@ -128,6 +130,17 @@ if (-not $NoClaude) {
     Ok (& $claude --version)
   } else { Warn "Claude Code kurulamadi; uygulamadaki 'Claude Code'u kur ve bagla' dugmesiyle tekrar deneyin." }
 }
+
+# Claude Code becerileri (Windows'ta depodaki sembolik baglantilar calismaz): reels-production + YouTube agent skill
+$skillDir = Join-Path $env:USERPROFILE ".claude\skills"
+New-Item -ItemType Directory -Force -Path $skillDir | Out-Null
+$skills = @(Get-Item (Join-Path $App "skills\reels-production")) + @(Get-ChildItem (Join-Path $App "skills\youtube-agent") -Directory -Filter "yt-*")
+foreach ($sk in $skills) {
+  $dst = Join-Path $skillDir $sk.Name
+  if (Test-Path $dst) { Remove-Item $dst -Recurse -Force }
+  Copy-Item $sk.FullName $dst -Recurse
+}
+Ok ("Claude Code becerileri: " + $skills.Count + " (/yt-script, /yt-package, /yt-shorts ...)")
 
 # ---------------------------------------------------------------- 5. Denetim + kisayollar + baslat
 Step "Ortam denetimi"

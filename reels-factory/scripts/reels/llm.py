@@ -104,6 +104,7 @@ Ton: {brief['tone']} | Hedef kitle: {brief['audience']}
 Konu ipucu: {brief.get('topic_hint') or 'yok — kategoriye uygun, merak uyandıran bir konu seç'}
 Örnek konular (ilham için): {', '.join(brief.get('seed_topics', []))}
 Daha önce işlenen başlıklar (TEKRARLAMA): {', '.join(brief.get('past_titles', [])) or 'yok'}
+Bilgi haritasındaki işlenmiş kavramlar (Graphify; tekrar etme, bunlarla bağlantılı yeni bir konu seçebilirsin): {', '.join((brief.get('knowledge_map') or {}).get('covered_concepts', [])) or 'yok'}
 
 {user}Görev: 30-60 saniyelik bir Türkçe Reels videosu için tek bir konu seç ve web aramasıyla araştır.
 Birincil ve güvenilir kaynakları tercih et (resmî kurumlar, akademik kaynaklar, köklü yayınlar).
@@ -133,10 +134,53 @@ ARAŞTIRMA:
 {json.dumps(research_data, ensure_ascii=False, indent=1)}
 
 SENARYO BİÇİMİ VE KURALLARI:
-{fmt}{fix}
+{fmt}
+
+KANCA (ilk sahnenin narration'ı) — şu kalıplardan birine göre yaz; ilk 2 saniyede kapanmayan bir soru aç,
+izleyiciye seslen, somut bir sayı/isim/tarih kullan (araştırmada varsa), 7-20 kelime:
+{hook_guide()}
+Başlık ile ilk sahnenin headline'ı (kapak) aynı kelimeleri tekrar etmesin; başlık ≤60 karakter.{fix}
 
 Yalnızca script.json içeriğini (tek bir JSON nesnesi) döndür."""
     return extract_json(_call(cfg, state, prompt, web=False))
+
+
+def hook_guide(limit: int = 21) -> str:
+    """YouTube agent skill'in 21 kanca kalıbı (yt-script/hooks.json) — kısa liste."""
+    try:
+        from .yt_tools import hook_formulas
+        return "\n".join(f"- {h['name']}: {h['shape']}" for h in hook_formulas()[:limit])
+    except Exception:  # noqa: BLE001
+        return "- Soru, şaşırtıcı sayı, karşıtlık, sır, hata uyarısı"
+
+
+def improve_hook(script: dict, research_data: dict, cfg: Config, state: dict) -> dict:
+    """Kanca zayıfsa 5 alternatif yazdırır, Türkçe uyarlanmış kanca puanıyla en iyisini seçer (API modu)."""
+    from .yt_tools import hook_score
+    scenes = script.get("scenes") or []
+    if not scenes:
+        return script
+    cur = hook_score(scenes[0].get("narration", ""))
+    if cur["verdict"] >= int(cfg.get_path("script.min_hook_score", 45)):
+        return script
+    prompt = (f"Bu Reels'in açılış cümlesi zayıf (puan {cur['verdict']}/100; en zayıf: {cur['fix']}).\n"
+              f"Başlık: {script.get('title')}\nŞu anki kanca: {scenes[0].get('narration')}\n"
+              f"Sonraki sahne: {scenes[1].get('narration') if len(scenes) > 1 else ''}\n"
+              f"Araştırma (yalnızca buradaki bilgiler): {json.dumps(research_data, ensure_ascii=False)[:3000]}\n\n"
+              f"Kalıplar:\n{hook_guide()}\n\nFarklı kalıplarla 5 alternatif kanca yaz (Türkçe, 7-20 kelime, "
+              "uydurma bilgi yok, sonraki sahneye doğal bağlansın). Yalnızca JSON: {\"hooks\": [\"...\"]}")
+    try:
+        alts = extract_json(_call(cfg, state, prompt, web=False)).get("hooks") or []
+    except StageError as exc:
+        L.warning("kanca iyileştirilemedi: %s", exc)
+        return script
+    best = max((hook_score(h) for h in alts if isinstance(h, str) and h.strip()), key=lambda r: r["verdict"],
+               default=None)
+    if best and best["verdict"] > cur["verdict"]:
+        L.info("Kanca güçlendirildi: %d → %d (%s)", cur["verdict"], best["verdict"], best["formula"])
+        scenes[0]["narration"] = best["hook"]
+        script.setdefault("facts", []).append(f"kanca: {best['formula']} kalıbı, puan {best['verdict']}/100")
+    return script
 
 
 def generate(brief: dict, cfg: Config, state: dict) -> tuple[dict, dict]:
@@ -153,6 +197,10 @@ def generate(brief: dict, cfg: Config, state: dict) -> tuple[dict, dict]:
         probs = errors_only(validate(script, cfg))
         if probs:
             raise StageError("senaryo doğrulanamadı: " + "; ".join(probs))
+    try:
+        script = improve_hook(script, data, cfg, state)
+    except StageError as exc:  # bütçe sınırı vb.: mevcut kanca kalır
+        L.info("kanca iyileştirme atlandı: %s", exc)
     script["category"] = brief["category"]
     return script, data
 
@@ -196,9 +244,13 @@ SKILL.md'deki 2. (araştırma), 3. (senaryo) ve 4. (görseller) adımları uygul
 
 - Görev: {job}  (klasör: projects/{job}/, brif: projects/{job}/brief.json)
 - Konu ipucu: {topic}
+- brief.json'da `knowledge_map` varsa: işlenmiş kavramları tekrarlama; ayrıntı için knowledge/corpus/graphify-out/GRAPH_REPORT.md.
 - WebSearch/WebFetch ile güvenilir kaynaklardan araştır; her sayıyı doğrula.
 - projects/{job}/script.json dosyasını yaz ve `{py} scripts/factory.py validate {job}` hatasız olana kadar düzelt.
 - Gerekirse `{py} scripts/factory.py candidates {job} <sahne>` ile görsel adaylarını incele ve visual.pick ile seç.
+- Kanca: skills/youtube-agent/yt-script/hooks.json'daki kalıplardan 5 farklı açılış cümlesi yaz,
+  `{py} scripts/factory.py hook "1" "2" "3" "4" "5"` ile puanla, en yükseğini ilk sahneye koy (uydurma yok).
+  Başlık ile kapak: `{py} scripts/factory.py title "<başlık>" --thumb "<ilk sahne headline>"` — tekrar etmesin.
 {extra}- `produce` komutunu ÇALIŞTIRMA; üretimi uygulama yapacak.
 - Bitirince yalnızca kısa bir özet yaz: başlık ve kullanılan kaynaklar.
 """
@@ -227,7 +279,8 @@ def generate_via_claude_cli(job_id: str, job_dir, topic: str | None, cfg: Config
         raise StageError("Claude Code (`claude`) bulunamadı; https://claude.com/claude-code kurun ve giriş yapın")
     py = "python" if sys.platform.startswith("win") else "python3"
     tools = ["Read", "Write", "Edit", "Glob", "Grep", "WebSearch", "WebFetch",
-             f"Bash({py} scripts/factory.py validate:*)", f"Bash({py} scripts/factory.py candidates:*)"]
+             f"Bash({py} scripts/factory.py validate:*)", f"Bash({py} scripts/factory.py candidates:*)",
+             f"Bash({py} scripts/factory.py hook:*)", f"Bash({py} scripts/factory.py title:*)"]
     extra = (TEXT_EXTRA if text else "") + (DRAW_EXTRA.format(job=job_id) if draw else "")
     cmd = [exe, "-p", CLI_PROMPT.format(job=job_id, topic=topic or "yok — brief.json'a göre sen seç", py=py,
                                         extra=extra),

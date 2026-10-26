@@ -45,5 +45,5 @@ def info_for(video_rel: str) -> dict:
                         if l and not l[0].isdigit()) if srt.exists() else ""
         title = clip.get("title") or p.stem
         return {"video": p, "title": title, "source": "stüdyo", "caption": title, "text": text,
-                "sheet": ROOT / clip["sheet"] if clip.get("sheet") else None}
+                "sheet": ROOT / clip["sheet"] if clip.get("sheet") else None, "chapters": clip.get("chapters", "")}
     return {"video": p, "title": p.stem, "source": "elle", "caption": "", "text": "", "sheet": None}

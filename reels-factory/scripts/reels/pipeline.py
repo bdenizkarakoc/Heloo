@@ -69,6 +69,13 @@ def make_brief(job: Job, cfg: Config) -> dict:
         "script_path": str(job.script_path.relative_to(ROOT)),
         "format_doc": "skills/reels-production/script-format.md",
     }
+    try:  # Graphify içerik haritası varsa: işlenmiş kavramlar (tekrar etme, bağlantılardan yeni konu)
+        from .knowledge import brief_context
+        km = brief_context()
+        if km:
+            brief["knowledge_map"] = km
+    except Exception as exc:  # noqa: BLE001 — harita isteğe bağlıdır
+        L.debug("bilgi haritası okunamadı: %s", exc)
     write_json(job.dir / "brief.json", brief)
     return brief
 

@@ -270,6 +270,8 @@ function projectHtml(p) {
       <div class="vid"><video src="/${esc(c.output)}" poster="/${esc(c.thumbnail)}" controls preload="none"></video>
         <div class="meta"><div><b>${esc(c.title || "Klip")}</b></div>
         <div class="muted">${fmt(c.duration)} · ${c.cut_seconds > 0 ? fmt(c.cut_seconds) + " boşluk kesildi" : "kesim yok"}${c.music ? " · müzik: " + esc(c.music) : ""}</div>
+        ${c.hook ? `<div class="muted">açılış puanı: <b>${esc(c.hook.score)}</b>/100 (${esc(c.hook.band)})</div>` : ""}
+        ${c.chapters ? `<details><summary class="muted">YouTube bölümleri</summary><pre style="white-space:pre-wrap;font-size:11px;max-height:none">${esc(c.chapters)}</pre></details>` : ""}
         ${(c.qc || []).filter((q) => !q.ok).map((q) => `<div class="note">! ${esc(q.name)}: ${esc(q.detail)}</div>`).join("")}
         <a href="/${esc(c.output)}" download>indir</a><a href="/${esc(c.srt)}" download>altyazı</a><a href="/${esc(c.sheet)}" target="_blank">kareler</a><a href="#" onclick="toPublish('${esc(c.output)}');return false">yayına gönder</a></div></div>`
       : `<div class="vid"><div style="aspect-ratio:9/16;display:grid;place-items:center" class="muted">${esc(c.title || "Klip")}<br>sırada</div></div>`).join("")}</div>`;

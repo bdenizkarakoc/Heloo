@@ -182,6 +182,8 @@ function itemHtml(it) {
     <div>
       <div><b>${esc(it.title)}</b> <span class="pill ${esc(it.status)}">${esc(ST[it.status] || it.status)}</span> <span class="muted">· ${esc(it.channel_name)} · kaynak: ${esc(it.source)}</span></div>
       ${pend ? `<div style="margin-top:6px">${it.auto_publish ? `<span class="count">${Math.floor(it.minutes_left / 60)} sa ${it.minutes_left % 60} dk</span> <span class="muted">sonra otomatik yayınlanacak</span>` : `<span class="muted">Onay verilene kadar yayınlanmayacak (otomatik yayın kapalı).</span>`}</div>` : ""}
+      ${it.title_check ? `<div class="muted" style="margin-top:6px">YouTube başlık denetimi: <b>${esc(it.title_check.score)}/100</b>${it.title_check.issues.length ? " · " + it.title_check.issues.map((x) => esc(x.split(":")[0])).join(", ") : " · sorun yok"}</div>` : ""}
+      ${it.chapters ? `<details><summary>YouTube bölümleri (açıklamaya eklenecek)</summary><pre style="white-space:pre-wrap;font-size:12px">${esc(it.chapters)}</pre></details>` : ""}
       <label>Paylaşım yazısı</label>
       <textarea rows="5" id="cap-${esc(it.id)}" ${live ? "" : "disabled"} onfocus="editing.add('${esc(it.id)}')">${esc(it.caption)}</textarea>
       <label>Nerede paylaşılsın?</label>

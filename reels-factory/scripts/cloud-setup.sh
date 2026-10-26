@@ -14,6 +14,7 @@ if [ ! -x .venv/bin/python ]; then
 fi
 .venv/bin/python -m pip install -q --upgrade pip >/dev/null 2>&1 || true
 .venv/bin/python -m pip install -q -r requirements.txt
+.venv/bin/python -m pip install -q graphifyy >/dev/null 2>&1 || echo "! graphify kurulamadı (kod haritası olmadan devam)"
 [ -x node_modules/.bin/hyperframes ] || npm install --silent
 npx hyperframes browser ensure >/dev/null 2>&1 || npx hyperframes browser ensure
 npx hyperframes telemetry disable >/dev/null 2>&1 || true

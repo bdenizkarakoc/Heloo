@@ -16,7 +16,9 @@ cd reels-factory && bash scripts/cloud-setup.sh   # .venv kurar; bundan sonra ./
 ```
 
 ## 1. Kendi kendini denetle ve onar
-`./rf selftest` çalıştır.
+`./rf selftest` çalıştır. Kodda gezinmek için önce kod haritasını çıkar (yapay zekâ gerekmez, saniyeler sürer):
+`.venv/bin/python -m graphify update scripts` → `scripts/graphify-out/GRAPH_REPORT.md` (modüller, en bağlantılı
+fonksiyonlar); belirli bir soru için `.venv/bin/python -m graphify query "..." --graph scripts/graphify-out/graph.json`.
 - Başarısızsa `logs/selftest.json` ve ilgili logları incele, hatanın kök nedenini bul ve **en küçük** kod
   düzeltmesini yap. `selftest` tekrar başarılı olursa düzeltmeyi kod dalına commit edip push et
   (`git push -u origin claude/autonomous-ai-reels-factory-x82681`). Testleri atlama, devre dışı bırakma.

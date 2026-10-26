@@ -14,6 +14,8 @@ python scripts/factory.py candidates <görev> <sahne> [--query ...]
 python scripts/factory.py produce <görev> [--from <adım>]
 python scripts/factory.py run --count N          # tam otonom (Claude API anahtarı veya kurulu Claude Code)
 python app/server.py --open                      # yerel uygulama (kontrol paneli + otomatik mod; /studio: kendi videonu düzenle)
+python scripts/factory.py hook "..." "..."      # kanca puanı (Türkçe) · title "..." --thumb "..." · chapters x.srt
+python -m graphify update scripts                # kod haritası → scripts/graphify-out/GRAPH_REPORT.md (kodda gezinmeden önce)
 python scripts/factory.py status [<görev>]
 ```
 
@@ -41,6 +43,9 @@ python scripts/factory.py status [<görev>]
 | `scripts/reels/publish_sources.py` | Video dosyasından başlık / paylaşım yazısı / metin / kare tablosu |
 | `scripts/reels/audience.py` | Kitle testi: Claude sanal izleyici paneli + MiroFish bağlayıcısı |
 | `scripts/reels/notes.py` | Reel notları: video/bağlantıdan Obsidian notu (döküm + ekrandaki yazılar + fikirler), nottan video |
+| `skills/youtube-agent/` | YouTube agent skill (MIT, değiştirilmeden): 11 beceri + 6 araç |
+| `scripts/reels/yt_tools.py` | Bu araçların Türkçe uyarlaması: kanca puanı, başlık/kapak denetimi, bölümler, kesim listesi |
+| `scripts/reels/knowledge.py` | Graphify: içerik bilgi haritası (brief → knowledge_map) ve kod haritası |
 | `app/publish.html` | Yayın sayfası (`/publish`) |
 | `app/studio.html` | Stüdyo sayfası (`/studio`): yükleme, stil adlandırma, düzenleme seçenekleri, sonuçlar |
 | `assets/templates/*.j2` | HyperFrames kompozisyon şablonları (sahne, altyazı, üst katman) |

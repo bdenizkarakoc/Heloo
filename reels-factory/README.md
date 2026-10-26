@@ -161,6 +161,41 @@ Panelin üstündeki **🎬 Stüdyo** bağlantısı (`http://127.0.0.1:8765/studi
 `studio/uploads/` altında kalır (silinmez). Konuşma tanıma Türkçe ve otomatik olduğu için sayı/özel adlarda
 hata olabilir; yayından önce altyazıları gözden geçir. Uzun videolarda yazıya dökme CPU'da birkaç dakika sürer.
 
+## YouTube agent skill (kanca, başlık, bölümler, Shorts)
+
+[Jakeschincariol/youtube-agent-skill](https://github.com/Jakeschincariol/youtube-agent-skill) (MIT) değiştirilmeden
+`skills/youtube-agent/` altına alındı; 11 beceri Claude Code'da `/yt-script`, `/yt-package`, `/yt-shorts`,
+`/yt-seo`, `/yt-chapters`, `/yt-edit`, `/yt-retention`, `/yt-viral`, `/yt-plan`, `/yt-comment`, `/yt-audit` olarak
+çalışır (Windows'ta kurulum betiği bunları `%USERPROFILE%\.claude\skills` altına kopyalar). Araçlar İngilizce
+kelime listeleriyle yazıldığı için `scripts/reels/yt_tools.py` onları **Türkçeye uyarlar** (Türkçe harfler, "sen/siz"
+ekleri, "neden/nasıl", "kaybet/kaçır", Türkçe dolgu sözcükleri; Türkçe eklemeli olduğu için 7-20 kelime bandı).
+
+Sistemde kullanıldığı yerler:
+- **Senaryo:** Claude 21 kanca kalıbından 5 açılış cümlesi yazar, `rf hook` ile puanlar, en iyisini seçer
+  (API modunda kanca zayıfsa 5 alternatif üretilip en yüksek puanlı seçilir). `validate` zayıf kancayı ve
+  başlığı tekrar eden kapağı uyarır.
+- **Stüdyo:** klip seçimi yt-shorts ilkeleriyle (tam düşünceyle başlayan, içinde dönüş olan, bir cümleyle biten
+  an; ekran başlığı konuşulan ilk cümleyi tekrar etmez); her klibe açılış puanı; 3 dakikadan uzun videolarda
+  YouTube kurallarına uygun **bölümler** (00:00, en az 3, her biri ≥10 sn) — YouTube açıklamasına otomatik eklenir.
+- **Yayın:** her video için YouTube başlık denetimi (60/40 karakter, belirsiz kelime, büyük harf).
+
+```bash
+./rf hook "kanca 1" "kanca 2"            # puan + en zayıf özellik + öneri
+./rf title "Başlık" --thumb "KAPAK YAZISI"
+./rf chapters altyazi.srt                # YouTube bölümleri;  --edl : boşluk/dolgu/tekrar kesim listesi
+```
+
+## Bilgi haritası (Graphify)
+
+[Graphify](https://github.com/Graphify-Labs/graphify) (Apache-2.0/MIT, `pip install graphifyy`):
+- **İçerik haritası** (panel → 🧠 Harita): üretilen videolar (anlatım, doğrulanmış bilgiler, kaynaklar), Reel notları
+  ve video geçmişi bir bilgi grafiğine dönüşür (Claude Code veya Claude API ile; ayrı anahtar gerekmez).
+  Etkileşimli `graph.html`, konu toplulukları, en bağlantılı kavramlar ve "Haritaya sor". Yeni video konusu
+  seçilirken `brief.json → knowledge_map` ile işlenmiş kavramlar tekrarlanmaz, bağlantılı yeni konular aranır.
+  Harita 24 saatten eskiyse yeni bir video üretildiğinde kendiliğinden güncellenir.
+- **Kod haritası** (yapay zekâsız, yerel, saniyeler): `python -m graphify update scripts` →
+  `scripts/graphify-out/GRAPH_REPORT.md`; bulut rutini kendi kendini onarmadan önce kodda bununla gezinir.
+
 ## Reel notları (Obsidian)
 
 Stüdyo → **3 · Reel'den not çıkar**: izlediğin bir Reels'i yükle veya bağlantısını yapıştır. Konuşma yerelde

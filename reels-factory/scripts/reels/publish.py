@@ -221,7 +221,8 @@ def find_by_video(video: str) -> dict | None:
 
 
 def enqueue(video: Path, title: str, caption: str, text: str = "", channel: str | None = None,
-            targets: list[str] | None = None, source: str = "elle", sheet: Path | None = None) -> dict:
+            targets: list[str] | None = None, source: str = "elle", sheet: Path | None = None,
+            chapters: str = "") -> dict:
     """Videoyu onay kuyruğuna ekler, kanal damgasını uygular. Aynı video ikinci kez eklenmez."""
     rel = str(video.resolve().relative_to(ROOT))
     old = find_by_video(rel)
@@ -246,7 +247,8 @@ def enqueue(video: Path, title: str, caption: str, text: str = "", channel: str 
     hours = float(c.get("approval_hours", 2))
     suffix = c.get("caption_suffix") or ""
     item = {"id": pid, "title": title[:100], "caption": (caption + ("\n\n" + suffix if suffix else "")).strip(),
-            "text": text[:4000], "channel": c["slug"], "channel_name": c["name"],
+            "text": text[:4000], "channel": c["slug"], "channel_name": c["name"], "chapters": chapters,
+            "title_check": _title_check(title),
             "targets": [t for t in (targets or c["targets"]) if t in PLATFORMS],
             "source": source, "source_video": rel, "video": str(branded.relative_to(ROOT)),
             "cover": str((d / "cover.jpg").relative_to(ROOT)), "sheet": str((d / "sheet.jpg").relative_to(ROOT)),
@@ -255,6 +257,16 @@ def enqueue(video: Path, title: str, caption: str, text: str = "", channel: str 
     save(item)
     L.info("Onay kuyruğuna eklendi: %s → %s (son onay %s)", title, ", ".join(item["targets"]), item["deadline"])
     return item
+
+
+def _title_check(title: str) -> dict | None:
+    """YouTube başlığı denetimi (yt-package/title.py, Türkçe uyarlama)."""
+    try:
+        from .yt_tools import title_check
+        r = title_check(title)
+        return {"score": r["score"], "issues": r["issues_tr"]}
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def act(pid: str, action: str, by: str = "panel", **kw) -> dict:
@@ -275,6 +287,8 @@ def act(pid: str, action: str, by: str = "panel", **kw) -> dict:
             for k in ("caption", "title", "targets"):
                 if k in kw and kw[k] is not None:
                     it[k] = [t for t in kw[k] if t in PLATFORMS] if k == "targets" else str(kw[k])[:2200]
+            if kw.get("title") is not None:
+                it["title_check"] = _title_check(it["title"])
             if kw.get("channel") and kw["channel"] != it["channel"]:
                 c = get_channel(kw["channel"])
                 brand_video(ROOT / it["source_video"], c, ROOT / it["video"])
@@ -397,7 +411,9 @@ def up_youtube(c: dict, video: Path, it: dict) -> dict:
     token = _yt_access(c)
     title = (it.get("title") or "Video")[:95]
     desc = _caption(it, 4800)
-    if "#shorts" not in desc.lower():
+    if it.get("chapters"):  # yt-chapters: YouTube bölümleri yalnızca YouTube açıklamasına
+        desc += "\n\n" + it["chapters"]
+    elif "#shorts" not in desc.lower():
         desc += "\n\n#Shorts"
     meta = {"snippet": {"title": title, "description": desc, "categoryId": "27", "defaultLanguage": "tr"},
             "status": {"privacyStatus": c["accounts"]["youtube"].get("privacy", "public"),

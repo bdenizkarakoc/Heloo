@@ -44,11 +44,17 @@ başlıklar** (tekrarlama), hedef süre ve görsel sağlayıcı sırası.
 `projects/<görev>/script.json` dosyasını [script-format.md](script-format.md)'ye göre yaz:
 hook (0–3 sn) → setup → body → payoff → outro; 5–10 sahne; `sources` ve `facts` zorunlu.
 
+**Kanca (YouTube agent skill, `skills/youtube-agent/yt-script`):** `hooks.json`'daki 21 kalıptan 5 farklı açılış
+cümlesi yaz ve puanla; en yükseğini ilk sahneye koy. Başlık ile ilk sahnenin `headline`'ı (kapak) aynı kelimeleri
+tekrar etmesin.
+
 ```bash
+python scripts/factory.py hook "kanca 1" "kanca 2" "kanca 3" "kanca 4" "kanca 5"
+python scripts/factory.py title "<başlık>" --thumb "<ilk sahne headline>"
 python scripts/factory.py validate <görev>
 ```
 
-Hata kalmayana kadar düzelt. Tahmini süre 30–60 sn olmalı.
+Hata kalmayana kadar düzelt (`UYARI` satırları üretimi durdurmaz ama kanca/başlık uyarısını ciddiye al). Tahmini süre 30–60 sn olmalı.
 
 ## 4. Görseller
 
