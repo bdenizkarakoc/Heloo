@@ -16,6 +16,7 @@ projects/*
 output/videos/*
 output/thumbnails/*
 output/captions/*
+output/cloud/
 !output/**/.gitkeep
 logs/*
 !logs/.gitkeep

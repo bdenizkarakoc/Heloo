@@ -8,6 +8,7 @@ Yalnızca bu bilgisayardan erişilir (127.0.0.1). Bağımlılık gerektirmez (Py
 
 Otomatik mod açıkken, belirlenen aralıklarla kategori seçip araştırır, senaryo yazar (Claude API veya
 kurulu Claude Code), videoyu üretir ve output/ klasörüne kaydeder. Görevler sırayla, tek tek işlenir.
+Bulutta üretilen videolar (GitHub 'reels-videos' dalı) açılışta ve 30 dakikada bir output/cloud/ altına indirilir.
 """
 from __future__ import annotations
 
@@ -29,12 +30,13 @@ from urllib.parse import unquote, urlparse
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from reels import doctor, log, pipeline  # noqa: E402
+from reels import cloud_sync, doctor, log, pipeline  # noqa: E402
 from reels.config import load_config  # noqa: E402
 from reels.job import Job  # noqa: E402
 from reels.util import read_json, write_json  # noqa: E402
 
 APP_STATE = ROOT / "config" / "app.json"
+CLOUD_SYNC_MIN = 30
 DEFAULT_AUTO = {"enabled": False, "interval_hours": 6, "daily_max": 4, "categories": [], "next_run": None}
 L = log.get("app")
 
@@ -56,6 +58,9 @@ class Factory:
         self.auto = {**DEFAULT_AUTO, **(read_json(APP_STATE, {}) or {}).get("auto", {})}
         threading.Thread(target=self._worker, daemon=True, name="worker").start()
         threading.Thread(target=self._scheduler, daemon=True, name="scheduler").start()
+        self.cloud: dict = {"running": False, "last": None}
+        self.cloud_wake = threading.Event()
+        threading.Thread(target=self._cloud_loop, daemon=True, name="cloud").start()
 
     # --- görev ekleme
     def enqueue(self, kind: str, **kw) -> dict:
@@ -152,9 +157,21 @@ class Factory:
             except Exception as exc:  # noqa: BLE001
                 L.error("Zamanlayıcı hatası: %s", exc)
 
+    # --- bulut videoları
+    def _cloud_loop(self) -> None:
+        while True:
+            with self.lock:
+                self.cloud["running"] = True
+            res = cloud_sync.sync()
+            with self.lock:
+                self.cloud.update(running=False, last=res)
+            self.cloud_wake.wait(CLOUD_SYNC_MIN * 60)
+            self.cloud_wake.clear()
+
     def snapshot(self) -> dict:
         with self.lock:
-            return {"current": self.current, "pending": list(self.pending), "auto": dict(self.auto)}
+            return {"current": self.current, "pending": list(self.pending), "auto": dict(self.auto),
+                    "cloud": dict(self.cloud)}
 
 
 # ----------------------------------------------------------------------------
@@ -267,6 +284,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/jobs":
             jobs = sorted(Job.all(), key=lambda j: j.state.get("created", ""), reverse=True)[:40]
             return self._json([job_summary(j) for j in jobs])
+        if path == "/api/cloud":
+            return self._json(cloud_sync.videos())
         if path.startswith("/api/log/"):
             job_id = path.rsplit("/", 1)[-1]
             p = self._safe(ROOT / "logs", f"{job_id}.log")
@@ -293,6 +312,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"queued": [t]})
         if path == "/api/auto":
             return self._json(FACTORY.save_auto(data))
+        if path == "/api/cloud/sync":
+            FACTORY.cloud_wake.set()
+            return self._json({"ok": True})
         return self.send_error(404)
 
 

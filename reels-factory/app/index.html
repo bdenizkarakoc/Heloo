@@ -94,7 +94,13 @@
       <pre id="log"></pre>
     </div>
     <div class="card">
-      <h2>Videolar</h2>
+      <div class="row" style="margin-bottom:10px"><h2 style="margin:0">Buluttan gelenler</h2>
+        <span id="cloudNote" class="muted" style="flex:2"></span>
+        <button class="ghost" id="btnCloud" style="flex:0 0 auto">Şimdi kontrol et</button></div>
+      <div class="grid" id="cloudVideos"><span class="muted">Henüz bulut videosu yok.</span></div>
+    </div>
+    <div class="card">
+      <h2>Bu bilgisayarda üretilenler</h2>
       <div class="grid" id="videos"><span class="muted">Henüz video yok.</span></div>
     </div>
     <div class="card">
@@ -148,17 +154,41 @@ async function refreshStatus() {
     : "Boşta.";
   $("queue").textContent = s.pending.length ? `Sırada: ${s.pending.length} görev` : "";
   logJob = c && c.job ? c.job : logJob;
+  const cl = s.cloud || {}, last = cl.last;
+  $("cloudNote").innerHTML = cl.running ? "kontrol ediliyor…"
+    : !last ? "" : last.ok
+      ? `Son kontrol ${new Date(last.time).toLocaleTimeString("tr-TR")} · 30 dakikada bir otomatik`
+      : `<span style="color:var(--bad)">${esc(last.error)}</span>`;
+  if (last && last.time !== lastCloudTime) { lastCloudTime = last.time; refreshCloud(); }
+}
+let lastCloudTime = null;
+
+const vidCard = (title, v, sub) => `
+    <div class="vid">
+      <video src="/${esc(v.video)}" poster="/${esc(v.thumbnail || "")}" controls preload="none"></video>
+      <div class="meta"><div>${esc(title)}</div>${sub ? `<div class="muted">${esc(sub)}</div>` : ""}
+        <a href="/${esc(v.video)}" download>indir</a>${v.post ? `<a href="/${esc(v.post)}" target="_blank">paylaşım metni</a>` : ""}${v.srt ? `<a href="/${esc(v.srt)}" download>altyazı</a>` : ""}</div>
+    </div>`;
+let cloudSeen = null;
+
+async function refreshCloud() {
+  const vids = await api("/api/cloud");
+  $("cloudVideos").innerHTML = vids.length ? vids.map((v) => vidCard(v.title, v, v.date)).join("")
+    : '<span class="muted">Henüz bulut videosu yok.</span>';
+  const names = vids.map((v) => v.name);
+  if (cloudSeen) {
+    const fresh = vids.filter((v) => !cloudSeen.includes(v.name));
+    if (fresh.length) document.title = `(${fresh.length} yeni) Reels Fabrikası`;
+  }
+  cloudSeen = names;
 }
 
 async function refreshJobs() {
   const jobs = await api("/api/jobs");
   const vids = jobs.filter((j) => j.outputs && j.outputs.video);
-  $("videos").innerHTML = vids.length ? vids.map((j) => `
-    <div class="vid">
-      <video src="/${esc(j.outputs.video)}" poster="/${esc(j.outputs.thumbnail || "")}" controls preload="none"></video>
-      <div class="meta"><div>${esc(j.title)}</div>
-        <a href="/${esc(j.outputs.video)}" download>indir</a><a href="/${esc(j.outputs.post)}" target="_blank">paylaşım metni</a><a href="/${esc(j.outputs.srt)}" download>altyazı</a></div>
-    </div>`).join("") : '<span class="muted">Henüz video yok.</span>';
+  $("videos").innerHTML = vids.length ? vids.map((j) => vidCard(j.title, {
+    video: j.outputs.video, thumbnail: j.outputs.thumbnail, post: j.outputs.post, srt: j.outputs.srt })).join("")
+    : '<span class="muted">Henüz video yok.</span>';
   $("jobs").innerHTML = jobs.length ? jobs.map((j) => `
     <div class="job">
       <div class="row" style="align-items:flex-start">
@@ -189,12 +219,14 @@ $("btnNew").onclick = async () => {
                           text: $("text").value, draw: $("draw").checked });
   $("topic").value = ""; $("text").value = ""; refreshStatus();
 };
+$("btnCloud").onclick = async () => { await api("/api/cloud/sync", {}); refreshStatus(); };
+document.addEventListener("visibilitychange", () => { if (!document.hidden) document.title = "Reels Fabrikası"; });
 $("btnAuto").onclick = async () => {
   const cats = [...document.querySelectorAll("#autoCats input:checked")].map((i) => i.value);
   await api("/api/auto", { enabled: $("autoOn").checked, interval_hours: +$("interval").value, daily_max: +$("dailyMax").value, categories: cats });
   refreshStatus();
 };
-refreshStatus(); refreshJobs();
+refreshStatus(); refreshJobs(); refreshCloud();
 setInterval(refreshStatus, 3000); setInterval(refreshJobs, 8000); setInterval(refreshLog, 2500);
 </script>
 </body>

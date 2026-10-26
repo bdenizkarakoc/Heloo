@@ -113,6 +113,17 @@ powershell -ExecutionPolicy Bypass -File scripts\install-app.ps1 -Remove    # ka
 
 Bilgisayar uykudayken veya kapalıyken üretim yapılmaz; açıldığında zamanı geçmiş üretim ilk fırsatta başlar.
 
+**Buluttan gelenler:** Uygulama açılışta ve 30 dakikada bir GitHub'daki `reels-videos` dalını `git fetch`
+ile kontrol eder; bulutta üretilen yeni videoları (kapak, paylaşım metni, altyazıyla) `output/cloud/<tarih>/`
+klasörüne indirir ve panelde "Buluttan gelenler" bölümünde gösterir ("Şimdi kontrol et" ile hemen).
+Masaüstündeki **Reels Videolari** kısayolu bu klasörü açar. Var olan dosyaların üzerine yazılmaz.
+
+Güncelleme (yeni sürümü çeker, uygulamayı yeniden başlatır, kısayolları yeniler):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\update.ps1
+```
+
 ## Bulutta otomatik çalışma (Claude Code on the web)
 
 Zamanlanmış bir bulut görevi günde iki kez (İstanbul saatiyle ~09:47 ve ~18:47) `cloud/ROUTINE.md`

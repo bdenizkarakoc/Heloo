@@ -11,9 +11,11 @@ $desktop = [Environment]::GetFolderPath("Desktop")
 $startupDir = [Environment]::GetFolderPath("Startup")
 $deskLnk = Join-Path $desktop "Reels Fabrikasi.lnk"
 $startLnk = Join-Path $startupDir "Reels Fabrikasi (arka plan).lnk"
+$folderLnk = Join-Path $desktop "Reels Videolari.lnk"
+$cloudDir = Join-Path $root "output\cloud"
 
 if ($Remove) {
-  Remove-Item $deskLnk, $startLnk -ErrorAction SilentlyContinue
+  Remove-Item $deskLnk, $startLnk, $folderLnk -ErrorAction SilentlyContinue
   Write-Host "Kisayollar kaldirildi."; exit 0
 }
 
@@ -29,6 +31,14 @@ $lnk.WorkingDirectory = $root
 $lnk.Description = "Reels Fabrikasi kontrol paneli"
 $lnk.Save()
 Write-Host "Masaustu kisayolu: $deskLnk"
+
+# Buluttan inen videolarin klasoru (uygulama 30 dakikada bir doldurur)
+New-Item -ItemType Directory -Force -Path $cloudDir | Out-Null
+$f = $shell.CreateShortcut($folderLnk)
+$f.TargetPath = $cloudDir
+$f.Description = "Buluttan gelen Reels videolari"
+$f.Save()
+Write-Host "Video klasoru kisayolu: $folderLnk"
 
 if ($Startup) {
   $s = $shell.CreateShortcut($startLnk)
