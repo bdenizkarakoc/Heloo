@@ -309,7 +309,8 @@ def video_filter(style: dict, W: int, H: int, pieces_out: list[tuple[float, floa
 
 
 def render_clip(src: Path, window: tuple[float, float], words: list[dict], title: str | None, style: dict,
-                work: Path, dest: Path, cfg: Config, aspect: str = "9:16", music: bool | None = None) -> dict:
+                work: Path, dest: Path, cfg: Config, aspect: str = "9:16", music: bool | None = None,
+                enhance_voice: bool = True) -> dict:
     """Bir pencereyi stile göre düzenleyip dest'e yazar. Dönen: süre, parçalar, srt girdileri."""
     style = full_style(style)
     work.mkdir(parents=True, exist_ok=True)
@@ -342,8 +343,9 @@ def render_clip(src: Path, window: tuple[float, float], words: list[dict], title
     # --- ses
     voice = work / "voice.wav"
     if has_audio:
-        run(["ffmpeg", "-y", "-v", "error", *seek, "-vn", "-af",
-             f"aselect='{sel}',asetpts=N/SR/TB", "-ar", "48000", "-ac", "2", voice.name], cwd=work)
+        from .voice import ENHANCE_CORE
+        af = f"aselect='{sel}',asetpts=N/SR/TB" + (f",{ENHANCE_CORE}" if enhance_voice else "")
+        run(["ffmpeg", "-y", "-v", "error", *seek, "-vn", "-af", af, "-ar", "48000", "-ac", "2", voice.name], cwd=work)
     else:
         run(["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-t", f"{total:.3f}", "-i",
              "anullsrc=r=48000:cl=stereo", voice.name], cwd=work)

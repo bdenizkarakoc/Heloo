@@ -55,7 +55,7 @@
   <h1>Reels Stüdyosu</h1>
   <span id="aiNote" class="muted"></span>
   <span style="flex:1"></span>
-  <a href="/">← Kontrol paneli</a>
+  <a href="/voice">🎙️ Sesim</a><a href="/">← Kontrol paneli</a>
 </header>
 <main>
   <section>
@@ -63,6 +63,8 @@
       <h2>1 · Stil öğret</h2>
       <p class="lead">Beğendiğin bir Reels'i yükle. Kesimlerini, renklerini, altyazı ve başlık tasarımını inceleyip bir stil çıkarır; sonra sana bu stile ne ad verileceğini sorar.</p>
       <div class="drop" id="refDrop"><input type="file" accept="video/*" id="refFile"><b>Referans videoyu bırak</b><br><span class="muted">veya tıklayıp seç</span></div>
+      <div class="row" style="margin-top:10px"><input id="refUrl" placeholder="veya bağlantı yapıştır (Instagram, TikTok, YouTube…)"><button class="ghost" style="flex:0 0 auto" id="btnUrl">İncele</button></div>
+      <div class="muted" style="margin-top:4px">Bağlantıdaki video yalnızca stilini incelemek için indirilir; içeriği senin videolarında kullanılmaz.</div>
       <div class="bar" id="refBar"><div></div></div>
       <div id="refStatus" class="muted" style="margin-top:8px"></div>
     </div>
@@ -93,6 +95,7 @@
       <label>Müzik</label>
       <select id="music"><option value="">Stile göre</option><option value="1">Müzik ekle (sese göre kısılır)</option><option value="0">Müzik ekleme</option></select>
       <div class="chk"><input type="checkbox" id="captions" checked><span>Kelime vurgulu altyazı</span></div>
+      <div class="chk"><input type="checkbox" id="enhance" checked><span>Sesi iyileştir (gürültü azaltma, netlik, seviye)</span></div>
       <label>Kendi kendini geliştirsin</label>
       <select id="improve"><option value="1">1 tur: sonucu inceleyip stili düzeltsin</option><option value="2">2 tur</option><option value="0">Kapalı</option></select>
       <label>İsteklerin (isteğe bağlı)</label>
@@ -155,6 +158,15 @@ dropzone($("refDrop"), $("refFile"), async (f) => {
   } catch (e) { $("refStatus").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
 });
 
+$("btnUrl").onclick = async () => {
+  const url = $("refUrl").value.trim();
+  if (!url) return;
+  const p = await api("/api/studio/analyze", { url });
+  if (p.error) { $("refStatus").innerHTML = `<span class="err">${esc(p.error)}</span>`; return; }
+  $("refUrl").value = ""; $("refStatus").textContent = "Bağlantı sıraya alındı: indirilip incelenecek — sonuç sağda.";
+  refresh();
+};
+
 dropzone($("ownDrop"), $("ownFile"), async (f) => {
   try {
     const up = await upload(f, $("ownBar"), $("ownStatus"));
@@ -172,7 +184,7 @@ $("btnEdit").onclick = async () => {
   const mode = document.querySelector("input[name=mode]:checked").value;
   const body = { file: ownFile, style: $("style").value, mode, count: +$("count").value, min_sec: +$("minSec").value,
     max_sec: +$("maxSec").value, aspect: $("aspect").value, captions: $("captions").checked,
-    improve_rounds: +$("improve").value, notes: $("notes").value.trim() };
+    improve_rounds: +$("improve").value, notes: $("notes").value.trim(), enhance: $("enhance").checked };
   if ($("frame").value) body.frame = $("frame").value;
   if ($("music").value) body.music = $("music").value === "1";
   const p = await api("/api/studio/edit", body);

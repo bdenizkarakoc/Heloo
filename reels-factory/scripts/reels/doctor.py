@@ -68,13 +68,19 @@ def check(cfg: Config, network: bool = True) -> list[dict]:
     return rows
 
 
+def _voice_label() -> str:
+    from .voice import active
+    slug = active()
+    return f"kendi sesin ({slug}, kNN-VC) — yedek: edge-tts" if slug else "edge-tts (tr-TR nöral)"
+
+
 def capabilities(cfg: Config) -> dict:
     """Hangi üretim yöntemlerinin gerçekten kullanılabilir olduğunu özetler."""
     from .llm import resolve_provider
     return {
         "senaryo": {"anthropic": "Claude API (otonom)", "claude_cli": "bilgisayardaki Claude Code (otonom)",
                     "manual": "Claude Code oturumunda elle (SKILL.md)"}[resolve_provider(cfg)],
-        "seslendirme": "edge-tts (tr-TR nöral)" + (" + ElevenLabs" if secret("ELEVENLABS_API_KEY") else ""),
+        "seslendirme": _voice_label() + (" + ElevenLabs" if secret("ELEVENLABS_API_KEY") else ""),
         "ai_gorsel": "OpenAI" if secret("OPENAI_API_KEY") else
                      ("Replicate" if secret("REPLICATE_API_TOKEN") and cfg.get_path("visuals.replicate.image_model")
                       else "YOK (anahtar tanımlı değil)"),

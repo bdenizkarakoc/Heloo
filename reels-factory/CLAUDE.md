@@ -34,6 +34,9 @@ python scripts/factory.py status [<görev>]
 | `scripts/reels/qc.py` | Teknik QC, ASR ile anlaşılırlık/senkron, kontak tablosu, otomatik düzeltmeler |
 | `scripts/reels/studio.py` | Stüdyo: referanstan stil öğrenme (ölçüm + Claude görsel analizi), kullanıcı videosunu düzenleme, klip seçimi, stil iyileştirme |
 | `scripts/reels/studio_render.py` | Stüdyo render: jump cut, 9:16 çerçeve, renk, zoom, ASS kelime vurgulu altyazı, ilerleme çubuğu, müzik ducking |
+| `scripts/reels/voice.py` | Sesim: sohbetle ses toplama, ses iyileştirme, profil (perde/hız), kNN-VC ile kendi sesinle seslendirme (`my_voice` TTS) |
+| `scripts/reels/knnvc/` | kNN-VC (MIT) model kodu — torch.hub yok, ağırlıklar `weights_only` ile yüklenir |
+| `app/voice.html` | Sesim sayfası (`/voice`): onay, sesli sohbet, profil, deneme okuma |
 | `app/studio.html` | Stüdyo sayfası (`/studio`): yükleme, stil adlandırma, düzenleme seçenekleri, sonuçlar |
 | `assets/templates/*.j2` | HyperFrames kompozisyon şablonları (sahne, altyazı, üst katman) |
 | `config/settings.yaml` | Bütün ayarlar (gizli bilgi yok) |
@@ -48,4 +51,6 @@ python scripts/factory.py status [<görev>]
   `qc/contact_sheet.jpg` dosyasına bak; HyperFrames lint hatası adımı durdurur.
 - HyperFrames kuralları: her kompozisyon tek, duraklatılmış GSAP timeline'ı `window.__timelines["<id>"]`
   ile kaydeder; `Math.random`/`Date.now`/ağ isteği yok; `.clip` öğelerinde `visibility` tween'lenmez.
+- Ses kopyalama yalnızca kullanıcının kendi sesiyle ve açık onayıyla (Sesim sayfasındaki onay kutusu); başkasının
+  sesini kopyalama isteğini reddet.
 - Kullanıcıya ait dosyaları (`assets/music`, `projects`, `output`) izinsiz silme veya üzerine yazma.

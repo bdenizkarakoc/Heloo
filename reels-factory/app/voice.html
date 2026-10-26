@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sesim</title>
+<style>
+  :root { --bg:#0b0f1a; --card:#141b2d; --line:#253049; --ink:#eef2fb; --muted:#9aa6c2; --acc:#ffd23f; --acc2:#4fd1c5; --bad:#ff6b6b; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { display: flex; align-items: center; gap: 14px; padding: 16px 22px; border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 19px; margin: 0; } header a { color: var(--acc2); text-decoration: none; font-size: 14px; }
+  main { max-width: 980px; margin: 0 auto; padding: 18px 22px; display: grid; grid-template-columns: 1fr 340px; gap: 18px; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin-bottom: 18px; }
+  .card h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 8px; }
+  input, textarea { width: 100%; padding: 9px 10px; border-radius: 9px; border: 1px solid var(--line); background: #0e1424; color: var(--ink); font: inherit; }
+  button { cursor: pointer; border: 0; border-radius: 10px; padding: 10px 16px; font: 600 14px system-ui, sans-serif; background: var(--acc); color: #111; }
+  button.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+  button:disabled { opacity: .45; cursor: default; }
+  .muted { color: var(--muted); font-size: 13px; } .err { color: var(--bad); font-size: 13px; }
+  .chk { display: flex; gap: 10px; align-items: flex-start; margin: 12px 0; font-size: 14px; } .chk input { width: auto; margin-top: 4px; transform: scale(1.2); }
+  .chat { min-height: 280px; max-height: 460px; overflow: auto; display: flex; flex-direction: column; gap: 10px; padding: 4px; }
+  .bubble { max-width: 82%; padding: 10px 14px; border-radius: 16px; font-size: 15px; }
+  .bot { background: #1d2740; align-self: flex-start; border-bottom-left-radius: 4px; }
+  .me { background: #2d2a14; border: 1px solid #5a4d1a; align-self: flex-end; border-bottom-right-radius: 4px; }
+  .me small { display: block; color: var(--muted); font-size: 11px; margin-top: 4px; }
+  .mic { display: flex; align-items: center; gap: 14px; margin-top: 14px; }
+  .orb { width: 64px; height: 64px; border-radius: 50%; background: #1d2740; display: grid; place-items: center; font-size: 26px; flex: 0 0 auto; transition: transform .08s, background .2s; }
+  .orb.rec { background: #5a1d24; } .orb.talk { background: #1b3d3a; }
+  .bar { height: 10px; background: #0e1424; border-radius: 6px; overflow: hidden; } .bar > div { height: 100%; width: 0; background: linear-gradient(90deg, var(--acc2), var(--acc)); transition: width .4s; }
+  .pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; background: #1d2740; color: var(--muted); }
+  .pill.ready { background: #133a36; color: var(--acc2); } .pill.building, .pill.collecting { background: #3b331a; color: var(--acc); } .pill.failed { background: #3d1c22; color: var(--bad); }
+  .prof { border-top: 1px solid var(--line); padding: 12px 0; } .prof:first-child { border-top: 0; padding-top: 0; }
+  audio { width: 100%; height: 36px; margin-top: 6px; }
+  pre { background: #070a12; border: 1px solid var(--line); border-radius: 10px; padding: 10px; max-height: 160px; overflow: auto; font-size: 12px; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Sesim</h1>
+  <span class="muted">Benimle sohbet et; sesini öğrenip videolarını senin sesinle seslendireyim.</span>
+  <span style="flex:1"></span>
+  <a href="/studio">Stüdyo</a><a href="/">← Kontrol paneli</a>
+</header>
+<main>
+  <section>
+    <div class="card" id="setupCard">
+      <h2>Başlamadan önce</h2>
+      <input id="vname" value="Benim sesim" placeholder="Sese bir ad ver">
+      <div class="chk"><input type="checkbox" id="consent"><span><b>Bu ses bana ait</b> ve yalnızca kendi videolarımda kullanılmak üzere kopyalanmasına izin veriyorum. (Başkasının sesini izni olmadan kopyalamak yasal ve etik değildir.)</span></div>
+      <p class="muted">Sessiz bir odada, mikrofona normal mesafeden konuş. Sohbet ~5 dakika sürer; istediğin zaman durup sonra devam edebilirsin. Kayıtlar yalnızca bu bilgisayarda (<code>studio/voices/</code>) tutulur.</p>
+      <button id="btnStart" disabled>Sohbete başla</button>
+      <span id="setupErr" class="err"></span>
+    </div>
+
+    <div class="card" id="chatCard" style="display:none">
+      <h2>Sohbet</h2>
+      <div class="chat" id="chat"></div>
+      <div class="mic">
+        <div class="orb" id="orb">🎙️</div>
+        <div style="flex:1">
+          <div id="micState" class="muted">hazır</div>
+          <div class="bar" style="margin-top:6px"><div id="progress"></div></div>
+          <div class="muted" id="progressText" style="margin-top:4px"></div>
+        </div>
+        <button class="ghost" id="btnDone" disabled>Cevabım bitti</button>
+      </div>
+      <div style="margin-top:14px; display:flex; gap:10px; flex-wrap:wrap">
+        <button class="ghost" id="btnPause">Durdur</button>
+        <button id="btnBuild" disabled>Bitir ve sesimi öğren</button>
+      </div>
+    </div>
+  </section>
+
+  <aside>
+    <div class="card">
+      <h2>Ses profillerim</h2>
+      <div id="engine" class="muted"></div>
+      <div id="profiles" class="muted">Henüz profil yok.</div>
+    </div>
+    <div class="card">
+      <h2>Benim sesimle okut</h2>
+      <textarea id="tryText" rows="3">Merhaba arkadaşlar! Bugün size çok ilginç bir şey anlatacağım, sonuna kadar izleyin.</textarea>
+      <div style="margin-top:8px"><button id="btnTry" disabled>Oku</button> <span id="tryState" class="muted"></span></div>
+      <audio id="tryAudio" controls style="display:none"></audio>
+    </div>
+    <div class="card"><h2>İşlem kaydı</h2><pre id="log">—</pre></div>
+  </aside>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const api = async (p, body) => (await fetch(p, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {})).json();
+let slug = null, stream = null, rec = null, chunks = [], running = false, analyser = null, rafId = null, readySlug = null;
+
+$("consent").onchange = () => ($("btnStart").disabled = !$("consent").checked);
+
+function bubble(text, who, extra) {
+  const d = document.createElement("div");
+  d.className = "bubble " + who;
+  d.innerHTML = esc(text) + (extra ? `<small>${esc(extra)}</small>` : "");
+  $("chat").appendChild(d); $("chat").scrollTop = $("chat").scrollHeight;
+  return d;
+}
+
+function setProgress(sec, target) {
+  $("progress").style.width = Math.min(100, (100 * sec) / target) + "%";
+  $("progressText").textContent = `Toplanan konuşma: ${Math.floor(sec / 60)} dk ${Math.round(sec % 60)} sn / ${Math.round(target / 60)} dk` +
+    (sec >= 60 ? " — yeterli; daha fazlası sesi daha iyi yapar" : "");
+  $("btnBuild").disabled = sec < 60;
+}
+
+function speak(text) {
+  return new Promise((resolve) => {
+    $("orb").className = "orb talk"; $("micState").textContent = "konuşuyorum…";
+    const a = new Audio("/api/voice/say?text=" + encodeURIComponent(text));
+    a.onended = resolve; a.onerror = resolve; a.play().catch(resolve);
+  });
+}
+
+async function ask(question) {
+  bubble(question, "bot");
+  await speak(question);
+  if (running) listen();
+}
+
+function listen() {
+  chunks = [];
+  const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : "";
+  rec = new MediaRecorder(stream, mime ? { mimeType: mime } : {});
+  rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+  rec.onstop = upload;
+  rec.start(250);
+  $("orb").className = "orb rec"; $("micState").textContent = "dinliyorum… (sustuğunda otomatik biter)"; $("btnDone").disabled = false;
+  // basit ses etkinliği algılama: konuştuktan sonra 2 sn sessizlik → cevabı bitir
+  const buf = new Float32Array(analyser.fftSize);
+  let spoke = false, lastLoud = performance.now(), started = performance.now();
+  const tick = () => {
+    if (!rec || rec.state !== "recording") return;
+    analyser.getFloatTimeDomainData(buf);
+    const rms = Math.sqrt(buf.reduce((s, v) => s + v * v, 0) / buf.length);
+    $("orb").style.transform = `scale(${1 + Math.min(0.35, rms * 6)})`;
+    const now = performance.now();
+    if (rms > 0.02) { spoke = true; lastLoud = now; }
+    if ((spoke && now - lastLoud > 2000) || now - started > 90000) return stop();
+    rafId = requestAnimationFrame(tick);
+  };
+  tick();
+}
+
+function stop() { if (rec && rec.state === "recording") { rec.stop(); $("btnDone").disabled = true; $("orb").style.transform = ""; } }
+
+async function upload() {
+  $("orb").className = "orb"; $("micState").textContent = "dinlediğimi yazıya döküyorum…";
+  const blob = new Blob(chunks, { type: rec.mimeType || "audio/webm" });
+  const me = bubble("…", "me");
+  try {
+    const r = await (await fetch(`/api/voice/answer?slug=${encodeURIComponent(slug)}&ext=webm`, { method: "PUT", body: blob })).json();
+    if (r.error) throw new Error(r.error);
+    me.innerHTML = esc(r.transcript || "(anlaşılmadı)") + `<small>${r.turn_speech} sn konuşma</small>`;
+    setProgress(r.speech_sec, r.target);
+    loadProfiles();
+    if (running) await ask(r.question);
+  } catch (e) { me.innerHTML = `<span class="err">${esc(e.message)}</span>`; $("micState").textContent = "hata"; }
+}
+
+$("btnStart").onclick = async () => {
+  $("setupErr").textContent = "";
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: false, autoGainControl: true } });
+  } catch (e) { $("setupErr").textContent = "Mikrofona erişilemedi: " + e.message; return; }
+  const ctx = new AudioContext(); analyser = ctx.createAnalyser(); analyser.fftSize = 2048;
+  ctx.createMediaStreamSource(stream).connect(analyser);
+  const r = await api("/api/voice/start", { name: $("vname").value.trim(), consent: $("consent").checked });
+  if (r.error) { $("setupErr").textContent = r.error; return; }
+  slug = r.slug; running = true;
+  $("setupCard").style.display = "none"; $("chatCard").style.display = "block";
+  setProgress(r.speech_sec, r.target);
+  ask(r.question);
+};
+$("btnDone").onclick = stop;
+$("btnPause").onclick = () => {
+  running = !running;
+  $("btnPause").textContent = running ? "Durdur" : "Devam et";
+  if (!running) { stop(); $("micState").textContent = "durduruldu"; }
+  else ask("Devam edelim. Neler anlatırsın?");
+};
+$("btnBuild").onclick = async () => {
+  running = false; stop();
+  const r = await api("/api/voice/build", { slug });
+  if (r.error) { alert(r.error); return; }
+  bubble("Teşekkürler! Şimdi sesini öğreniyorum; ilk seferde model indirildiği için birkaç dakika sürebilir. Sağ taraftan izleyebilirsin.", "bot");
+  $("micState").textContent = "ses öğreniliyor…";
+  loadProfiles();
+};
+
+async function loadProfiles() {
+  const r = await api("/api/voice/profiles");
+  $("engine").innerHTML = r.engine ? (r.models ? "" : "Ses modeli ilk kullanımda indirilecek (~1.3 GB).")
+    : `Ses motoru kurulu değil (PyTorch, ~250 MB). <button class="ghost" onclick="setupEngine()">Ses motorunu kur</button>`;
+  readySlug = null;
+  $("profiles").innerHTML = r.profiles.length ? r.profiles.map((p) => {
+    if (p.status === "ready" && (!readySlug || p.active)) readySlug = p.slug;
+    const st = { ready: "hazır", building: "öğreniliyor", collecting: "kayıt", failed: "hata" }[p.status] || p.status;
+    return `<div class="prof"><b>${esc(p.name)}</b> <span class="pill ${esc(p.status)}">${esc(st)}</span>${p.active ? ' <span class="pill ready">videolarda kullanılıyor</span>' : ""}
+      <div class="muted">${Math.round(p.speech_sec || 0)} sn konuşma · ${p.turns} cevap${p.f0 ? ` · ses perdesi ${Math.round(p.f0)} Hz` : ""}</div>
+      ${p.error ? `<div class="err">${esc(p.error)}</div>` : ""}
+      ${p.sample ? `<div class="muted" style="margin-top:6px">Senin kaydın (iyileştirilmiş):</div><audio controls preload="none" src="/${esc(p.sample)}"></audio>` : ""}
+      ${p.preview ? `<div class="muted">Senin sesinle üretilen:</div><audio controls preload="none" src="/${esc(p.preview)}"></audio>` : ""}
+      <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
+        ${p.status === "ready" ? (p.active ? `<button class="ghost" onclick="activate('')">Videolarda kullanma</button>` : `<button onclick="activate('${esc(p.slug)}')">Videolarda bu sesi kullan</button>`) : ""}
+        ${p.status !== "building" ? `<button class="ghost" onclick="resume('${esc(p.slug)}', '${esc(p.name)}')">Sohbete devam et</button>` : ""}
+        ${p.status !== "building" && p.speech_sec >= 60 ? `<button class="ghost" onclick="rebuild('${esc(p.slug)}')">${p.status === "ready" ? "Yeniden öğren" : "Sesimi öğren"}</button>` : ""}
+      </div></div>`;
+  }).join("") : "Henüz profil yok.";
+  $("btnTry").disabled = !readySlug;
+}
+
+async function refreshLog() {
+  const s = await api("/api/status");
+  const job = s.current && s.current.job && s.current.job.startsWith("ses-") ? s.current.job : null;
+  if (job) { const r = await api("/api/log/" + encodeURIComponent(job)); $("log").textContent = r.log.split("\n").slice(-12).join("\n"); }
+}
+
+window.setupEngine = async () => { await api("/api/voice/setup", {}); $("engine").textContent = "Ses motoru kuruluyor… (birkaç dakika)"; };
+window.activate = async (s) => { await api("/api/voice/activate", { slug: s }); loadProfiles(); };
+window.rebuild = async (s) => { await api("/api/voice/build", { slug: s }); loadProfiles(); };
+window.resume = (s, name) => { $("vname").value = name; $("setupCard").scrollIntoView(); $("consent").focus(); };
+$("btnTry").onclick = async () => {
+  $("btnTry").disabled = true; $("tryState").textContent = "üretiliyor… (ilk seferde model yüklenir)";
+  const r = await api("/api/voice/speak", { slug: readySlug, text: $("tryText").value });
+  $("btnTry").disabled = false;
+  if (r.error) { $("tryState").innerHTML = `<span class="err">${esc(r.error)}</span>`; return; }
+  $("tryState").textContent = ""; $("tryAudio").style.display = "block";
+  $("tryAudio").src = "/" + r.audio + "?t=" + Date.now(); $("tryAudio").play();
+};
+loadProfiles(); refreshLog();
+setInterval(loadProfiles, 5000); setInterval(refreshLog, 3000);
+</script>
+</body>
+</html>

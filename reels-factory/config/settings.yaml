@@ -164,7 +164,8 @@ llm:
 # Seslendirme
 # ---------------------------------------------------------------------
 tts:
-  provider_chain: [edge, elevenlabs, piper]
+  # my_voice: uygulamadaki "Sesim" sayfasında öğrenilip etkinleştirilen kendi sesin (etkin değilse atlanır)
+  provider_chain: [my_voice, edge, elevenlabs, piper]
   allow_noncommercial: false # true olursa yalnızca ticari olmayan lisanslı sesler (piper tr) de kullanılabilir
   edge:
     # Microsoft Edge "Sesli Oku" hizmeti; ücretsiz, anahtar gerektirmez, resmi bir API değildir.

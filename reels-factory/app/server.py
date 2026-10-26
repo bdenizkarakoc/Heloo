@@ -30,7 +30,7 @@ from urllib.parse import unquote, urlparse
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from reels import claude_setup, cloud_sync, doctor, log, pipeline, studio  # noqa: E402
+from reels import claude_setup, cloud_sync, doctor, log, pipeline, studio, voice  # noqa: E402
 from reels.config import load_config  # noqa: E402
 from reels.job import Job  # noqa: E402
 from reels.util import read_json, write_json  # noqa: E402
@@ -87,6 +87,19 @@ class Factory:
                     self.current = None
 
     def _run(self, task: dict) -> None:
+        if task["kind"] in ("voice_build", "voice_setup"):
+            with self.lock:
+                self.current["job"] = f"ses-{task.get('slug', 'motor')}"
+            handler = log.attach_job_log(self.current["job"])
+            try:
+                if task["kind"] == "voice_setup" or not voice.engine_available():
+                    voice.install_engine()
+                if task["kind"] == "voice_build":
+                    voice.build(task["slug"])
+                    L.info("✔ Ses profili hazır: %s", task["slug"])
+            finally:
+                log.detach(handler)
+            return
         if task["kind"] in ("studio_analyze", "studio_edit"):
             with self.lock:
                 self.current["job"] = task["project"]
@@ -270,9 +283,21 @@ class Handler(BaseHTTPRequestHandler):
             return self._file(p) if p else self.send_error(403)
         if path.startswith("/studio/"):
             p = self._safe(ROOT / "studio", path[len("/studio/"):])
-            if p and p.suffix.lower() in (".jpg", ".png", ".json") and "uploads" not in p.parts:
+            ok = (".jpg", ".png", ".json") + ((".wav", ".mp3") if p and "voices" in p.parts else ())
+            if p and p.suffix.lower() in ok and "uploads" not in p.parts:
                 return self._file(p)
             return self.send_error(403)
+        if path in ("/voice", "/voice.html"):
+            return self._file(ROOT / "app" / "voice.html")
+        if path == "/api/voice/profiles":
+            return self._json({"profiles": voice.profiles(), "active": voice.active(), **voice.engine_status()})
+        if path == "/api/voice/say":
+            from urllib.parse import parse_qs
+            text = (parse_qs(url.query).get("text") or [""])[0][:400]
+            try:
+                return self._file(voice.say(text))
+            except Exception as exc:  # noqa: BLE001
+                return self._json({"error": str(exc)}, 502)
         if path in ("/studio", "/studio.html"):
             return self._file(ROOT / "app" / "studio.html")
         if path == "/api/studio/styles":
@@ -318,9 +343,19 @@ class Handler(BaseHTTPRequestHandler):
     # --- PUT: büyük video yükleme (diske akıtılarak; bellek kullanmaz)
     def do_PUT(self):  # noqa: N802
         url = urlparse(self.path)
+        from urllib.parse import parse_qs
+        if url.path == "/api/voice/answer":
+            q = parse_qs(url.query)
+            n = int(self.headers.get("Content-Length") or 0)
+            if not 0 < n < 60 * 1024 * 1024:
+                return self._json({"error": "kayıt boş veya çok büyük"}, 400)
+            try:
+                return self._json(voice.add_answer(q.get("slug", [""])[0], self.rfile.read(n),
+                                                   q.get("ext", ["webm"])[0]))
+            except Exception as exc:  # noqa: BLE001
+                return self._json({"error": str(exc)}, 400)
         if url.path != "/api/studio/upload":
             return self.send_error(404)
-        from urllib.parse import parse_qs
         name = studio.safe_upload_name((parse_qs(url.query).get("name") or ["video.mp4"])[0])
         left = int(self.headers.get("Content-Length") or 0)
         if left <= 0:
@@ -353,6 +388,8 @@ class Handler(BaseHTTPRequestHandler):
         data = self._body()
         if path.startswith("/api/studio/"):
             return self._studio_post(path[len("/api/studio/"):], data)
+        if path.startswith("/api/voice/"):
+            return self._voice_post(path[len("/api/voice/"):], data)
         if path == "/api/new":
             n = max(1, min(10, int(data.get("count") or 1)))
             text = (data.get("text") or "").strip() or None
@@ -379,17 +416,52 @@ class Handler(BaseHTTPRequestHandler):
 
     def _studio_post(self, action: str, data: dict):
         try:
+            if action == "analyze" and data.get("url"):
+                link = str(data["url"]).strip()
+                if not link.startswith(("http://", "https://")):
+                    return self._json({"error": "geçerli bir bağlantı girin"}, 400)
+                proj = studio.new_project("analyze", None, {}, url=link)
+                FACTORY.enqueue("studio_analyze", project=proj["id"], topic=link)
+                return self._json(proj)
             if action in ("analyze", "edit"):
                 src = studio.UPLOADS / Path(str(data.get("file", ""))).name
                 if not src.is_file():
                     return self._json({"error": "önce video yükleyin"}, 400)
                 opts = {k: data[k] for k in ("style", "mode", "count", "min_sec", "max_sec", "aspect", "frame",
-                                             "music", "captions", "improve_rounds", "notes", "title") if k in data}
+                                             "music", "captions", "improve_rounds", "notes", "title", "enhance") if k in data}
                 proj = studio.new_project(action, src, opts)
                 FACTORY.enqueue(f"studio_{action}", project=proj["id"], topic=src.name)
                 return self._json(proj)
             if action == "style/save":
                 return self._json(studio.save_from_analysis(data["project"], data.get("name", "")))
+        except Exception as exc:  # noqa: BLE001
+            return self._json({"error": str(exc)}, 400)
+        return self.send_error(404)
+
+
+    def _voice_post(self, action: str, data: dict):
+        try:
+            if action == "start":
+                return self._json(voice.start(str(data.get("name", "")), bool(data.get("consent"))))
+            if action == "build":
+                slug = str(data["slug"])
+                voice.vdir(slug)
+                return self._json({"queued": [FACTORY.enqueue("voice_build", slug=slug, topic=f"ses: {slug}")]})
+            if action == "setup":
+                return self._json({"queued": [FACTORY.enqueue("voice_setup", topic="ses motoru")]})
+            if action == "activate":
+                voice.set_active(data.get("slug") or None)
+                _caps_cache.clear()
+                return self._json({"active": voice.active()})
+            if action == "speak":
+                slug, text = str(data["slug"]), str(data.get("text", "")).strip()[:600]
+                if not text:
+                    return self._json({"error": "metin boş"}, 400)
+                d = voice.vdir(slug) / "tries"
+                d.mkdir(exist_ok=True)
+                import hashlib
+                out = voice.speak(slug, text, d / (hashlib.sha1(text.encode()).hexdigest()[:12] + ".wav"))
+                return self._json({"audio": out.relative_to(ROOT).as_posix()})
         except Exception as exc:  # noqa: BLE001
             return self._json({"error": str(exc)}, 400)
         return self.send_error(404)

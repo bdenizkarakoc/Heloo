@@ -136,7 +136,8 @@ powershell -ExecutionPolicy Bypass -File scripts\update.ps1
 
 Panelin üstündeki **🎬 Stüdyo** bağlantısı (`http://127.0.0.1:8765/studio`):
 
-1. **Stil öğret:** Beğendiğin bir Reels'i yükle. Kesim hızı, renk (parlaklık/kontrast/doygunluk/sıcaklık),
+1. **Stil öğret:** Beğendiğin bir Reels'i yükle ya da bağlantısını yapıştır (Instagram/TikTok/YouTube; yt-dlp ile
+   yalnızca stil incelemesi için indirilir — gizli/girişli içerik indirilemez, o zaman dosyayı kaydedip yükle). Kesim hızı, renk (parlaklık/kontrast/doygunluk/sıcaklık),
    hareket, baskın vurgu renkleri, konuşma ve müzik ölçülür; kareler Claude'a gösterilip altyazı, başlık,
    ilerleme çubuğu ve efekt stili çıkarılır. Sistem "Bu stile ne isim verelim?" diye sorar; ad verip kaydedersin
    (`studio/styles/<ad>.json`). Claude bağlı değilse stil yalnızca ölçümlerden çıkarılır (sayfada belirtilir).
@@ -148,7 +149,7 @@ Panelin üstündeki **🎬 Stüdyo** bağlantısı (`http://127.0.0.1:8765/studi
    Her klipte konuşma boşlukları kesilir (jump cut), görüntü 9:16'ya getirilir (bulanık arka plan / kırpma /
    siyah boşluk) veya kendi oranında kalır; stile göre renk düzenleme, kesimlerde zoom, kelime vurgulu altyazı,
    açılış başlığı, ilerleme çubuğu, beyaz flaş ve isteğe bağlı (konuşmaya göre kısılan) müzik eklenir; ses
-   -14 LUFS'a normalize edilir.
+   iyileştirilir (gürültü azaltma, EQ, de-esser, kompresör) ve -14 LUFS'a normalize edilir.
 3. **Kendi kendini geliştirme:** İlk klip üretildikten sonra Claude çıktının karelerini referansla karşılaştırır
    (okunabilirlik, güvenli alan, yüzleri kapatma, referansa benzerlik, senin yazdığın istekler), stili düzeltir ve
    klibi yeniden üretir; iyileşen stil yeni sürüm olarak kaydedilir (eski sürüm `.bak` olarak saklanır).
@@ -156,6 +157,33 @@ Panelin üstündeki **🎬 Stüdyo** bağlantısı (`http://127.0.0.1:8765/studi
 Çıktılar `output/studio/<iş>/`: video, kapak, altyazı (`.srt`) ve kare tablosu. Yüklenen videolar
 `studio/uploads/` altında kalır (silinmez). Konuşma tanıma Türkçe ve otomatik olduğu için sayı/özel adlarda
 hata olabilir; yayından önce altyazıları gözden geçir. Uzun videolarda yazıya dökme CPU'da birkaç dakika sürer.
+
+## Sesim (kendi sesinle seslendirme)
+
+Panelin üstündeki **🎙️ Sesim** bağlantısı (`/voice`):
+
+1. Sese bir ad ver, **"Bu ses bana ait"** onayını işaretle ve **Sohbete başla**. Uygulama sesli soru sorar
+   ("Nasılsın, bugün nasıl geçti?"…), sen mikrofona cevap verirsin; sustuğunda cevabı kendisi bitirir, yazıya döker
+   ve (Claude bağlıysa) cevabına uygun yeni bir soru sorar. Sona doğru farklı tonlarda birkaç cümle okumanı ister.
+   Hedef ~5 dakika konuşma (en az 1 dakika); istediğin zaman durup sonra devam edebilirsin.
+2. Her kayıt **iyileştirilir**: uğultu/gürültü azaltma, boğukluk azaltma, netlik, "s" sesi yumuşatma, kompresör ve
+   seviye ayarı. Sağda kendi (iyileştirilmiş) kaydını dinleyebilirsin.
+3. **Bitir ve sesimi öğren:** ses perden (Hz), konuşma hızın ölçülür; kNN-VC ses dönüşümü için kayıtlarından
+   eşleştirme kümesi çıkarılır ve senin sesinle bir örnek cümle üretilir. İlk seferde ses motoru (PyTorch CPU,
+   ~250 MB; "Ses motorunu kur" düğmesi) ve model (~1.3 GB) indirilir.
+4. **Videolarda bu sesi kullan:** bundan sonra üretilen videoların seslendirmesi senin sesinle yapılır
+   (`tts.provider_chain` başındaki `my_voice`). "Benim sesimle okut" kutusundan istediğin metni dinleyebilirsin.
+
+Nasıl çalışır: metin önce Türkçe nöral sesle (edge-tts, kelime zamanlarıyla, senin konuşma hızına göre) okunur;
+sonra kNN-VC (MIT lisansı, yerel, ücretsiz; `scripts/reels/knnvc/`) bu okumayı senin kayıtlarındaki ses
+parçalarıyla aynı uzunlukta yeniden kurar — ses rengi ve perde senden, tonlama temel sesten gelir; kelime zamanları
+korunduğu için altyazı senkronu bozulmaz. Ölçülen sonuç (1,7 dk kayıtla yapılan testte): perde hedefle aynı
+(107 Hz), anlaşılırlık temel sesin %89'una karşı %78. Daha uzun ve temiz kayıt sonucu iyileştirir. Profesyonel
+klonlama kalitesi (ElevenLabs gibi ücretli hizmetler) değildir; tonlama tam olarak senin tonlaman olmaz.
+
+Kurallar: yalnızca **kendi sesini** (veya yazılı izni olan birinin sesini) kopyala. Kayıtlar ve ses profili yalnızca
+bu bilgisayarda (`studio/voices/`) kalır; buluttaki otomatik üretim bu sesi kullanmaz (edge-tts kullanır).
+Bazı platformlar yapay zekâ ile üretilmiş sesin etiketlenmesini ister.
 
 ## Bulutta otomatik çalışma (Claude Code on the web)
 

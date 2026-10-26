@@ -137,7 +137,20 @@ def synth_piper(text: str, out_dir: Path, sid: str, cfg: Config) -> tuple[Path, 
     return wav_path, None, f"piper:{name}"
 
 
-PROVIDERS = {"edge": synth_edge, "elevenlabs": synth_elevenlabs, "piper": synth_piper}
+def synth_my_voice(text: str, out_dir: Path, sid: str, cfg: Config) -> tuple[Path, list[dict], str]:
+    """Kullanıcının kendi sesi (uygulamadaki 'Sesim' sayfasında öğrenilen ve etkinleştirilen profil)."""
+    from . import voice
+    slug = voice.active()
+    if not slug:
+        raise StageError("kişisel ses etkin değil")
+    mp3 = out_dir / f"{sid}.base.mp3"
+    marks = voice.tts_raw(slug, text, mp3)
+    wav = voice.convert(mp3, out_dir / f"{sid}.myvoice.wav", slug)  # aynı süre: kelime zamanları geçerli kalır
+    mp3.unlink(missing_ok=True)
+    return wav, marks, f"my_voice:{slug}"
+
+
+PROVIDERS = {"my_voice": synth_my_voice, "edge": synth_edge, "elevenlabs": synth_elevenlabs, "piper": synth_piper}
 
 
 # ----------------------------------------------------------------------------

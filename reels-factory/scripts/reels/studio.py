@@ -52,11 +52,12 @@ def now() -> str:
 # Projeler
 # ----------------------------------------------------------------------------
 
-def new_project(kind: str, source: Path, options: dict | None = None) -> dict:
+def new_project(kind: str, source: Path | None, options: dict | None = None, url: str | None = None) -> dict:
     pid = f"st-{dt.datetime.now():%Y%m%d-%H%M%S}-{kind[:3]}"
     d = PROJECTS / pid
     d.mkdir(parents=True, exist_ok=True)
-    proj = {"id": pid, "kind": kind, "source": str(source.relative_to(ROOT)), "source_name": source.name,
+    proj = {"id": pid, "kind": kind, "source": str(source.relative_to(ROOT)) if source else None,
+            "source_name": source.name if source else url, "url": url,
             "options": options or {}, "status": "queued", "stage": "sırada", "created": now(), "notes": []}
     write_json(d / "project.json", proj)
     return proj
@@ -360,14 +361,45 @@ def heuristic_style(metrics: dict) -> dict:
     return s
 
 
+def download_url(url: str) -> Path:
+    """Bağlantıdaki videoyu (Instagram/TikTok/YouTube vb.) yalnızca stil incelemesi için indirir (yt-dlp)."""
+    try:
+        import yt_dlp
+    except ImportError as exc:
+        raise StageError("yt-dlp kurulu değil (pip install yt-dlp)") from exc
+    UPLOADS.mkdir(parents=True, exist_ok=True)
+    stamp = f"{dt.datetime.now():%Y%m%d-%H%M%S}"
+    opts = {"outtmpl": str(UPLOADS / f"{stamp}-link-%(id)s.%(ext)s"), "noplaylist": True, "quiet": True,
+            "no_warnings": True, "format": "bv*[height<=1920]+ba/b", "merge_output_format": "mp4",
+            "max_filesize": 600 * 1024 * 1024, "socket_timeout": 30}
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            path = Path(ydl.prepare_filename(info)).with_suffix(".mp4")
+    except Exception as exc:  # noqa: BLE001
+        raise StageError("Bağlantıdaki video indirilemedi (gizli hesap/giriş gerekebilir). Videoyu cihazına kaydedip "
+                         f"dosya olarak yükle. Ayrıntı: {str(exc)[:200]}") from exc
+    if not path.exists():
+        cands = sorted(UPLOADS.glob(f"{stamp}-link-*"))
+        if not cands:
+            raise StageError("indirilen dosya bulunamadı")
+        path = cands[-1]
+    return path
+
+
 def run_analyze(pid: str) -> dict:
     cfg = load_config()
     proj = load_project(pid)
     work = PROJECTS / pid
-    src = ROOT / proj["source"]
     proj["status"] = "running"
     handler = log.attach_job_log(pid)
     try:
+        if not proj.get("source") and proj.get("url"):
+            set_stage(proj, "bağlantıdaki video indiriliyor")
+            path = download_url(proj["url"])
+            proj.update(source=str(path.relative_to(ROOT)), source_name=path.name)
+            save_project(proj)
+        src = ROOT / proj["source"]
         set_stage(proj, "video inceleniyor")
         info = probe(src)
         limit = min(info["duration"], ANALYZE_SECONDS)
@@ -636,7 +668,7 @@ def run_edit(pid: str) -> dict:
             set_stage(proj, f"klip {ci}/{len(clips)} düzenleniyor")
             t0 = time.time()
             res = render_clip(src, (clip["start"], clip["end"]), words, clip["title"], style, cw, dest, cfg,
-                              aspect=aspect, music=o.get("music"))
+                              aspect=aspect, music=o.get("music"), enhance_voice=o.get("enhance", True))
             shot = output_sheet(dest, cw / "sheet.jpg", res["duration"])
             for rnd in range(1, rounds + 1 if ci == 1 else 1):  # stil ilk klipte iyileştirilir, sonra hepsine uygulanır
                 set_stage(proj, f"klip 1 inceleniyor ve stil iyileştiriliyor (tur {rnd})")
@@ -646,7 +678,7 @@ def run_edit(pid: str) -> dict:
                 style = new
                 set_stage(proj, f"klip 1 iyileştirilmiş stille yeniden üretiliyor (tur {rnd})")
                 res = render_clip(src, (clip["start"], clip["end"]), words, clip["title"], style, cw, dest, cfg,
-                                  aspect=aspect, music=o.get("music"))
+                                  aspect=aspect, music=o.get("music"), enhance_voice=o.get("enhance", True))
                 shot = output_sheet(dest, cw / "sheet.jpg", res["duration"])
             if ci == 1 and proj.get("improvements") and style_slug not in ("", "fabrika") \
                     and (STYLES / f"{style_slug}.json").exists():
