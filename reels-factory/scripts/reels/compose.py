@@ -223,6 +223,8 @@ class SceneBuilder:
                   "fit": media.get("fit", "cover"),
                   "dim": graphic_layout and media["kind"] == "photo" and not explicit,
                   "pos": {"top": "0%", "center": "50%", "bottom": "100%"}.get(sc["visual"].get("align", "center"), "50%")}
+            if bg["fit"] == "card" and layout != "photo":
+                bg["fit"] = "cover"  # kart kutusu yalnızca photo yerleşiminde tanımlı
             if bg["dim"]:
                 bg["fit"] = "cover"
             elif graphic_layout:
@@ -400,7 +402,12 @@ class SceneBuilder:
                 y = b["bottom"] + 60
             texts = ons["items"]
             cues = ons.get("cues") or []
-            x, w, h, gap = self.rmx, W - 2 * self.rmx, 132, 26
+            x, w = self.rmx, W - 2 * self.rmx
+            # Kart yüksekliği: varsayılan 132 px; alan yetmezse 100 px'e kadar küçülür
+            gap = 22
+            h = int(min(132, (self.content_bottom - y - gap * (len(texts) - 1)) / max(1, len(texts))))
+            if h < 100:
+                raise TextFitError(f"{sid}: liste alanı taşıyor ({len(texts)} madde)")
             last_t = t0
             for i, txt in enumerate(texts):
                 size, _ = self.m.fit([txt], w - 160, (46, 30), 1, 750, 0.0)

@@ -120,7 +120,7 @@
 {#- ---------- list ---------- #}
 {%- for it in d.list_items %}
       <div class="{{ P }}-item" id="{{ it.id }}" style="left: {{ it.x }}px; top: {{ it.y }}px; width: {{ it.w }}px; height: {{ it.h }}px;">
-        <div class="{{ P }}-badge" style="left: 24px; top: {{ (it.h - 76) // 2 }}px; width: 76px; height: 76px; line-height: 78px; font-size: 40px;">{{ loop.index }}</div>
+        <div class="{{ P }}-badge" style="left: 24px; top: {{ (it.h - 72) // 2 }}px; width: 72px; height: 72px; line-height: 74px; font-size: 38px;">{{ loop.index }}</div>
         <div class="{{ P }}-itemtext" style="left: 124px; top: {{ (it.h - it.size) // 2 }}px; font-size: {{ it.size }}px; line-height: 1;">{{ it.text }}</div>
       </div>
 {%- endfor %}

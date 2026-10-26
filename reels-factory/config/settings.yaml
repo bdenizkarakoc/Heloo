@@ -104,6 +104,17 @@ categories:
     seed_topics:
       - "Göbeklitepe'nin yaşı ve önemi"
       - "Kleopatra ile piramitler arasındaki zaman farkı"
+  muzik-kultur:
+    label: "Müzik & Kültür"
+    kicker: "MÜZİK TARİHİ"
+    weight: 1
+    tone: "saygılı, hikâye anlatan, belgelere dayalı; magazin ve spekülasyon yok"
+    audience: "genel izleyici, müzikseverler"
+    visual_providers: [agent_media, openverse, ai_image, pexels]
+    music_queries: ["rock instrumental", "psychedelic rock instrumental", "cinematic"]
+    seed_topics:
+      - "Cem Karaca ve Anadolu rock"
+      - "Barış Manço'nun dünya turneleri"
   psikoloji:
     label: "Psikoloji & Beyin"
     kicker: "BEYNİN OYUNLARI"
