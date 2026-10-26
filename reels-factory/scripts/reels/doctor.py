@@ -26,7 +26,8 @@ def check(cfg: Config, network: bool = True) -> list[dict]:
     rows.append(_ok("ffprobe", bool(shutil.which("ffprobe")), "video analizi"))
     node = shutil.which("node")
     rows.append(_ok("node (>=22)", bool(node), _ver(["node", "--version"]) if node else "kurulu değil"))
-    hf = ROOT / "node_modules" / ".bin" / "hyperframes"
+    import os
+    hf = ROOT / "node_modules" / ".bin" / ("hyperframes.cmd" if os.name == "nt" else "hyperframes")
     rows.append(_ok("hyperframes", hf.exists(), _ver([str(hf), "--version"]) if hf.exists() else "npm install gerekli"))
     gsap = ROOT / "node_modules" / "gsap" / "dist" / "gsap.min.js"
     rows.append(_ok("gsap", gsap.exists(), "animasyon motoru" if gsap.exists() else "npm install gerekli"))

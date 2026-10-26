@@ -604,7 +604,8 @@ def build_project(job_dir: Path, script: dict, timeline: dict, voice: dict[str, 
 
 
 def hyperframes_bin() -> Path:
-    b = ROOT / "node_modules" / ".bin" / "hyperframes"
+    name = "hyperframes.cmd" if os.name == "nt" else "hyperframes"  # Windows'ta npm .cmd sarmalayıcı üretir
+    b = ROOT / "node_modules" / ".bin" / name
     if not b.exists():
         raise StageError("HyperFrames bulunamadı: reels-factory klasöründe `npm install` çalıştırın")
     return b

@@ -52,6 +52,15 @@ Betik şunları yapar: `pip install -r requirements.txt`, `npm install` (HyperFr
 `npx hyperframes browser ensure` (Chrome Headless Shell), HyperFrames telemetrisini kapatır,
 `.env.example` → `.env` kopyalar ve `doctor` çalıştırır.
 
+Windows (PowerShell):
+
+```powershell
+winget install Python.Python.3.12 OpenJS.NodeJS.LTS Gyan.FFmpeg Git.Git   # yoksa; sonra terminali yeniden açın
+git clone -b claude/autonomous-ai-reels-factory-x82681 https://github.com/bdenizkarakoc/Heloo.git
+cd Heloo\reels-factory
+powershell -ExecutionPolicy Bypass -File scripts\setup.ps1
+```
+
 Elle kurulum:
 
 ```bash
