@@ -99,7 +99,7 @@ categories:
     weight: 2
     tone: "hikâye anlatan, merak uyandıran, kaynaklara sadık"
     audience: "genel izleyici"
-    visual_providers: [agent_media, openverse, ai_image, pexels]
+    visual_providers: [agent_media, wikipedia, openverse, ai_image, pexels]
     music_queries: ["cinematic documentary", "cinematic ambient"]
     seed_topics:
       - "Göbeklitepe'nin yaşı ve önemi"
@@ -110,7 +110,7 @@ categories:
     weight: 1
     tone: "saygılı, hikâye anlatan, belgelere dayalı; magazin ve spekülasyon yok"
     audience: "genel izleyici, müzikseverler"
-    visual_providers: [agent_media, openverse, ai_image, pexels]
+    visual_providers: [agent_media, wikipedia, openverse, ai_image, pexels]
     music_queries: ["rock instrumental", "psychedelic rock instrumental", "cinematic"]
     seed_topics:
       - "Cem Karaca ve Anadolu rock"
@@ -194,6 +194,11 @@ captions:
 # Görseller
 # ---------------------------------------------------------------------
 visuals:
+  # strict : yalnızca kullanım izni doğrulanmış medya (önerilen)
+  # any    : lisans kontrolü yapılmaz; kaynak yine kaydedilir. Telif riski KULLANICIDADIR
+  #          (platformlar telif bildirimiyle videoyu kaldırabilir, hesaba ihtar verebilir).
+  license_mode: any         # kullanıcı isteğiyle açıldı (2026-10-26); varsayılan önerilen değer: strict
+  wikipedia_langs: [tr, en]  # kişi/varlık görselleri için aranacak Vikipedi dilleri (visual.subject)
   min_short_side: 720        # bundan küçük görseller elenir
   candidates_per_scene: 6
   license_allow: [cc0, pdm, by]   # Openverse: yalnızca ticari kullanım + değişikliğe izin verenler

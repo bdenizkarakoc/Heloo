@@ -212,6 +212,15 @@ reels-factory/
 
 ## Lisans ve telif notları
 
+> **`visuals.license_mode`** — `strict` (önerilen): yalnızca kullanım izni doğrulanmış medya.
+> `any`: lisans denetlenmez (Openverse'te bütün lisanslar, Vikipedi'deki adil kullanım görselleri dahil);
+> kaynaklar yine kaydedilir ve paylaşım metnine "kullanım hakkı doğrulanmadı" notu düşülür.
+> **Telif riski kullanıcıdadır**: platformlar telif bildirimiyle videoyu kaldırabilir veya hesaba ihtar verebilir.
+> Şu an bu depoda kullanıcı isteğiyle `any` açıktır.
+>
+> Kişi görselleri `visual.subject` ile metin üzerinden doğrulanır (Vikipedi maddesinin ana görseli veya
+> adın başlık/açıklamada bitişik geçmesi); yüz tanıma kullanılmaz.
+
 - **Görseller:** NASA görselleri genel olarak kamu malıdır (NASA medya yönergeleri; NASA logosu/
   kişilerin onay izlenimi verecek kullanımlar hariç). ESA/JAXA gibi ortak kurum ve telif ibareli
   görseller otomatik elenir. Openverse'ten yalnızca CC0, kamu malı ve CC BY; CC BY atıfları paylaşım

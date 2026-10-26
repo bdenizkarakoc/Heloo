@@ -65,6 +65,12 @@ python scripts/factory.py candidates <görev> <sahne> [--query "farklı sorgu"]
 `fit: "contain"` + `align`, kapanışta açılış görseline dönmek için `reuse` kullan.
 İçinde yazı, filigran, insan kalabalığı veya konuyla ilgisiz öğe olan görselleri seçme.
 
+**Gerçek kişiler:** Sahne bir kişiyi göstermeliyse `visual.subject` ver; `wikipedia` sağlayıcısı kişinin
+maddesindeki görselleri, diğerleri adın geçtiği sonuçları getirir. Yüzden kişi tanımlama yapma;
+doğrulama yalnızca metin kanıtıyla (madde ana görseli / başlık-açıklamada ad) yapılır. Başka tanınmış
+kişileri gösteren görselleri kullanma. `visuals.license_mode: any` ise lisans denetlenmez; bunu
+kullanıcıya yayın öncesi telif riski olarak raporla.
+
 **Yapay zekâ ile görsel/video üretimi:** Oturumda bir üretim aracı varsa (ör. Higgsfield MCP) ve
 kullanıcı maliyeti onayladıysa, sahnenin `visual.prompt` istemiyle üret, dosyayı
 `projects/<görev>/media/<sahne>.mp4` (veya `.jpg`) olarak kaydet ve yanına lisans/atıf bilgisiyle

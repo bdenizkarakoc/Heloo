@@ -33,6 +33,33 @@ THIRD_PARTY = re.compile(r"\b(esa|jaxa|isas|getty|reuters|associated press|court
                          r"copyright)\b|©", re.I)
 
 
+def license_mode(cfg: Config) -> str:
+    """strict: yalnızca kullanım izni doğrulanmış medya. any: lisans kontrolü yok (kullanıcı sorumluluğunda)."""
+    return "any" if str(cfg.get_path("visuals.license_mode", "strict")).lower() == "any" else "strict"
+
+
+def _norm(text: str) -> str:
+    from .util import tr_lower
+    t = tr_lower(text or "")
+    t = t.translate(str.maketrans("çğıöşüâîû_-", "cgiosuaiu  "))
+    return re.sub(r"[^a-z0-9 ]+", " ", t)
+
+
+def verify_subject(c: dict, subject: str) -> tuple[bool, str]:
+    """Görselin konu kişiyi/varlığı gösterdiğini METİN üzerinden doğrular (yüz tanıma yapılmaz).
+
+    Geçerli kanıtlar: kişinin Vikipedi maddesinin ana görseli olması ya da adın tamamının
+    görselin başlığında, açıklamasında veya dosya adında geçmesi.
+    """
+    if c.get("lead"):
+        return True, f"'{c.get('article')}' Vikipedi maddesinin ana görseli"
+    phrase = " ".join(t for t in _norm(subject).split() if t)
+    blob = " " + " ".join(_norm(" ".join(str(c.get(k) or "") for k in ("title", "desc", "file"))).split()) + " "
+    if phrase and f" {phrase} " in blob:  # ad bitişik geçmeli ("Işın Karaca by Cem ..." eşleşmez)
+        return True, "adı görselin başlığında/açıklamasında geçiyor"
+    return False, "görsel metninde kişinin adı yok"
+
+
 class Budget:
     def __init__(self, cfg: Config, state: dict):
         self.cfg = cfg
@@ -101,7 +128,8 @@ def _nasa(scene: dict, job_dir: Path, cfg: Config, budget: Budget) -> list[dict]
             continue
         credit = d.get("secondary_creator") or d.get("photographer") or f"NASA/{d.get('center', '')}".rstrip("/")
         # NASA kütüphanesindeki ortak kurum (ESA, JAXA vb.) ve telif ibareli görseller kamu malı değildir.
-        if THIRD_PARTY.search(f"{credit} {d.get('description', '')} {d.get('title', '')}"):
+        third = THIRD_PARTY.search(f"{credit} {d.get('description', '')} {d.get('title', '')}")
+        if third and license_mode(cfg) == "strict":
             continue
         out.append({"url": pick["href"], "w": pick.get("width"), "h": pick.get("height"), "provider": "nasa",
                     "kind": "photo", "title": d.get("title", ""), "license": "Kamu malı — NASA medya kullanım yönergeleri",
@@ -116,17 +144,69 @@ def _openverse(scene: dict, job_dir: Path, cfg: Config, budget: Budget) -> list[
     if not q:
         return []
     lic = ",".join(cfg.get_path("visuals.license_allow", ["cc0", "pdm", "by"]))
-    data = retry(3, 2.0)(http_json)("GET", "https://api.openverse.org/v1/images/",
-                                     params={"q": q, "license": lic, "page_size": 20, "mature": "false"})
+    strict = license_mode(cfg) == "strict"
+    params = {"q": q, "page_size": 20, "mature": "false"}
+    if strict:
+        params["license"] = lic
+    data = retry(3, 2.0)(http_json)("GET", "https://api.openverse.org/v1/images/", params=params)
     out = []
     for r in data.get("results", []):
-        if r.get("license") not in lic.split(","):
+        if strict and r.get("license") not in lic.split(","):
             continue
         out.append({"url": r["url"], "w": r.get("width"), "h": r.get("height"), "provider": "openverse",
                     "kind": "photo", "title": r.get("title", ""),
                     "license": f"{r.get('license', '').upper()} {r.get('license_version') or ''}".strip(),
                     "credit": r.get("attribution") or r.get("creator") or "",
                     "source": r.get("foreign_landing_url") or r["url"], "thumb": r.get("thumbnail")})
+    return out
+
+
+FREE_LICENSE = re.compile(r"^(cc0|public domain|pd\b|pd-|cc[ -]by(?![ -]?(sa|nc|nd))[ -]?\d)", re.I)
+SKIP_FILES = re.compile(r"(logo|flag|bayrak|icon|ikon|signature|imza|map|harita|\.svg$|commons-|wiki|symbol|sembol)", re.I)
+
+
+def _wiki_api(lang: str, params: dict) -> dict:
+    return retry(3, 2.0)(http_json)("GET", f"https://{lang}.wikipedia.org/w/api.php",
+                                    params={"format": "json", "formatversion": 2, **params})
+
+
+def _wikipedia(scene: dict, job_dir: Path, cfg: Config, budget: Budget) -> list[dict]:
+    """Kişi/varlık için Vikipedi maddesindeki görseller (lisans bilgisi Commons/yerel wiki'den okunur)."""
+    subject = scene["visual"].get("subject")
+    if not subject:
+        return []
+    strict = license_mode(cfg) == "strict"
+    out: list[dict] = []
+    for lang in cfg.get_path("visuals.wikipedia_langs", ["tr", "en"]):
+        hits = _wiki_api(lang, {"action": "query", "list": "search", "srsearch": subject, "srlimit": 1})
+        found = hits.get("query", {}).get("search", [])
+        if not found:
+            continue
+        article = found[0]["title"]
+        lead = _wiki_api(lang, {"action": "query", "titles": article, "prop": "pageimages", "piprop": "name"})
+        lead_name = ((lead.get("query", {}).get("pages") or [{}])[0]).get("pageimage", "")
+        data = _wiki_api(lang, {"action": "query", "titles": article, "generator": "images", "gimlimit": 50,
+                                "prop": "imageinfo", "iiprop": "url|size|mime|extmetadata", "iiurlwidth": 1600})
+        for page in data.get("query", {}).get("pages", []) or []:
+            info = (page.get("imageinfo") or [{}])[0]
+            name = page.get("title", "").split(":", 1)[-1]
+            if not info or info.get("mime") not in ("image/jpeg", "image/png") or SKIP_FILES.search(name):
+                continue
+            meta = info.get("extmetadata") or {}
+            lic = re.sub("<[^>]+>", "", (meta.get("LicenseShortName") or {}).get("value", "")).strip()
+            if strict and not FREE_LICENSE.search(lic):
+                continue
+            desc = re.sub("<[^>]+>", " ", (meta.get("ImageDescription") or {}).get("value", ""))
+            artist = re.sub("<[^>]+>", "", (meta.get("Artist") or {}).get("value", "")).strip()
+            out.append({"url": info.get("thumburl") or info.get("url"), "w": info.get("thumbwidth") or info.get("width"),
+                        "h": info.get("thumbheight") or info.get("height"), "provider": f"wikipedia:{lang}",
+                        "kind": "photo", "title": name, "file": name, "desc": desc[:300], "article": article,
+                        "lead": name.replace(" ", "_") == lead_name.replace(" ", "_"),
+                        "license": lic or "lisans bilgisi yok", "credit": artist,
+                        "source": info.get("descriptionurl") or info.get("url")})
+        if out:
+            break
+    out.sort(key=lambda c: not c["lead"])
     return out
 
 
@@ -223,7 +303,7 @@ def _replicate_run(model: str, inputs: dict, cfg: Config, timeout: int = 300) ->
     return out[0] if isinstance(out, list) else out
 
 
-SEARCH_PROVIDERS = {"nasa", "openverse", "pexels"}
+SEARCH_PROVIDERS = {"nasa", "openverse", "pexels", "wikipedia"}
 # Konudan çok "etkinlik/insan" fotoğrafı olduğunu düşündüren kelimeler (otomatik seçimde geri plana itilir)
 OFFTOPIC = re.compile(r"\b(viewing|visitors?|students?|people|crowd|team|briefing|conference|press|award|"
                       r"ceremony|workshop|event|portrait|poster|logo|diagram|chart|graph|illustration of the team|"
@@ -275,7 +355,7 @@ def search_candidates(scene: dict, job_dir: Path, cfg: Config, providers: list[s
 
 PROVIDERS = {
     "agent_media": _agent_media, "url": _url, "ai_video": _ai_video, "ai_image": _ai_image,
-    "nasa": _nasa, "pexels": _pexels, "openverse": _openverse,
+    "nasa": _nasa, "pexels": _pexels, "openverse": _openverse, "wikipedia": _wikipedia,
 }
 
 
@@ -374,6 +454,14 @@ def fetch_scene_visual(scene: dict, job_dir: Path, cfg: Config, providers: list[
             src_id = c.get("url") or c.get("path")
             if src_id in used["sources"] or src_id in skip:
                 continue
+            subject = scene["visual"].get("subject")
+            if subject and SKIP_FILES.search(f"{c.get('title', '')} {c.get('file', '')}"):
+                continue  # imza, logo, bayrak, harita vb. kişi görseli değildir
+            verified, why = (True, "") if not subject or name not in SEARCH_PROVIDERS else verify_subject(c, subject)
+            if not verified:
+                L.info("%s: '%s' doğrulanamadı (%s), atlandı", scene["id"], c.get("title", "")[:50], why)
+                continue
+            c["verified"] = why
             if c.get("w") and c.get("h") and min(c["w"], c["h"]) < min_side:
                 continue
             try:
@@ -396,7 +484,8 @@ def fetch_scene_visual(scene: dict, job_dir: Path, cfg: Config, providers: list[
                 continue
             used["sources"].add(src_id)
             used["hashes"].append(meta["hash"])
-            meta.update({k: c.get(k, "") for k in ("provider", "title", "license", "credit", "source")})
+            meta.update({k: c.get(k, "") for k in ("provider", "title", "license", "credit", "source", "verified")})
+            meta["license_checked"] = license_mode(cfg) == "strict"
             meta["candidate_index"] = idx
             meta["fit"] = choose_fit(meta, scene)
             meta.pop("hash", None)

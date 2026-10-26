@@ -172,9 +172,14 @@ def stage_visuals(job: Job, script: dict, tl: dict, cfg: Config) -> dict:
             if meta and sc["visual"]["kind"] == "video" and meta["kind"] != "video":
                 job.warn(f"{sc['id']}: video klip istenmişti, fotoğraf + kamera hareketi kullanıldı "
                          "(video üretim/stok sağlayıcısı yapılandırılmamış)")
+        unchecked = [sid for sid, m in media.items() if m and not m.get("license_checked", True)]
+        if unchecked:
+            job.warn(f"lisansı doğrulanmamış görseller (license_mode: any): {', '.join(unchecked)} — "
+                     "yayın öncesi kullanım hakkını kontrol edin")
         write_json(job.dir / "visuals.json", media)
-        credits = [{"scene": sid, **{k: m.get(k, "") for k in ("provider", "title", "license", "credit", "source")}}
-                   for sid, m in media.items() if m]
+        credits = [{"scene": sid, **{k: m.get(k, "") for k in ("provider", "title", "license", "credit", "source",
+                                                               "verified")},
+                    "license_checked": m.get("license_checked", True)} for sid, m in media.items() if m]
         write_json(job.dir / "credits_visuals.json", credits)
         sheet_items = [(f"{sid} · {next(s['layout'] for s in script['scenes'] if s['id'] == sid)}",
                         (job.dir / "visuals" / m["file"]) if m and m["kind"] == "photo" else
@@ -293,10 +298,12 @@ def stage_export(job: Job, script: dict, final: Path, music: dict | None, cfg: C
         lines = [script["post"].get("caption", script.get("title", "")), "",
                  " ".join(script["post"].get("hashtags", [])), "", "Kaynaklar:"]
         lines += [f"- {s.get('title', '')}: {s['url']}" for s in script.get("sources", [])]
-        attributions = [c for c in credits if c.get("credit") or "CC" in str(c.get("license", ""))]
+        attributions = [c for c in credits if c.get("credit") or "CC" in str(c.get("license", ""))
+                        or not c.get("license_checked", True)]
         if attributions or (music and music.get("provider") == "openverse"):
             lines += ["", "Görsel/müzik atıfları:"]
-            lines += [f"- {c['scene']}: {c.get('credit') or c.get('title')} ({c.get('license')}) {c.get('source')}"
+            lines += [f"- {c['scene']}: {c.get('credit') or c.get('title')} ({c.get('license')}"
+                      f"{'' if c.get('license_checked', True) else '; kullanım hakkı doğrulanmadı'}) {c.get('source')}"
                       for c in attributions]
             if music and music.get("provider") == "openverse":
                 lines.append(f"- Müzik: {music.get('credit')} ({music.get('license')}) {music.get('source')}")

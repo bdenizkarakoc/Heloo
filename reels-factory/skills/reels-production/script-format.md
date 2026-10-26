@@ -92,6 +92,7 @@ Ekran yazıları kısa tutulur; sığmazsa kompozitör puntoyu küçültür, yin
 | `fit` | `auto` (varsayılan), `cover` (tam ekran, kamera hareketi), `card` (kart), `contain` (kesmeden, yumuşak kenarlı; uzay/obje fotoğrafları için ideal). |
 | `align` | `contain` için `top`, `center`, `bottom`. |
 | `move` | `cover` için kamera: `push`, `pull`, `panl`, `panr`, `up`. |
+| `subject` | Görselde olması gereken kişi/varlık adı (ör. `"Cem Karaca"`). Arama sonuçları yalnızca kişinin Vikipedi maddesinin ana görseliyse ya da ad başlık/açıklama/dosya adında **bitişik** geçiyorsa kabul edilir. Yüz tanıma yapılmaz. |
 | `reuse` | Önceki bir sahnenin görselini bilinçli tekrar (ör. kapanışta açılışa dönüş): `"s1"`. |
 | `url` + `license` (+ `credit`) | Lisansı bilinen belirli bir görsel/video. Lisans yoksa kullanılmaz. |
 
