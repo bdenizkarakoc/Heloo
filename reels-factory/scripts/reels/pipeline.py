@@ -64,6 +64,8 @@ def make_brief(job: Job, cfg: Config) -> dict:
         "duration_range": [cfg.get_path("output.duration.min", 30), cfg.get_path("output.duration.max", 60)],
         "visual_providers": cat.get("visual_providers", ["openverse"]),
         "layouts": cfg.get_path("script.layouts"),
+        "user_text": job.state.get("user_text"),
+        "draw_visuals": job.state.get("draw", False),
         "script_path": str(job.script_path.relative_to(ROOT)),
         "format_doc": "skills/reels-production/script-format.md",
     }
@@ -71,9 +73,16 @@ def make_brief(job: Job, cfg: Config) -> dict:
     return brief
 
 
-def new_job(cfg: Config, category: str | None = None, topic: str | None = None) -> Job:
+def new_job(cfg: Config, category: str | None = None, topic: str | None = None,
+            text: str | None = None, draw: bool = False) -> Job:
+    """text: kullanıcının yazdığı metin (incelenip doğrulanarak senaryoya çevrilir).
+    draw: görselleri ajan kendisi SVG illüstrasyon olarak çizer."""
     cat = pick_category(cfg, category)
-    job = Job.create(cat, topic)
+    job = Job.create(cat, topic or (text.strip().splitlines()[0][:80] if text else None))
+    if text:
+        job.state["user_text"] = text.strip()
+    job.state["draw"] = bool(draw)
+    job.save()
     make_brief(job, cfg)
     L.info("Yeni görev: %s (kategori: %s)", job.id, cat)
     return job
@@ -92,7 +101,8 @@ def auto_script(job: Job, cfg: Config, on_line=None) -> dict:
             write_json(job.dir / "research.json", research)
             write_json(job.script_path, script)
         else:
-            script = llm.generate_via_claude_cli(job.id, job.dir, job.state.get("topic_hint"), cfg, on_line)
+            script = llm.generate_via_claude_cli(job.id, job.dir, job.state.get("topic_hint"), cfg, on_line,
+                                                 text=job.state.get("user_text"), draw=job.state.get("draw", False))
         info.update({"provider": provider, "title": script.get("title"), "scenes": len(script["scenes"])})
     return script
 
@@ -429,3 +439,78 @@ def produce(job: Job, cfg: Config, from_stage: str | None = None, autofix: bool 
         raise
     finally:
         log.detach(handler)
+
+
+# ----------------------------------------------------------------------------
+# Kendi kendini test
+# ----------------------------------------------------------------------------
+
+def selftest(cfg: Config, render: bool = False) -> dict:
+    """Kod, araçlar ve üretim hattını örnek senaryo ile dener. Başarılıysa test görevini siler."""
+    import compileall
+    import tempfile
+    from . import doctor
+    from .util import run
+    report: dict = {"ok": True, "steps": []}
+
+    def step(name: str, fn):
+        t0 = dt.datetime.now()
+        try:
+            detail = fn() or ""
+            report["steps"].append({"step": name, "ok": True, "detail": str(detail)[:300]})
+        except Exception as exc:  # noqa: BLE001
+            report["ok"] = False
+            report["steps"].append({"step": name, "ok": False, "detail": f"{type(exc).__name__}: {exc}"[:800]})
+            raise
+        finally:
+            report["steps"][-1]["seconds"] = round((dt.datetime.now() - t0).total_seconds(), 1)
+
+    def tools():
+        bad = [r["name"] for r in doctor.check(cfg, network=False) if not r["ok"] and r["need"] == "zorunlu"]
+        if bad:
+            raise StageError("eksik zorunlu bileşen: " + ", ".join(bad))
+        return "zorunlu bileşenler tamam"
+
+    def svg():
+        with tempfile.TemporaryDirectory() as d:
+            src, dst = Path(d) / "t.svg", Path(d) / "t.png"
+            src.write_text('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 1920"><rect width="1080" '
+                           'height="1920" fill="#123"/><circle cx="540" cy="900" r="300" fill="#fd3"/></svg>')
+            run(["ffmpeg", "-y", "-v", "error", "-i", src, "-frames:v", "1", dst])
+            return f"{dst.stat().st_size} bayt"
+
+    job = None
+    try:
+        step("python_derleme", lambda: compileall.compile_dir(str(ROOT / "scripts"), quiet=1) or
+             (_ for _ in ()).throw(StageError("derleme hatası")))
+        step("araclar", tools)
+        step("svg_cizim", svg)
+        example = ROOT / "examples" / "venus-gun-yil" / "script.json"
+        job = Job.create("bilim-uzay", "selftest")
+        job.script_path.write_text(example.read_text(encoding="utf-8"), encoding="utf-8")
+        script = load_script(job, cfg)
+        metas: dict = {}
+        step("seslendirme", lambda: metas.update(stage_voice(job, script, cfg)) or f"{len(metas)} sahne")
+        out: dict = {}
+        step("altyazi", lambda: out.update(zip(("tl", "words", "groups"), stage_captions(job, script, metas, cfg)))
+             or f"{out['tl']['total']:.1f} sn")
+        step("gorseller", lambda: out.update(media=stage_visuals(job, script, out["tl"], cfg))
+             or f"{sum(1 for m in out['media'].values() if m)} görsel")
+        step("muzik", lambda: out.update(music=stage_music(job, script, out["tl"], cfg))
+             or (out["music"] or {}).get("provider"))
+        step("kurgu_lint", lambda: out.update(res=stage_compose(job, script, out["tl"], metas, out["media"],
+                                                                 out["groups"], cfg)) or "lint temiz")
+        if render:
+            step("render", lambda: out.update(video=stage_render(job, cfg)) or "tamam")
+            step("miks", lambda: out.update(final=stage_mix(job, script, out["tl"], out["music"], out["video"], cfg))
+                 or "tamam")
+            step("kalite_kontrol", lambda: stage_qc(job, script, out["tl"], out["words"], out["final"],
+                                                    out["res"]["safe_zone_problems"], cfg)["passed"])
+    except Exception:  # noqa: BLE001 — rapor zaten hatayı içeriyor
+        pass
+    if job and report["ok"]:
+        shutil.rmtree(job.dir, ignore_errors=True)
+    elif job:
+        report["job"] = job.id
+    write_json(ROOT / "logs" / "selftest.json", report)
+    return report

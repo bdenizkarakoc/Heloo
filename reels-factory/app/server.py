@@ -84,7 +84,8 @@ class Factory:
     def _run(self, task: dict) -> None:
         cfg = load_config()
         if task["kind"] == "new":
-            job = pipeline.new_job(cfg, task.get("category") or None, task.get("topic") or None)
+            job = pipeline.new_job(cfg, task.get("category") or None, task.get("topic") or None,
+                                   text=task.get("text") or None, draw=bool(task.get("draw")))
             with self.lock:
                 self.current["job"] = job.id
             handler = log.attach_job_log(job.id)
@@ -281,9 +282,11 @@ class Handler(BaseHTTPRequestHandler):
         data = self._body()
         if path == "/api/new":
             n = max(1, min(10, int(data.get("count") or 1)))
+            text = (data.get("text") or "").strip() or None
             tasks = [FACTORY.enqueue("new", category=data.get("category") or None,
-                                     topic=(data.get("topic") or "").strip() or None, source="elle")
-                     for _ in range(n)]
+                                     topic=(data.get("topic") or "").strip() or None, text=text,
+                                     draw=bool(data.get("draw")), source="elle")
+                     for _ in range(1 if text else n)]
             return self._json({"queued": tasks})
         if path == "/api/produce":
             t = FACTORY.enqueue("produce", job=data["job"], from_stage=data.get("from_stage") or None)

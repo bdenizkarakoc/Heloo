@@ -78,6 +78,19 @@ kullanıcı maliyeti onayladıysa, sahnenin `visual.prompt` istemiyle üret, dos
 `<sahne>.json` yaz. Kredi/ücret harcayan çağrıları **kullanıcı onayı olmadan yapma**; bakiye
 yetersizse bunu söyle ve ücretsiz yönteme geç.
 
+## 4b. Kullanıcı metninden video ve kendi çizimlerin
+
+`new --manual --text-file <dosya> [--draw]`: brief.json → `user_text` videonun temelidir. Metni incele,
+iddialarını web'de doğrula, yanlış/abartılı ifadeleri düzelt (düzeltmeleri `facts`'e not et), anlamı ve
+tonu koruyarak senaryoya çevir.
+
+`--draw` (brief → `draw_visuals: true`): her fotoğraf sahnesi için `projects/<görev>/media/<sahne>.svg`
+yaz — özgün, sahneyle uyumlu illüstrasyon (`viewBox="0 0 1080 1920"`, gradyan/katman/ışık; **içinde yazı yok**).
+Yerleşim: üst bölge (y<600) başlık için, y=1130–1330 altyazı bandı için sade kalsın; ana öğe
+y=620–1100 ve x=150–930 içinde. Yanına `<sahne>.json`: `{"provider":"agent_svg","title":"…","license":"özgün çizim (Claude)"}`;
+sahnenin `visual`'ı `{"kind":"photo","providers":["agent_media"],"fit":"cover"}`. Gerçek kişileri çizerek
+taklit etme. Üretimden önce SVG'leri `ffmpeg -i x.svg x.png` ile görüntüleyip Read ile kontrol et.
+
 ## 5. Üretim
 
 ```bash

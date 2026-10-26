@@ -158,7 +158,7 @@ def validate(script: dict, cfg: Config) -> list[str]:
         if vis.get("kind") not in VISUAL_KINDS:
             probs.append(f"{where}: visual.kind {sorted(VISUAL_KINDS)} içinden olmalı")
         if vis.get("kind") in ("photo", "video") and not (vis.get("query") or vis.get("prompt") or vis.get("url")
-                                                          or vis.get("reuse")):
+                                                          or vis.get("reuse") or "agent_media" in (vis.get("providers") or [])):
             probs.append(f"{where}: fotoğraf/video sahnesi için visual.query, visual.prompt veya visual.reuse gerekli")
         if vis.get("reuse") and vis["reuse"] not in ids[: ids.index(sc.get("id"))]:
             probs.append(f"{where}: visual.reuse önceki bir sahnenin kimliği olmalı")

@@ -94,13 +94,17 @@ def extract_json(text: str) -> dict:
 
 
 def research(brief: dict, cfg: Config, state: dict) -> dict:
+    user = ""
+    if brief.get("user_text"):
+        user = ("KULLANICI METNİ (videonun temeli; konusu bu metindir — iddialarını doğrula, yanlışları "
+                "caveats'e yaz):\n" + brief["user_text"] + "\n\n")
     prompt = f"""Kategori: {brief['category_label']} ({brief['category']})
 Ton: {brief['tone']} | Hedef kitle: {brief['audience']}
 Konu ipucu: {brief.get('topic_hint') or 'yok — kategoriye uygun, merak uyandıran bir konu seç'}
 Örnek konular (ilham için): {', '.join(brief.get('seed_topics', []))}
 Daha önce işlenen başlıklar (TEKRARLAMA): {', '.join(brief.get('past_titles', [])) or 'yok'}
 
-Görev: 30-60 saniyelik bir Türkçe Reels videosu için tek bir konu seç ve web aramasıyla araştır.
+{user}Görev: 30-60 saniyelik bir Türkçe Reels videosu için tek bir konu seç ve web aramasıyla araştır.
 Birincil ve güvenilir kaynakları tercih et (resmî kurumlar, akademik kaynaklar, köklü yayınlar).
 Bilgileri en az iki kaynakla karşılaştır; tutarsızlık varsa belirt ve tartışmalı ayrıntıyı kullanma.
 
@@ -184,12 +188,27 @@ SKILL.md'deki 2. (araştırma), 3. (senaryo) ve 4. (görseller) adımları uygul
 - WebSearch/WebFetch ile güvenilir kaynaklardan araştır; her sayıyı doğrula.
 - projects/{job}/script.json dosyasını yaz ve `{py} scripts/factory.py validate {job}` hatasız olana kadar düzelt.
 - Gerekirse `{py} scripts/factory.py candidates {job} <sahne>` ile görsel adaylarını incele ve visual.pick ile seç.
-- `produce` komutunu ÇALIŞTIRMA; üretimi uygulama yapacak.
+{extra}- `produce` komutunu ÇALIŞTIRMA; üretimi uygulama yapacak.
 - Bitirince yalnızca kısa bir özet yaz: başlık ve kullanılan kaynaklar.
 """
 
 
-def generate_via_claude_cli(job_id: str, job_dir, topic: str | None, cfg: Config, on_line=None) -> dict:
+TEXT_EXTRA = """- KULLANICI METNİ (brief.json → user_text) videonun temelidir. Önce incele: iddiaları web'de doğrula,
+  yanlış veya abartılı ifadeleri düzelt (düzeltmeleri facts listesine not et), anlamı ve tonu koru;
+  sonra 30-60 sn'lik akıcı bir Reels senaryosuna dönüştür. Uydurma bilgi ekleme.
+"""
+DRAW_EXTRA = """- GÖRSELLERİ KENDİN ÇİZ: her fotoğraf sahnesi için projects/{job}/media/<sahne>.svg dosyası yaz
+  (viewBox="0 0 1080 1920", özgün, sahneyle uyumlu, derinlikli illüstrasyon: gradyanlar, katmanlar, ışık;
+  İÇİNDE YAZI OLMASIN). YERLEŞİM: üst bölge (y<600) başlıklar için, y=1130-1330 altyazı bandı için sade
+  ve koyu kalsın; ana öğe y=620-1100 arasında ve yatayda x=150-930 içinde olsun. Yanına <sahne>.json yaz:
+  {{"provider":"agent_svg","title":"<kısa açıklama>","license":"özgün çizim (Claude)"}}.
+  Bu sahnelerde visual = {{"kind":"photo","providers":["agent_media"],"fit":"cover"}}.
+  Gerçek kişileri çizerek taklit etme; kişi sahnelerinde sembolik çizim kullan.
+"""
+
+
+def generate_via_claude_cli(job_id: str, job_dir, topic: str | None, cfg: Config, on_line=None,
+                            text: str | None = None, draw: bool = False) -> dict:
     import subprocess
     import sys
     exe = claude_cli()
@@ -198,7 +217,9 @@ def generate_via_claude_cli(job_id: str, job_dir, topic: str | None, cfg: Config
     py = "python" if sys.platform.startswith("win") else "python3"
     tools = ["Read", "Write", "Edit", "Glob", "Grep", "WebSearch", "WebFetch",
              f"Bash({py} scripts/factory.py validate:*)", f"Bash({py} scripts/factory.py candidates:*)"]
-    cmd = [exe, "-p", CLI_PROMPT.format(job=job_id, topic=topic or "yok — brief.json'a göre sen seç", py=py),
+    extra = (TEXT_EXTRA if text else "") + (DRAW_EXTRA.format(job=job_id) if draw else "")
+    cmd = [exe, "-p", CLI_PROMPT.format(job=job_id, topic=topic or "yok — brief.json'a göre sen seç", py=py,
+                                        extra=extra),
            "--permission-mode", "acceptEdits", "--allowedTools", *tools]
     timeout = int(cfg.get_path("llm.claude_cli.timeout_sec", 1800))
     L.info("Claude Code ile senaryo yazılıyor (en fazla %d dk)...", timeout // 60)

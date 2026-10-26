@@ -81,7 +81,7 @@ class Budget:
 
 def _agent_media(scene: dict, job_dir: Path, cfg: Config, budget: Budget) -> list[dict]:
     folder = job_dir / "media"
-    for ext in IMG_EXT + VID_EXT:
+    for ext in IMG_EXT + VID_EXT + (".svg",):
         f = folder / f"{scene['id']}{ext}"
         if f.exists():
             meta = {}
@@ -467,6 +467,10 @@ def fetch_scene_visual(scene: dict, job_dir: Path, cfg: Config, providers: list[
             try:
                 if c.get("path"):
                     raw = Path(c["path"])
+                    if raw.suffix.lower() == ".svg":  # ajanın çizdiği vektör illüstrasyon → PNG
+                        png = out_dir / f"{scene['id']}_svg.png"
+                        run(["ffmpeg", "-y", "-v", "error", "-i", raw, "-frames:v", "1", png])
+                        raw = png
                 else:
                     ext = Path(c["url"].split("?")[0]).suffix.lower() or (".mp4" if c["kind"] == "video" else ".jpg")
                     raw = retry(3, 2.0)(download)(c["url"], out_dir / f"{scene['id']}_raw{ext}", max_mb=150)
@@ -485,7 +489,9 @@ def fetch_scene_visual(scene: dict, job_dir: Path, cfg: Config, providers: list[
             used["sources"].add(src_id)
             used["hashes"].append(meta["hash"])
             meta.update({k: c.get(k, "") for k in ("provider", "title", "license", "credit", "source", "verified")})
-            meta["license_checked"] = license_mode(cfg) == "strict"
+            # Kendi ürettiğimiz (ajan çizimi / AI üretimi) içerikler lisans riski taşımaz
+            own = name in ("agent_media", "ai_image", "ai_video") and c.get("license") != "agent-supplied"
+            meta["license_checked"] = license_mode(cfg) == "strict" or own
             meta["candidate_index"] = idx
             meta["fit"] = choose_fit(meta, scene)
             meta.pop("hash", None)

@@ -113,6 +113,21 @@ powershell -ExecutionPolicy Bypass -File scripts\install-app.ps1 -Remove    # ka
 
 Bilgisayar uykudayken veya kapalıyken üretim yapılmaz; açıldığında zamanı geçmiş üretim ilk fırsatta başlar.
 
+## Bulutta otomatik çalışma (Claude Code on the web)
+
+Zamanlanmış bir bulut görevi günde iki kez (İstanbul saatiyle ~09:47 ve ~18:47) `cloud/ROUTINE.md`
+dosyasını izler: kurulum → `selftest` (hata varsa kendisi onarır ve doğrulanmış düzeltmeyi gönderir) →
+gelen kutundaki **konusu "Reels:" ile başlayan** e-postaları metin olarak alıp (görselleri kendisi çizerek)
+video üretir → metin yoksa kendi konusunu araştırıp video üretir → videoyu GitHub `reels-videos` dalına
+yükler ve bağlantısını e-postayla gönderir. Metin göndermek için kendine şu e-postayı at:
+
+```
+Konu:  Reels: Arıların dansı
+Gövde: (videoya dönüşmesini istediğin metin)
+```
+
+Gövdeye `görsel: arama` yazarsan çizim yerine lisanslı/arama görselleri kullanılır.
+
 ## Kullanım
 
 ### A) Claude Code ile (önerilen, anahtar gerektirmez)

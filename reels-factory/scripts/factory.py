@@ -42,7 +42,8 @@ def cmd_doctor(args, cfg) -> int:
 
 
 def cmd_new(args, cfg) -> int:
-    job = pipeline.new_job(cfg, args.category, args.topic)
+    text = Path(args.text_file).read_text(encoding="utf-8") if args.text_file else args.text
+    job = pipeline.new_job(cfg, args.category, args.topic, text=text, draw=args.draw)
     from reels.llm import resolve_provider
     provider = resolve_provider(cfg)
     if provider != "manual" and not args.manual:
@@ -124,6 +125,14 @@ def cmd_candidates(args, cfg) -> int:
     return 0
 
 
+def cmd_selftest(args, cfg) -> int:
+    rep = pipeline.selftest(cfg, render=args.render)
+    for st in rep["steps"]:
+        print(f" {'✔' if st['ok'] else '✖'} {st['step']:<16} {st['seconds']:>6.1f} sn  {st['detail']}")
+    print("SONUÇ:", "BAŞARILI" if rep["ok"] else f"BAŞARISIZ (görev klasörü: projects/{rep.get('job')})")
+    return 0 if rep["ok"] else 1
+
+
 def cmd_status(args, cfg) -> int:
     jobs = [Job.load(args.job)] if args.job else Job.all()
     for job in jobs:
@@ -151,6 +160,9 @@ def main() -> int:
     p.add_argument("--category")
     p.add_argument("--topic")
     p.add_argument("--manual", action="store_true", help="senaryoyu otomatik yazma (ajan elle yazacak)")
+    p.add_argument("--text", help="kendi metnin: incelenip doğrulanarak videoya çevrilir")
+    p.add_argument("--text-file", help="metni dosyadan oku")
+    p.add_argument("--draw", action="store_true", help="görselleri ajan kendisi SVG illüstrasyon olarak çizsin")
     p = sub.add_parser("validate", help="senaryoyu doğrula")
     p.add_argument("job")
     p = sub.add_parser("produce", help="senaryodan videoya üretim")
@@ -166,6 +178,8 @@ def main() -> int:
     p.add_argument("scene")
     p.add_argument("--query", help="farklı bir arama sorgusu dene")
     p.add_argument("--limit", type=int, default=10)
+    p = sub.add_parser("selftest", help="sistemi örnek senaryo ile dene")
+    p.add_argument("--render", action="store_true", help="render, miks ve kalite kontrolünü de dene")
     p = sub.add_parser("status", help="görev durumları")
     p.add_argument("job", nargs="?")
     args = ap.parse_args()
@@ -173,7 +187,7 @@ def main() -> int:
     log.setup_logging(args.verbose)
     cfg = load_config()
     handlers = {"doctor": cmd_doctor, "new": cmd_new, "validate": cmd_validate, "produce": cmd_produce,
-                "run": cmd_run, "status": cmd_status, "candidates": cmd_candidates}
+                "run": cmd_run, "status": cmd_status, "candidates": cmd_candidates, "selftest": cmd_selftest}
     try:
         return handlers[args.cmd](args, cfg)
     except (StageError, FileNotFoundError) as exc:
