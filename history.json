@@ -1,0 +1,29 @@
+[
+  {
+    "job": "20261026-064904-bilim-uzay-b141",
+    "date": "2026-10-26",
+    "category": "bilim-uzay",
+    "topic_hint": "Venüs'te bir günün bir yıldan uzun olması",
+    "title": "Venüs'te Bir Gün, Bir Yıldan Uzun",
+    "music": "https://prod-1.storage.jamendo.com/?trackid=20231&format=mp32",
+    "output": "output/videos/20261026-venus-te-bir-gun-bir-yildan-uzun.mp4"
+  },
+  {
+    "job": "20261026-073409-muzik-kultur-2937",
+    "date": "2026-10-26",
+    "category": "muzik-kultur",
+    "topic_hint": "Cem Karaca",
+    "title": "Cem Karaca: Vatandaşlıktan Çıkarılan Efsane",
+    "music": "https://prod-1.storage.jamendo.com/?trackid=822777&format=mp32",
+    "output": "output/videos/20261026-cem-karaca-vatandasliktan-cikarilan-efsane.mp4"
+  },
+  {
+    "job": "20261026-095314-doga-hayvanlar-2a3c",
+    "date": "2026-10-26",
+    "category": "doga-hayvanlar",
+    "topic_hint": "Arılar dans ederek birbirine çiçeklerin yerini anlatıyor. Bunu keşfeden bilim in",
+    "title": "Arıların Gizli Dili: Dans",
+    "music": "https://prod-1.storage.jamendo.com/?trackid=1741773&format=mp32",
+    "output": "output/videos/20261026-arilarin-gizli-dili-dans.mp4"
+  }
+]
