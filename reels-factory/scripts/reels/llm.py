@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import re
+from pathlib import Path
 
 from . import log
 from .config import Config, ROOT, secret
@@ -161,8 +162,18 @@ def generate(brief: dict, cfg: Config, state: dict) -> tuple[dict, dict]:
 # ----------------------------------------------------------------------------
 
 def claude_cli() -> str | None:
+    """`claude` komutu: PATH'te yoksa yerel kurulumun varsayılan yerine (~/.local/bin) bakılır —
+    uygulama, kurulumdan önce başlamışsa PATH'i eskidir."""
+    import os
     import shutil
-    return shutil.which("claude")
+    found = shutil.which("claude")
+    if found:
+        return found
+    for name in ("claude.exe", "claude"):
+        p = Path.home() / ".local" / "bin" / name
+        if p.is_file() and (os.name == "nt" or os.access(p, os.X_OK)):
+            return str(p)
+    return None
 
 
 def resolve_provider(cfg: Config) -> str:

@@ -67,6 +67,17 @@
     </div>
 
     <div class="card">
+      <h2>Claude Code</h2>
+      <div id="claudeState" class="muted">denetleniyor…</div>
+      <div class="row" style="margin-top:12px; flex-wrap:wrap">
+        <button id="btnClaudeInstall">Claude Code'u kur ve bağla</button>
+        <button class="ghost" id="btnClaudeTest">Bağlantıyı test et</button>
+        <button class="ghost" id="btnClaudeOpen">Claude Code'u aç</button>
+      </div>
+      <p class="muted" id="claudeMsg"></p>
+    </div>
+
+    <div class="card">
       <h2>Otomatik mod</h2>
       <div class="switch"><input type="checkbox" id="autoOn"><span>Aktif — kendi kendine video üret</span></div>
       <div class="row">
@@ -169,7 +180,20 @@ const vidCard = (title, v, sub) => `
       <div class="meta"><div>${esc(title)}</div>${sub ? `<div class="muted">${esc(sub)}</div>` : ""}
         <a href="/${esc(v.video)}" download>indir</a>${v.post ? `<a href="/${esc(v.post)}" target="_blank">paylaşım metni</a>` : ""}${v.srt ? `<a href="/${esc(v.srt)}" download>altyazı</a>` : ""}</div>
     </div>`;
-let cloudSeen = null;
+let cloudSeen = null, claudeTimer = null;
+
+async function refreshClaude() {
+  const c = await api("/api/claude");
+  const ok = c.installed && c.logged_in;
+  $("claudeState").innerHTML = !c.installed ? '<span class="pill failed">kurulu değil</span> Senaryoları yazması için kurun.'
+    : !c.logged_in ? `<span class="pill running">giriş yapılmadı</span> ${esc(c.version || "")}`
+    : `<span class="pill done">bağlı</span> ${esc(c.version || "")} · ${esc(c.method || "")}`;
+  $("btnClaudeInstall").textContent = !c.installed ? "Claude Code'u kur ve bağla" : !c.logged_in ? "Giriş yap ve bağla" : "Yeniden kur / giriş";
+  $("btnClaudeInstall").className = ok ? "ghost" : "";
+  $("btnClaudeTest").disabled = !ok; $("btnClaudeOpen").disabled = !c.installed;
+  if (ok && claudeTimer) { clearInterval(claudeTimer); claudeTimer = null; $("claudeMsg").textContent = "✔ Bağlandı. Senaryolar artık Claude Code ile yazılacak."; refreshStatus(); }
+  return c;
+}
 
 async function refreshCloud() {
   const vids = await api("/api/cloud");
@@ -219,6 +243,19 @@ $("btnNew").onclick = async () => {
                           text: $("text").value, draw: $("draw").checked });
   $("topic").value = ""; $("text").value = ""; refreshStatus();
 };
+$("btnClaudeInstall").onclick = async () => {
+  const r = await api("/api/claude/install", {});
+  if (!r.ok) { $("claudeMsg").textContent = r.manual; return; }
+  $("claudeMsg").textContent = "Açılan pencerede kurulum sürüyor; tarayıcıda Claude hesabınızla giriş yapın. Bitince burası kendiliğinden güncellenir.";
+  if (!claudeTimer) claudeTimer = setInterval(refreshClaude, 5000);
+};
+$("btnClaudeTest").onclick = async () => {
+  $("btnClaudeTest").disabled = true; $("claudeMsg").textContent = "Deneniyor (birkaç saniye)…";
+  const r = await api("/api/claude/test", {});
+  $("claudeMsg").innerHTML = r.ok ? "✔ " + esc(r.message) : `<span style="color:var(--bad)">${esc(r.message)}</span>`;
+  $("btnClaudeTest").disabled = false;
+};
+$("btnClaudeOpen").onclick = async () => { const r = await api("/api/claude/open", {}); if (!r.ok) $("claudeMsg").textContent = r.manual; };
 $("btnCloud").onclick = async () => { await api("/api/cloud/sync", {}); refreshStatus(); };
 document.addEventListener("visibilitychange", () => { if (!document.hidden) document.title = "Reels Fabrikası"; });
 $("btnAuto").onclick = async () => {
@@ -226,7 +263,8 @@ $("btnAuto").onclick = async () => {
   await api("/api/auto", { enabled: $("autoOn").checked, interval_hours: +$("interval").value, daily_max: +$("dailyMax").value, categories: cats });
   refreshStatus();
 };
-refreshStatus(); refreshJobs(); refreshCloud();
+refreshStatus(); refreshJobs(); refreshCloud(); refreshClaude();
+setInterval(refreshClaude, 60000);
 setInterval(refreshStatus, 3000); setInterval(refreshJobs, 8000); setInterval(refreshLog, 2500);
 </script>
 </body>

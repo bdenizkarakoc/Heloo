@@ -103,6 +103,14 @@ Senaryo adımı için şunlardan biri gerekir (uygulama otomatik seçer, `llm.pr
 1. `.env` → `ANTHROPIC_API_KEY` (Claude API), veya
 2. bilgisayarda kurulu ve giriş yapılmış **Claude Code** (`claude` komutu; ayrı anahtar gerekmez).
 
+**Claude Code'u panelden kurmak:** "Claude Code" kartındaki **Claude Code'u kur ve bağla** düğmesi
+(Windows) bir pencere açar, resmî yükleyiciyle (`irm https://claude.ai/install.ps1 | iex`) kurar, PATH'e
+ekler ve `claude auth login` ile tarayıcıda girişi başlatır (Pro/Max hesabı gerekir). Giriş bitince kart
+"bağlı" olur ve **Üret**/otomatik mod senaryoları Claude Code ile yazar. **Bağlantıyı test et** kısa bir
+istekle uçtan uca dener; **Claude Code'u aç** bu klasörde etkileşimli oturum açar (masaüstünde
+"Claude Code (Reels)" kısayolu da oluşturulur). Elle: `scripts\install-claude.ps1` · macOS/Linux:
+`bash scripts/install-claude.sh`.
+
 Windows'ta `scripts\setup.ps1` sonunda masaüstüne **Reels Fabrikasi** kısayolu oluşturulur ve uygulama
 Windows açılışında arka planda başlar (otomatik modun çalışması için). Sonradan kurmak/kaldırmak:
 

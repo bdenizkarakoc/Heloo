@@ -30,7 +30,7 @@ from urllib.parse import unquote, urlparse
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from reels import cloud_sync, doctor, log, pipeline  # noqa: E402
+from reels import claude_setup, cloud_sync, doctor, log, pipeline  # noqa: E402
 from reels.config import load_config  # noqa: E402
 from reels.job import Job  # noqa: E402
 from reels.util import read_json, write_json  # noqa: E402
@@ -284,6 +284,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/jobs":
             jobs = sorted(Job.all(), key=lambda j: j.state.get("created", ""), reverse=True)[:40]
             return self._json([job_summary(j) for j in jobs])
+        if path == "/api/claude":
+            _caps_cache.clear()  # kurulum/giriş sonrası senaryo sağlayıcısı yeniden belirlensin
+            return self._json(claude_setup.status())
         if path == "/api/cloud":
             return self._json(cloud_sync.videos())
         if path.startswith("/api/log/"):
@@ -312,6 +315,12 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"queued": [t]})
         if path == "/api/auto":
             return self._json(FACTORY.save_auto(data))
+        if path == "/api/claude/install":
+            return self._json(claude_setup.open_console("install"))
+        if path == "/api/claude/open":
+            return self._json(claude_setup.open_console("open"))
+        if path == "/api/claude/test":
+            return self._json(claude_setup.test())
         if path == "/api/cloud/sync":
             FACTORY.cloud_wake.set()
             return self._json({"ok": True})
