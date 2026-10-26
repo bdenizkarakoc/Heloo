@@ -1,0 +1,28 @@
+# Gizli bilgiler
+.env
+.env.*
+!.env.example
+
+# Bağımlılıklar ve önbellekler
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+.cache/
+
+# Üretim çıktıları (büyük dosyalar)
+projects/*
+!projects/.gitkeep
+output/videos/*
+output/thumbnails/*
+output/captions/*
+!output/**/.gitkeep
+logs/*
+!logs/.gitkeep
+
+# Kullanıcının müzik kütüphanesi (lisans dosyası hariç)
+assets/music/*
+!assets/music/README.md
+!assets/music/licenses.yaml
+assets/sfx/*
+!assets/sfx/README.md

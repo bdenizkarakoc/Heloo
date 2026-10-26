@@ -1,0 +1,46 @@
+{#- Kelime vurgulamalı altyazılar: bir anda tek grup, konuşulan kelime vurgu rengine geçer. -#}
+{%- set c = brand.colors -%}
+<template>
+  <style>
+    @font-face { font-family: "{{ brand.font_family }}"; src: url("assets/fonts/brand.ttf"); font-weight: 100 900; }
+    #root { position: absolute; inset: 0; overflow: hidden; font-family: "{{ brand.font_family }}", sans-serif; }
+    .cg { position: absolute; inset: 0; opacity: 0; transform-origin: 50% {{ center_y }}px; }
+    .cap-row { position: absolute; left: 0; width: {{ W }}px; text-align: center; white-space: nowrap;
+               line-height: 1; font-weight: 900; letter-spacing: .01em; word-spacing: {{ word_spacing }}em; }
+    .cap-w { display: inline-block; color: {{ c.ink }};
+             -webkit-text-stroke: {{ stroke }}px rgba(5,7,12,.94); paint-order: stroke fill;
+             text-shadow: 0 8px 26px rgba(0,0,0,.5); }
+    .cap-e { color: {{ c.accent2 }}; }
+  </style>
+  <div id="root" data-composition-id="captions" data-width="{{ W }}" data-height="{{ H }}">
+{%- for g in groups %}
+    <div class="cg" id="{{ g.id }}">
+{%- for line in g.lines %}
+      <div class="cap-row" style="top: {{ line.y }}px; font-size: {{ g.size }}px;">
+        {%- for w in line.words %}<span class="cap-w{% if w.emph %} cap-e{% endif %}" id="{{ w.id }}">{{ w.text }}</span>{% if not loop.last %} {% endif %}{% endfor -%}
+      </div>
+{%- endfor %}
+    </div>
+{%- endfor %}
+  </div>
+  <script>
+    (function () {
+      const G = {{ groups_js | tojson }};
+      const ACC = "{{ c.accent }}", INK = "{{ c.ink }}", ACC2 = "{{ c.accent2 }}";
+      const tl = gsap.timeline({ paused: true });
+      G.forEach((g) => {
+        const sel = "#" + g.id;
+        tl.fromTo(sel, { opacity: 0, scale: 0.86, y: 18 },
+                       { opacity: 1, scale: 1, y: 0, duration: 0.14, ease: "back.out(2.2)" }, g.start);
+        g.words.forEach((w) => {
+          const base = w.emph ? ACC2 : INK;
+          tl.to("#" + w.id, { color: w.emph ? ACC2 : ACC, scale: w.emph ? 1.14 : 1.08, duration: 0.08, ease: "power2.out" }, w.start);
+          tl.to("#" + w.id, { color: base, scale: 1, duration: 0.16, ease: "power2.out" }, Math.max(w.start + 0.08, w.end));
+        });
+        tl.to(sel, { opacity: 0, duration: 0.1, ease: "power2.in" }, g.end - 0.1);
+        tl.set(sel, { opacity: 0, visibility: "hidden" }, g.end);
+      });
+      window.__timelines["captions"] = tl;
+    })();
+  </script>
+</template>

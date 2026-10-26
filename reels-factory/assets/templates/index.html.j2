@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width={{ W }}, height={{ H }}" />
+    <title>{{ title }}</title>
+    <script src="assets/vendor/gsap.min.js"></script>
+    <style>
+      @font-face { font-family: "{{ brand.font_family }}"; src: url("assets/fonts/brand.ttf"); font-weight: 100 900; }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { margin: 0; width: {{ W }}px; height: {{ H }}px; overflow: hidden; background: {{ brand.colors.bg }}; }
+      #root { position: relative; width: {{ W }}px; height: {{ H }}px; overflow: hidden; }
+      #ground { position: absolute; inset: 0; background: {{ brand.colors.bg }}; }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="{{ total }}" data-width="{{ W }}" data-height="{{ H }}" data-fps="{{ fps }}">
+      <div id="ground"></div>
+{%- for s in scenes %}
+      <div id="{{ s.id }}" data-composition-id="{{ s.id }}" data-composition-src="compositions/{{ s.id }}.html"
+           data-start="{{ s.start }}" data-duration="{{ s.duration }}" data-track-index="{{ loop.index }}"
+           data-track-kind="graphics" data-width="{{ W }}" data-height="{{ H }}" style="z-index: {{ loop.index }}"></div>
+{%- endfor %}
+{%- if captions %}
+      <div id="captions" data-composition-id="captions" data-composition-src="compositions/captions.html"
+           data-start="0" data-duration="{{ total }}" data-track-index="{{ scenes|length + 1 }}"
+           data-track-kind="captions" data-width="{{ W }}" data-height="{{ H }}" style="z-index: 90"></div>
+{%- endif %}
+      <div id="overlay" data-composition-id="overlay" data-composition-src="compositions/overlay.html"
+           data-start="0" data-duration="{{ total }}" data-track-index="{{ scenes|length + 2 }}"
+           data-track-kind="graphics" data-width="{{ W }}" data-height="{{ H }}" style="z-index: 95"></div>
+    </div>
+    <script>
+      window.__timelines = window.__timelines || {};
+      window.__timelines["main"] = gsap.timeline({ paused: true });
+    </script>
+  </body>
+</html>

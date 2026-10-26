@@ -1,0 +1,13 @@
+{
+  "name": "reels-factory",
+  "private": true,
+  "description": "Otonom AI Reels fabrikası - HyperFrames kompozisyon/render bağımlılıkları",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "gsap": "3.14.2",
+    "hyperframes": "0.8.201"
+  }
+}

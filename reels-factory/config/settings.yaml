@@ -1,0 +1,268 @@
+# =====================================================================
+#  OTONOM AI REELS FABRİKASI — ana ayar dosyası
+#  Gizli bilgiler (API anahtarları) BURAYA YAZILMAZ: .env dosyasını kullanın.
+#  Yollar reels-factory/ klasörüne göredir.
+# =====================================================================
+
+project:
+  language: tr
+  locale: tr-TR
+
+# ---------------------------------------------------------------------
+# Çıktı formatı (Instagram Reels / TikTok / YouTube Shorts)
+# ---------------------------------------------------------------------
+output:
+  width: 1080
+  height: 1920
+  fps: 30
+  container: mp4
+  video_codec: libx264      # H.264
+  pix_fmt: yuv420p
+  crf: 18
+  preset: medium
+  audio_codec: aac
+  audio_bitrate: 192k
+  audio_rate: 48000
+  audio_channels: 2
+  duration:
+    min: 30                 # saniye
+    max: 60
+    target: 45
+    hard_max: 90            # içerik gerektiriyorsa en fazla bu kadar uzayabilir
+
+# ---------------------------------------------------------------------
+# Güvenli alanlar (1080x1920 üzerinde piksel). Platform arayüzleri
+# üstte durum çubuğunu, altta açıklama/kullanıcı adını, sağda butonları gösterir.
+# ---------------------------------------------------------------------
+safe_zone:
+  top: 200                  # bunun üstüne yazı konmaz (durum çubuğu / platform başlığı)
+  text_bottom: 1330         # bunun altına yazı konmaz (açıklama, kullanıcı adı) — yalnızca dekor
+  rail_top: 820             # sağdaki beğen/yorum/paylaş sütununun başladığı yükseklik
+  margin_x: 72              # rail_top üstünde yatay kenar boşluğu (her iki yanda)
+  rail_margin_x: 124        # rail_top altında kenar boşluğu (metin sağ sütuna değmez, ortalı kalır)
+  content_bottom: 1100      # sahne başlıkları/grafikleri bu çizginin üstünde kalır
+  caption_top: 1130         # altyazı bandı
+  caption_bottom: 1330
+
+# ---------------------------------------------------------------------
+# Görsel kimlik — bütün videolarda tutarlı
+# ---------------------------------------------------------------------
+brand:
+  name: "Merak Fabrikası"
+  handle: ""                # ör. "@kanaladi" — boşsa gösterilmez
+  cta: "Takip et, merakın bitmesin"
+  colors:
+    bg: "#0B0F1A"
+    bg2: "#141B2D"
+    ink: "#FFFFFF"
+    muted: "#C9D1E3"
+    accent: "#FFD23F"       # vurgu (sarı)
+    accent2: "#4FD1C5"      # ikincil vurgu (turkuaz)
+    danger: "#FF6B6B"
+  font_file: assets/fonts/Montserrat-VariableFont_wght.ttf
+  font_family: "RF Display"
+
+# ---------------------------------------------------------------------
+# İçerik kategorileri. Sistem bunlar arasından ağırlıklı ve sıralı seçim yapar.
+# visual_providers: sahne görselleri için denenecek kaynak sırası
+# ---------------------------------------------------------------------
+categories:
+  bilim-uzay:
+    label: "Bilim & Uzay"
+    kicker: "UZAY GERÇEKLERİ"
+    weight: 3
+    tone: "meraklı, şaşırtıcı ama kesinlikle doğru; abartısız"
+    audience: "genel izleyici, 16-45 yaş"
+    visual_providers: [agent_media, ai_video, ai_image, nasa, pexels, openverse]
+    music_queries: ["ambient space", "cinematic ambient", "ambient"]
+    seed_topics:
+      - "Venüs'te bir günün bir yıldan uzun olması"
+      - "Ay'ın her yıl Dünya'dan uzaklaşması"
+      - "Satürn'ün halkalarının yaşı ve kalınlığı"
+      - "Güneş ışığının Dünya'ya ulaşma süresi"
+      - "Nötron yıldızlarının yoğunluğu"
+  doga-hayvanlar:
+    label: "Doğa & Hayvanlar"
+    kicker: "DOĞANIN SIRLARI"
+    weight: 2
+    tone: "hayranlık uyandıran, sıcak, bilimsel olarak doğru"
+    audience: "genel izleyici"
+    visual_providers: [agent_media, ai_video, pexels, ai_image, openverse]
+    music_queries: ["ambient nature", "cinematic", "piano ambient"]
+    seed_topics:
+      - "Ahtapotların üç kalbi ve mavi kanı"
+      - "Ağaçların kök ağları üzerinden iletişimi"
+      - "Kutup ayılarının derisinin rengi"
+  tarih:
+    label: "Tarih"
+    kicker: "TARİHTEN BİR AN"
+    weight: 2
+    tone: "hikâye anlatan, merak uyandıran, kaynaklara sadık"
+    audience: "genel izleyici"
+    visual_providers: [agent_media, openverse, ai_image, pexels]
+    music_queries: ["cinematic documentary", "cinematic ambient"]
+    seed_topics:
+      - "Göbeklitepe'nin yaşı ve önemi"
+      - "Kleopatra ile piramitler arasındaki zaman farkı"
+  psikoloji:
+    label: "Psikoloji & Beyin"
+    kicker: "BEYNİN OYUNLARI"
+    weight: 1
+    tone: "anlaşılır, günlük hayata bağlanan, bilimsel kanıta dayalı"
+    audience: "genel izleyici"
+    visual_providers: [agent_media, ai_video, ai_image, pexels, openverse]
+    music_queries: ["lofi", "ambient"]
+    seed_topics:
+      - "Baader-Meinhof (frekans yanılsaması) etkisi"
+      - "Zeigarnik etkisi: yarım kalan işler"
+
+# ---------------------------------------------------------------------
+# Senaryo kuralları (dil modeli bu kurallarla yazar, doğrulayıcı kontrol eder)
+# ---------------------------------------------------------------------
+script:
+  min_scenes: 5
+  max_scenes: 10
+  words_per_second: 2.3      # Türkçe TTS konuşma hızı tahmini (süre kestirimi için)
+  structure:                 # süreye oranla yapılandırılır
+    hook: [0, 3]
+    setup: [3, 10]
+    body: [10, 40]
+    payoff: [40, 60]
+  layouts: [hook, photo, stat, compare, list, fact, outro]
+  transitions: [zoom, whip, iris, wipe, cut]
+  require_sources: true      # her senaryoda en az bir kaynak zorunlu
+
+# ---------------------------------------------------------------------
+# Dil modeli (konu, araştırma, senaryo)
+#  claude_code : Claude Code oturumu senaryoyu yazar (SKILL.md akışı) — anahtar gerekmez
+#  anthropic   : Claude API ile tam otonom çalışma — ANTHROPIC_API_KEY gerekir
+# ---------------------------------------------------------------------
+llm:
+  provider: claude_code
+  anthropic:
+    model: claude-opus-5-5
+    effort: high
+    max_web_searches: 8
+    max_tokens: 32000
+
+# ---------------------------------------------------------------------
+# Seslendirme
+# ---------------------------------------------------------------------
+tts:
+  provider_chain: [edge, elevenlabs, piper]
+  allow_noncommercial: false # true olursa yalnızca ticari olmayan lisanslı sesler (piper tr) de kullanılabilir
+  edge:
+    # Microsoft Edge "Sesli Oku" hizmeti; ücretsiz, anahtar gerektirmez, resmi bir API değildir.
+    voices: [tr-TR-EmelNeural, tr-TR-AhmetNeural]
+    rate: "+6%"
+    pitch: "+0Hz"
+  elevenlabs:
+    voice_id: ""             # ElevenLabs ses kimliği (ör. Türkçe konuşabilen bir ses)
+    model_id: eleven_multilingual_v2
+  piper:
+    model: tr_TR-dfki-medium
+    license: CC-BY-NC-SA-4.0 # ticari kullanım yasak
+  scene_gap: 0.28            # sahneler arası nefes payı (sn)
+  lead_in: 0.15              # videonun başındaki sessizlik (sn)
+  tail: 1.8                  # son cümleden sonra kapanış süresi (sn)
+
+# ---------------------------------------------------------------------
+# Altyazı
+# ---------------------------------------------------------------------
+captions:
+  enabled: true
+  max_words: 3
+  max_chars: 20
+  pause_break: 0.15          # bu kadar duraksamada yeni grup
+  uppercase: true
+  font_size: 78
+  min_font_size: 52
+  highlight_active_word: true
+
+# ---------------------------------------------------------------------
+# Görseller
+# ---------------------------------------------------------------------
+visuals:
+  min_short_side: 720        # bundan küçük görseller elenir
+  candidates_per_scene: 6
+  license_allow: [cc0, pdm, by]   # Openverse: yalnızca ticari kullanım + değişikliğe izin verenler
+  user_agent: "ReelsFactory/0.1 (+https://github.com/; automated short-video generator)"
+  openai:
+    model: gpt-image-1
+    size: 1024x1536
+    quality: medium
+  replicate:
+    image_model: ""          # ör. "black-forest-labs/flux-schnell"
+    video_model: ""          # ör. bir metinden/görselden videoya model; boşsa kullanılmaz
+  pexels:
+    orientation: portrait
+
+# ---------------------------------------------------------------------
+# Müzik ve efektler (telif güvenliği: yalnızca izinli kaynaklar)
+# ---------------------------------------------------------------------
+music:
+  provider_chain: [library, openverse, procedural]
+  license_allow: [cc0, by]
+  min_track_seconds: 40
+  reject_title_words: [vocal, vocals, song, feat, rap, remix, lyrics, singing, sarkı, şarkı]
+  bed_gain_db: -7            # konuşma yokken müzik seviyesi (sesin miksine göre)
+  duck_gain_db: -15          # konuşma sırasında müzik seviyesi (≈ konuşmanın 18-19 dB altı)
+  fade_in: 0.8
+  fade_out: 1.6
+
+sfx:
+  enabled: true
+  library_dirs:
+    - assets/sfx
+    - node_modules/hyperframes/dist/skills/media-use/audio/assets/sfx
+  gain_db: -7
+
+# ---------------------------------------------------------------------
+# Ses miksajı ve loudness hedefleri
+# ---------------------------------------------------------------------
+audio:
+  target_lufs: -14
+  true_peak: -1.5
+  lra: 11
+  voice_lufs: -16
+
+# ---------------------------------------------------------------------
+# Render (HyperFrames)
+# ---------------------------------------------------------------------
+render:
+  engine: hyperframes
+  quality: looks             # HyperFrames kalite profili (CRF output.crf ile ayrıca verilir)
+  workers: 4
+  transition_overlap: 0.4
+  timeout_sec: 1800
+
+# ---------------------------------------------------------------------
+# Kalite kontrol eşikleri
+# ---------------------------------------------------------------------
+qc:
+  loudness_tolerance: 1.5    # LUFS
+  max_av_drift: 0.12         # sn
+  black_min_duration: 0.25
+  freeze_min_duration: 3.0
+  silence_max: 1.2           # sn; daha uzun sessizlik uyarı
+  asr_check: true            # faster-whisper kuruluysa konuşma tanıma ile kontrol
+  asr_model: small
+  max_wer: 0.25
+  max_caption_offset: 0.35   # sn
+  contact_sheet_every: 2.0   # sn
+
+# ---------------------------------------------------------------------
+# Maliyet kontrolü (ücretli API'ler yalnızca anahtar tanımlıysa devreye girer)
+# ---------------------------------------------------------------------
+budget:
+  max_ai_images_per_video: 8
+  max_ai_video_clips_per_video: 4
+  max_paid_tts_chars_per_video: 2500
+  max_llm_calls_per_video: 6
+
+# ---------------------------------------------------------------------
+# Hata yönetimi
+# ---------------------------------------------------------------------
+retry:
+  attempts: 3
+  backoff: 2.0               # 2s, 4s, 8s ...

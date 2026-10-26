@@ -1,0 +1,262 @@
+{#- Tek sahne alt kompozisyonu. Bütün konumlar Python tarafında ölçülüp hesaplanır (compose.py);
+    burada yalnızca yerleştirme ve deterministik GSAP zaman çizelgesi vardır. -#}
+{%- set c = brand.colors -%}
+{%- set P = d.id -%}
+<template>
+  <style>
+    @font-face { font-family: "{{ brand.font_family }}"; src: url("assets/fonts/brand.ttf"); font-weight: 100 900; }
+    #root { position: absolute; inset: 0; overflow: hidden; background: {{ c.bg }};
+            font-family: "{{ brand.font_family }}", sans-serif; color: {{ c.ink }}; }
+    #{{ P }}-stage { position: absolute; inset: 0; overflow: hidden; background: {{ c.bg }}; }
+    #{{ P }}-cam { position: absolute; inset: 0; }
+    .{{ P }}-full { position: absolute; left: 0; top: 0; width: {{ W }}px; height: {{ H }}px; object-fit: cover; }
+    #{{ P }}-ground { position: absolute; inset: 0; background: linear-gradient(160deg, {{ c.bg2 }} 0%, {{ c.bg }} 60%); }
+    .{{ P }}-blob { position: absolute; border-radius: 50%; }
+    .{{ P }}-dot { position: absolute; border-radius: 50%; background: #fff; }
+    #{{ P }}-shade { position: absolute; inset: 0; pointer-events: none;
+      background:
+        linear-gradient(180deg, rgba(5,7,12,{{ d.shade_top }}) 0%, rgba(5,7,12,0) 40%),
+        linear-gradient(0deg, rgba(5,7,12,{{ d.shade_bottom }}) 0%, rgba(5,7,12,0) 46%),
+        rgba(5,7,12,{{ d.shade_all }}); }
+    #{{ P }}-card { position: absolute; overflow: hidden; border-radius: 36px;
+      box-shadow: 0 34px 90px rgba(0,0,0,.6), 0 0 0 2px rgba(255,255,255,.10); background: #000; }
+    #{{ P }}-cardin { position: absolute; inset: 0; }
+    #{{ P }}-cardin > img, #{{ P }}-cardin > video { position: absolute; left: 0; top: 0; width: 100%; height: 100%; object-fit: cover; }
+    .{{ P }}-row { position: absolute; left: 0; width: {{ W }}px; text-align: center; white-space: nowrap; }
+    .{{ P }}-w { display: inline-block; }
+    .{{ P }}-hl { color: {{ c.accent }}; }
+    .{{ P }}-hl2 { color: {{ c.accent2 }}; }
+    .{{ P }}-chip { display: inline-block; padding: 16px 30px 15px; border-radius: 999px; background: {{ c.accent }};
+      color: {{ c.bg }}; font-weight: 800; letter-spacing: .08em; }
+    .{{ P }}-ghost { display: inline-block; padding: 14px 28px 13px; border-radius: 999px;
+      background: rgba(255,255,255,.12); color: {{ c.ink }}; font-weight: 750; letter-spacing: .06em;
+      box-shadow: inset 0 0 0 2px rgba(255,255,255,.22); }
+    .{{ P }}-track { position: absolute; border-radius: 999px; background: rgba(255,255,255,.14); overflow: hidden; }
+    .{{ P }}-fill { position: absolute; left: 0; top: 0; height: 100%; border-radius: 999px; transform-origin: 0 50%; }
+    .{{ P }}-num { font-weight: 900; font-variant-numeric: tabular-nums; line-height: 1; }
+    .{{ P }}-item { position: absolute; border-radius: 28px; background: rgba(12,16,28,.72);
+      box-shadow: inset 0 0 0 2px rgba(255,255,255,.10), 0 18px 40px rgba(0,0,0,.35); }
+    .{{ P }}-badge { position: absolute; border-radius: 50%; background: {{ c.accent }}; color: {{ c.bg }};
+      font-weight: 900; text-align: center; }
+    .{{ P }}-itemtext { position: absolute; font-weight: 750; white-space: nowrap; }
+    #{{ P }}-dip { position: absolute; inset: 0; background: #000; opacity: 0; pointer-events: none; }
+    #{{ P }}-wipebar { position: absolute; left: 0; width: {{ W }}px; height: 22px; background: {{ c.accent }}; opacity: 0; }
+  </style>
+
+  <div id="root" data-composition-id="{{ P }}" data-width="{{ W }}" data-height="{{ H }}">
+    <div id="{{ P }}-stage">
+      <div id="{{ P }}-cam">
+{%- if d.bg.type == "graphic" or d.bg.fit == "card" %}
+        <div id="{{ P }}-ground"></div>
+{%- endif %}
+{%- if d.bg.type == "graphic" %}
+{%- for b in d.blobs %}
+        <div class="{{ P }}-blob" id="{{ P }}-blob{{ loop.index0 }}" style="left: {{ b.x }}px; top: {{ b.y }}px; width: {{ b.r }}px; height: {{ b.r }}px; background: radial-gradient(circle, {{ b.color }} 0%, rgba(0,0,0,0) 68%);"></div>
+{%- endfor %}
+{%- for p in d.dots %}
+        <div class="{{ P }}-dot" id="{{ P }}-dot{{ loop.index0 }}" style="left: {{ p.x }}px; top: {{ p.y }}px; width: {{ p.r }}px; height: {{ p.r }}px; opacity: {{ p.a }};"></div>
+{%- endfor %}
+{%- elif d.bg.fit == "card" %}
+        <img class="{{ P }}-full" src="assets/media/{{ d.bg.bgsrc }}" alt="" />
+{%- elif d.bg.fit == "contain" and d.bg.type == "photo" %}
+        <div id="{{ P }}-ground"></div>
+        <img class="{{ P }}-full" src="assets/media/{{ d.bg.bgsrc }}" alt="" style="opacity: .28;" />
+{%- for p in d.dots %}
+        <div class="{{ P }}-dot" id="{{ P }}-dot{{ loop.index0 }}" style="left: {{ p.x }}px; top: {{ p.y }}px; width: {{ p.r }}px; height: {{ p.r }}px; opacity: {{ p.a }};"></div>
+{%- endfor %}
+        <div style="position: absolute; left: {{ d.contain.x }}px; top: {{ d.contain.y }}px; width: {{ d.contain.w }}px; height: {{ d.contain.h }}px;
+                    -webkit-mask-image: linear-gradient(180deg, transparent 0%, #000 16%, #000 84%, transparent 100%);
+                    mask-image: linear-gradient(180deg, transparent 0%, #000 16%, #000 84%, transparent 100%);">
+          <img src="assets/media/{{ d.bg.src }}" alt="" style="position: absolute; left: 0; top: 0; width: 100%; height: 100%; object-fit: cover;" />
+        </div>
+{%- elif d.bg.type == "video" %}
+        <video id="{{ P }}-vid" class="{{ P }}-full clip" src="assets/media/{{ d.bg.src }}" data-start="0" data-duration="{{ d.dur }}" muted playsinline></video>
+{%- else %}
+        <img class="{{ P }}-full" src="assets/media/{{ d.bg.src if not d.bg.dim else d.bg.bgsrc }}" alt="" />
+{%- endif %}
+      </div>
+      <div id="{{ P }}-shade"></div>
+{%- if d.bg.fit == "card" %}
+      <div id="{{ P }}-card" style="left: {{ d.card.x }}px; top: {{ d.card.y }}px; width: {{ d.card.w }}px; height: {{ d.card.h }}px;">
+        <div id="{{ P }}-cardin">
+{%- if d.bg.type == "video" %}
+          <video id="{{ P }}-vid" class="clip" src="assets/media/{{ d.bg.src }}" data-start="0" data-duration="{{ d.dur }}" muted playsinline></video>
+{%- else %}
+          <img src="assets/media/{{ d.bg.src }}" alt="" />
+{%- endif %}
+        </div>
+      </div>
+{%- endif %}
+
+{#- ---------- Metin blokları (chip + satırlar) ---------- #}
+{%- for chip in d.chips %}
+      <div class="{{ P }}-row" style="top: {{ chip.y }}px;"><span id="{{ chip.id }}" class="{{ P }}-{{ chip.style }}" style="font-size: {{ chip.size }}px;">{{ chip.text }}</span></div>
+{%- endfor %}
+{%- for blk in d.blocks %}
+{%- for line in blk.lines %}
+      <div id="{{ line.id }}" class="{{ P }}-row" style="top: {{ line.y }}px; font-size: {{ blk.size }}px; font-weight: {{ blk.weight }}; letter-spacing: {{ blk.ls }}em; line-height: 1;">
+        {%- for w in line.words %}<span id="{{ w.id }}" class="{{ P }}-w{% if w.hl %} {{ P }}-{{ w.hl }}{% endif %}">{{ w.text }}</span>{% if not loop.last %} {% endif %}{% endfor -%}
+      </div>
+{%- endfor %}
+{%- endfor %}
+
+{#- ---------- stat ---------- #}
+{%- if d.stat %}
+      <div class="{{ P }}-row {{ P }}-num" style="top: {{ d.stat.y }}px; font-size: {{ d.stat.size }}px; color: {{ c.accent }};"><span id="{{ P }}-num" class="{{ P }}-w">{{ d.stat.start_text }}</span></div>
+      <div class="{{ P }}-track" id="{{ P }}-track" style="left: {{ d.stat.bar.x }}px; top: {{ d.stat.bar.y }}px; width: {{ d.stat.bar.w }}px; height: {{ d.stat.bar.h }}px;">
+        <div class="{{ P }}-fill" id="{{ P }}-fill" style="width: 100%; background: linear-gradient(90deg, {{ c.accent }}, {{ c.accent2 }});"></div>
+      </div>
+{%- endif %}
+
+{#- ---------- compare ---------- #}
+{%- for it in d.compare %}
+      <div class="{{ P }}-itemtext" id="{{ it.id }}-label" style="left: {{ it.x }}px; top: {{ it.label_y }}px; font-size: {{ it.label_size }}px;">{{ it.label }}</div>
+      <div class="{{ P }}-itemtext {{ P }}-num" id="{{ it.id }}-val" style="left: {{ it.x }}px; width: {{ it.w }}px; text-align: right; top: {{ it.val_y }}px; font-size: {{ it.val_size }}px; color: {{ it.color }};"><span id="{{ it.id }}-valtext">{{ it.start_text }}</span></div>
+      <div class="{{ P }}-track" id="{{ it.id }}-track" style="left: {{ it.x }}px; top: {{ it.bar_y }}px; width: {{ it.w }}px; height: {{ it.bar_h }}px;">
+        <div class="{{ P }}-fill" id="{{ it.id }}-fill" style="width: {{ it.fill_w }}px; background: {{ it.color }};"></div>
+      </div>
+{%- endfor %}
+
+{#- ---------- list ---------- #}
+{%- for it in d.list_items %}
+      <div class="{{ P }}-item" id="{{ it.id }}" style="left: {{ it.x }}px; top: {{ it.y }}px; width: {{ it.w }}px; height: {{ it.h }}px;">
+        <div class="{{ P }}-badge" style="left: 24px; top: {{ (it.h - 76) // 2 }}px; width: 76px; height: 76px; line-height: 78px; font-size: 40px;">{{ loop.index }}</div>
+        <div class="{{ P }}-itemtext" style="left: 124px; top: {{ (it.h - it.size) // 2 }}px; font-size: {{ it.size }}px; line-height: 1;">{{ it.text }}</div>
+      </div>
+{%- endfor %}
+
+{%- if d.enter == "wipe" %}
+      <div id="{{ P }}-wipebar" style="top: {{ H }}px;"></div>
+{%- endif %}
+      <div id="{{ P }}-dip"></div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      const D = {{ d.js | tojson }};
+      const P = D.id;
+      const $ = (s) => "#" + P + "-" + s;
+      const tl = gsap.timeline({ paused: true });
+
+      /* ---- Arka plan kamera hareketi (bütün sahne boyunca, kesintisiz) ---- */
+      const mv = D.move;
+      tl.fromTo($("cam"), { scale: mv.s0, x: mv.x0, y: mv.y0 },
+                          { scale: mv.s1, x: mv.x1, y: mv.y1, duration: D.dur, ease: "sine.inOut" }, 0);
+      if (D.card) {
+        tl.fromTo($("card"), { y: 60, scale: 0.94, opacity: 0 },
+                             { y: 0, scale: 1, opacity: 1, duration: 0.7, ease: "expo.out" }, D.t0);
+        tl.fromTo($("cardin"), { scale: 1.0 }, { scale: 1.09, duration: D.dur, ease: "none" }, 0);
+      }
+      (D.blobs || []).forEach((b, i) => {
+        tl.fromTo($("blob" + i), { x: 0, y: 0 }, { x: b.dx, y: b.dy, duration: D.dur, ease: "sine.inOut" }, 0);
+      });
+      (D.dots || []).forEach((p, i) => {
+        tl.fromTo($("dot" + i), { y: 0 }, { y: -p.rise, duration: D.dur, ease: "none" }, 0);
+      });
+
+      /* ---- Giriş geçişi ---- */
+      const ov = D.overlap;
+      if (D.enter === "zoom") {
+        tl.fromTo($("stage"), { scale: 1.28, opacity: 0, filter: "blur(18px)" },
+                              { scale: 1, opacity: 1, filter: "blur(0px)", duration: ov + 0.08, ease: "expo.out" }, 0);
+      } else if (D.enter === "whip") {
+        tl.fromTo($("stage"), { x: D.W, filter: "blur(26px)" },
+                              { x: 0, filter: "blur(0px)", duration: ov, ease: "power3.out" }, 0);
+      } else if (D.enter === "iris") {
+        tl.fromTo($("stage"), { clipPath: "circle(0% at 50% 40%)" },
+                              { clipPath: "circle(120% at 50% 40%)", duration: ov + 0.15, ease: "power2.inOut" }, 0);
+      } else if (D.enter === "wipe") {
+        tl.fromTo($("stage"), { clipPath: "inset(100% 0% 0% 0%)" },
+                              { clipPath: "inset(0% 0% 0% 0%)", duration: ov + 0.1, ease: "power3.inOut" }, 0);
+        tl.fromTo($("wipebar"), { y: 0, opacity: 1 },
+                                { y: -D.H - 22, opacity: 1, duration: ov + 0.1, ease: "power3.inOut" }, 0);
+        tl.set($("wipebar"), { opacity: 0 }, ov + 0.12);
+      }
+
+      /* ---- Çıkış (bir sonraki sahnenin girişine eşlenir) ---- */
+      if (D.exit_at !== null) {
+        const e = D.exit_at, nx = D.exit;
+        if (nx === "zoom") {
+          tl.to($("stage"), { scale: 1.14, filter: "blur(10px)", duration: ov, ease: "power2.in" }, e);
+        } else if (nx === "whip") {
+          tl.to($("stage"), { x: -380, filter: "blur(16px)", duration: ov * 0.9, ease: "power3.in" }, e);
+        } else if (nx === "iris") {
+          tl.to($("stage"), { scale: 1.06, duration: ov + 0.15, ease: "power2.in" }, e);
+          tl.to($("dip"), { opacity: 0.35, duration: ov + 0.15, ease: "power1.in" }, e);
+        } else if (nx === "wipe") {
+          tl.to($("dip"), { opacity: 0.45, duration: ov, ease: "power1.in" }, e);
+        } else {
+          tl.to($("dip"), { opacity: 0.4, duration: 0.1, ease: "none" }, Math.max(0, e - 0.1));
+        }
+      }
+
+      /* ---- Metin girişleri ---- */
+      (D.chips || []).forEach((ch) => {
+        if (ch.static) return;
+        tl.fromTo("#" + ch.id, { clipPath: "inset(0% 100% 0% 0%)", x: -24 },
+                               { clipPath: "inset(0% 0% 0% 0%)", x: 0, duration: 0.45, ease: "power3.out" }, ch.t);
+      });
+      (D.blocks || []).forEach((blk) => {
+        if (blk.mode === "punch") {  /* ilk karede görünür; satır bütün olarak oturur (kapak karesi) */
+          blk.lines.forEach((l) => {
+            tl.fromTo("#" + l, { scale: 1.05 }, { scale: 1, duration: 0.6, ease: "expo.out" }, 0);
+          });
+        }
+        blk.words.forEach((w, i) => {
+          if (blk.mode === "static" || blk.mode === "punch") return;
+          if (blk.mode === "rise") {
+            tl.fromTo("#" + w, { opacity: 0, y: 34 },
+                               { opacity: 1, y: 0, duration: 0.5, ease: "expo.out" }, blk.t + i * blk.stagger);
+          } else {
+            tl.fromTo("#" + w, { opacity: 0, filter: "blur(8px)" },
+                               { opacity: 1, filter: "blur(0px)", duration: 0.16, ease: "power2.out" }, blk.t + i * blk.stagger);
+          }
+        });
+        (blk.pops || []).forEach((p) => {
+          tl.fromTo("#" + p.id, { scale: 1 }, { scale: 1.08, duration: 0.14, ease: "power2.out" }, p.t);
+          tl.to("#" + p.id, { scale: 1, duration: 0.32, ease: "back.out(2)" }, p.t + 0.14);
+        });
+      });
+
+      /* ---- Sayaç (stat) ---- */
+      const fmt = (v, dec) => {
+        const fixed = Math.abs(v).toFixed(dec);
+        const parts = fixed.split(".");
+        parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+        return (v < 0 ? "-" : "") + parts.join(",");
+      };
+      if (D.stat) {
+        const s = D.stat, num = document.querySelector($("num")), o = { v: 0 };
+        tl.fromTo($("num"), { opacity: 0, scale: 0.7 }, { opacity: 1, scale: 1, duration: 0.5, ease: "back.out(1.6)" }, s.t - 0.2);
+        tl.to(o, { v: s.value, duration: s.count_dur, ease: "power2.out",
+                   onUpdate: () => { num.textContent = s.prefix + fmt(o.v, s.decimals) + s.suffix; } }, s.t);
+        tl.set(o, { v: s.value, onComplete: () => { num.textContent = s.prefix + fmt(s.value, s.decimals) + s.suffix; } }, s.t + s.count_dur);
+        tl.fromTo($("fill"), { scaleX: 0 }, { scaleX: 1, duration: s.count_dur, ease: "power2.out" }, s.t);
+        tl.fromTo($("track"), { opacity: 0 }, { opacity: 1, duration: 0.3 }, s.t - 0.2);
+        tl.fromTo($("num"), { scale: 1 }, { scale: 1.08, duration: 0.12, ease: "power2.out" }, s.t + s.count_dur);
+        tl.to($("num"), { scale: 1, duration: 0.35, ease: "back.out(2)" }, s.t + s.count_dur + 0.12);
+      }
+
+      /* ---- Karşılaştırma çubukları ---- */
+      (D.compare || []).forEach((it) => {
+        const el = document.querySelector("#" + it.id + "-valtext"), o = { v: 0 };
+        tl.fromTo("#" + it.id + "-label", { opacity: 0, x: -30 }, { opacity: 1, x: 0, duration: 0.45, ease: "expo.out" }, it.t - 0.25);
+        tl.fromTo("#" + it.id + "-track", { opacity: 0 }, { opacity: 1, duration: 0.3 }, it.t - 0.25);
+        tl.fromTo("#" + it.id + "-val", { opacity: 0 }, { opacity: 1, duration: 0.3 }, it.t - 0.1);
+        tl.fromTo("#" + it.id + "-fill", { scaleX: 0 }, { scaleX: 1, duration: 1.0, ease: "power3.out" }, it.t);
+        tl.to(o, { v: it.value, duration: 1.0, ease: "power3.out",
+                   onUpdate: () => { el.textContent = fmt(o.v, it.decimals) + it.suffix; } }, it.t);
+        tl.set(o, { v: it.value, onComplete: () => { el.textContent = it.display; } }, it.t + 1.0);
+      });
+
+      /* ---- Liste maddeleri ---- */
+      (D.items || []).forEach((it) => {
+        tl.fromTo("#" + it.id, { opacity: 0, x: 70, filter: "blur(6px)" },
+                               { opacity: 1, x: 0, filter: "blur(0px)", duration: 0.55, ease: "expo.out" }, it.t);
+      });
+
+      window.__timelines["{{ P }}"] = tl;
+    })();
+  </script>
+</template>

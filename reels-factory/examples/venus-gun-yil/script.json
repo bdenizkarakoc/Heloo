@@ -1,0 +1,255 @@
+{
+  "title": "Venüs'te Bir Gün, Bir Yıldan Uzun",
+  "category": "bilim-uzay",
+  "summary": "Venüs'ün kendi ekseni etrafındaki dönüşü (243 Dünya günü) Güneş etrafındaki turundan (yaklaşık 225 gün) uzundur; ters yönde döndüğü için iki gün doğumu arası ise yaklaşık 117 gündür.",
+  "music": {
+    "queries": [
+      "ambient space",
+      "cinematic ambient",
+      "ambient"
+    ]
+  },
+  "scenes": [
+    {
+      "id": "s1",
+      "role": "hook",
+      "layout": "hook",
+      "narration": "Venüs'te bir gün, bir yıldan daha uzun sürer.",
+      "on_screen": {
+        "kicker": "Uzay gerçekleri",
+        "headline": "Bir gün, bir yıldan uzun",
+        "highlight": [
+          "gün",
+          "yıldan"
+        ]
+      },
+      "visual": {
+        "kind": "photo",
+        "query": "Venus Mariner 10",
+        "prompt": "Planet Venus in space, thick pale yellow clouds, cinematic, photorealistic",
+        "providers": [
+          "nasa"
+        ],
+        "pick": "nasa:0",
+        "crop": [
+          0.515,
+          0,
+          1,
+          1
+        ],
+        "fit": "contain",
+        "align": "bottom"
+      },
+      "emphasis": [
+        "gün",
+        "yıldan"
+      ]
+    },
+    {
+      "id": "s2",
+      "role": "setup",
+      "layout": "photo",
+      "narration": "Güneş'e en yakın ikinci gezegen olan Venüs, Dünya'yla neredeyse aynı büyüklükte. Ama asıl tuhaflığı, kendi etrafında dönüşünde saklı.",
+      "on_screen": {
+        "label": "Güneş'e en yakın 2. gezegen",
+        "headline": "Dünya'nın neredeyse ikizi",
+        "highlight": [
+          "ikizi"
+        ]
+      },
+      "visual": {
+        "kind": "photo",
+        "query": "Venus globe Magellan",
+        "prompt": "Venus and Earth side by side in space, scale comparison, photorealistic",
+        "providers": [
+          "nasa"
+        ],
+        "pick": "nasa:3",
+        "fit": "contain",
+        "align": "bottom"
+      },
+      "emphasis": [
+        "tuhaflığı"
+      ],
+      "transition": "zoom"
+    },
+    {
+      "id": "s3",
+      "role": "body",
+      "layout": "stat",
+      "narration": "Venüs, kendi ekseni etrafında tek bir turu tam 243 Dünya gününde tamamlar.",
+      "on_screen": {
+        "label": "Kendi ekseni etrafında 1 tur",
+        "value": 243,
+        "unit": "Dünya günü",
+        "cue": "243"
+      },
+      "visual": {
+        "kind": "photo",
+        "query": "Venus surface Magellan radar",
+        "prompt": "Volcanic surface of Venus under orange haze"
+      },
+      "emphasis": [
+        "243"
+      ],
+      "transition": "whip"
+    },
+    {
+      "id": "s4",
+      "role": "body",
+      "layout": "compare",
+      "narration": "Güneş'in etrafındaki turu ise yaklaşık 225 gün sürer. Yani Venüs, kendi etrafında bir kez bile dönemeden yılını tamamlar.",
+      "on_screen": {
+        "title": "Venüs'te zaman",
+        "items": [
+          {
+            "label": "Bir dönüş",
+            "value": 243,
+            "suffix": " gün"
+          },
+          {
+            "label": "Bir yıl",
+            "value": 225,
+            "suffix": " gün"
+          }
+        ],
+        "cues": [
+          "Güneş'in",
+          "225"
+        ],
+        "note": "Gün > Yıl"
+      },
+      "visual": {
+        "kind": "graphic"
+      },
+      "emphasis": [
+        "225",
+        "yılını"
+      ],
+      "transition": "wipe"
+    },
+    {
+      "id": "s5",
+      "role": "body",
+      "layout": "photo",
+      "narration": "Üstelik Venüs, çoğu gezegenin tersine döner. Bu yüzden orada Güneş batıdan doğar, doğudan batar.",
+      "on_screen": {
+        "label": "Ters yönde dönüş",
+        "headline": "Güneş batıdan doğar",
+        "highlight": [
+          "batıdan"
+        ]
+      },
+      "visual": {
+        "kind": "photo",
+        "query": "Hemispheric View of Venus",
+        "prompt": "Sunrise over the cloudy horizon of Venus",
+        "providers": [
+          "nasa"
+        ],
+        "pick": "nasa:3",
+        "fit": "cover"
+      },
+      "emphasis": [
+        "tersine",
+        "batıdan"
+      ],
+      "transition": "iris"
+    },
+    {
+      "id": "s6",
+      "role": "payoff",
+      "layout": "stat",
+      "narration": "Peki, bir gün doğumundan diğerine ne kadar zaman geçer? Yaklaşık 117 Dünya günü. Çünkü Venüs ters yönde dönerken, aynı anda Güneş'in etrafında da ilerler.",
+      "on_screen": {
+        "label": "İki gün doğumu arası",
+        "value": 117,
+        "unit": "Dünya günü",
+        "cue": "117"
+      },
+      "visual": {
+        "kind": "photo",
+        "query": "Venus transit Sun SDO",
+        "prompt": "The Sun rising behind a cloudy planet",
+        "providers": [
+          "nasa"
+        ],
+        "pick": "nasa:4",
+        "fit": "cover"
+      },
+      "emphasis": [
+        "117"
+      ],
+      "transition": "cut"
+    },
+    {
+      "id": "s7",
+      "role": "outro",
+      "layout": "outro",
+      "narration": "Yani Venüs'te bir günün uzunluğu, hangi günü sorduğuna göre değişir. Uzayın tuhaf gerçekleri için takipte kal.",
+      "on_screen": {
+        "headline": "Hangi gün? 243 mü, 117 mi?",
+        "highlight": [
+          "243",
+          "117"
+        ],
+        "cta": "Takip et, merakın bitmesin"
+      },
+      "visual": {
+        "kind": "photo",
+        "reuse": "s1",
+        "fit": "contain",
+        "align": "bottom"
+      },
+      "emphasis": [
+        "değişir"
+      ],
+      "transition": "whip"
+    }
+  ],
+  "sources": [
+    {
+      "title": "Venus Fact Sheet",
+      "publisher": "NASA NSSDCA",
+      "url": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/venusfact.html"
+    },
+    {
+      "title": "Venus: Facts",
+      "publisher": "NASA Science",
+      "url": "https://science.nasa.gov/venus/venus-facts/"
+    }
+  ],
+  "facts": [
+    {
+      "claim": "Venüs'ün yıldız günü (kendi ekseni etrafında bir tur) 5832,6 saat ≈ 243 Dünya günüdür ve dönüş ters yöndedir.",
+      "source": 0
+    },
+    {
+      "claim": "Venüs'ün Güneş etrafındaki yörünge dönemi 224,7 Dünya günüdür (≈225).",
+      "source": 0
+    },
+    {
+      "claim": "Venüs'te güneş günü 2802 saat ≈ 117 Dünya günüdür.",
+      "source": 0
+    },
+    {
+      "claim": "Venüs'te Güneş batıdan doğar, doğudan batar.",
+      "source": 1
+    },
+    {
+      "claim": "Venüs, Güneş'e en yakın ikinci gezegendir ve boyutça Dünya'ya çok benzer (yarıçap oranı 0,949).",
+      "source": 0
+    }
+  ],
+  "post": {
+    "caption": "Venüs'te bir gün, bir yıldan uzun! 🌕 Kendi etrafında 243, Güneş etrafında yaklaşık 225 günde dönüyor. Ama iki gün doğumu arası sadece ~117 gün. Hangi 'gün'ü sorduğuna bağlı!",
+    "hashtags": [
+      "uzay",
+      "venüs",
+      "bilim",
+      "astronomi",
+      "bilgi",
+      "reels"
+    ]
+  }
+}

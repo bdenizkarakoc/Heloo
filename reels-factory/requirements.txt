@@ -1,0 +1,13 @@
+# Zorunlu
+PyYAML>=6.0
+requests>=2.31
+numpy>=1.26
+Pillow>=10.0
+Jinja2>=3.1
+edge-tts>=7.0
+
+# İsteğe bağlı (kalite kontrolünde konuşma tanıma / anlaşılırlık ölçümü)
+faster-whisper>=1.0
+
+# İsteğe bağlı (tam otonom mod: konu, araştırma ve senaryo için Claude API)
+anthropic>=0.40

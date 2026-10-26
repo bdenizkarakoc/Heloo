@@ -1,0 +1,135 @@
+{
+  "passed": true,
+  "errors": 0,
+  "warnings": 0,
+  "fixes": [],
+  "checks": [
+    {
+      "name": "dosya_aciliyor",
+      "ok": true,
+      "severity": "error",
+      "detail": "video akışı bulundu"
+    },
+    {
+      "name": "cozunurluk",
+      "ok": true,
+      "severity": "error",
+      "detail": "1080x1920",
+      "fix": "reencode"
+    },
+    {
+      "name": "dikey_format",
+      "ok": true,
+      "severity": "error",
+      "detail": "1080x1920"
+    },
+    {
+      "name": "kare_hizi",
+      "ok": true,
+      "severity": "error",
+      "detail": "30.000 fps",
+      "fix": "reencode"
+    },
+    {
+      "name": "video_codec",
+      "ok": true,
+      "severity": "error",
+      "detail": "h264 yuv420p",
+      "fix": "reencode"
+    },
+    {
+      "name": "ses_var",
+      "ok": true,
+      "severity": "error",
+      "detail": "aac"
+    },
+    {
+      "name": "ses_codec",
+      "ok": true,
+      "severity": "error",
+      "detail": "aac 48000 Hz 2 kanal",
+      "fix": "remux"
+    },
+    {
+      "name": "av_sure_uyumu",
+      "ok": true,
+      "severity": "error",
+      "detail": "video 52.70 sn / ses 52.70 sn (fark 0.001)",
+      "fix": "remux"
+    },
+    {
+      "name": "toplam_sure_beklenen",
+      "ok": true,
+      "severity": "error",
+      "detail": "52.70 sn (beklenen 52.70)"
+    },
+    {
+      "name": "sure_araligi",
+      "ok": true,
+      "severity": "warn",
+      "detail": "52.7 sn (hedef 30-60)"
+    },
+    {
+      "name": "ses_seviyesi",
+      "ok": true,
+      "severity": "error",
+      "detail": "-14.1 LUFS (hedef -14), true peak -1.5 dBTP",
+      "fix": "loudness",
+      "lufs": -14.11,
+      "tp": -1.49
+    },
+    {
+      "name": "bozuk_kare_yok",
+      "ok": true,
+      "severity": "error",
+      "detail": "çözümleme temiz"
+    },
+    {
+      "name": "siyah_ekran_yok",
+      "ok": true,
+      "severity": "error",
+      "detail": "yok",
+      "spans": []
+    },
+    {
+      "name": "hareketsiz_bolum_yok",
+      "ok": true,
+      "severity": "warn",
+      "detail": "her sahnede hareket var"
+    },
+    {
+      "name": "gereksiz_sessizlik_yok",
+      "ok": true,
+      "severity": "warn",
+      "detail": "yok"
+    },
+    {
+      "name": "son_bolum_tam",
+      "ok": true,
+      "severity": "error",
+      "detail": "son kelime 50.77 sn'de bitiyor; video 52.70 sn (pay 1.93 sn)"
+    },
+    {
+      "name": "guvenli_alan",
+      "ok": true,
+      "severity": "error",
+      "detail": "bütün yazılar platform arayüzlerinin dışında"
+    },
+    {
+      "name": "anlasilirlik_asr",
+      "ok": true,
+      "severity": "warn",
+      "detail": "kelime eşleşme hatası (WER≈) 6% — 110/110 kelime tanındı",
+      "wer": 0.064
+    },
+    {
+      "name": "altyazi_ses_senkronu",
+      "ok": true,
+      "severity": "warn",
+      "detail": "medyan sapma 48 ms, %90: 124 ms (103 kelime)",
+      "median_offset": 0.048
+    }
+  ],
+  "contact_sheet": "/home/user/Heloo/reels-factory/projects/20261026-064904-bilim-uzay-b141/qc/contact_sheet.jpg",
+  "manual_review": "Kontak tablosunu inceleyin: görseller senaryoyla uyumlu mu, yazılar okunaklı mı?"
+}
