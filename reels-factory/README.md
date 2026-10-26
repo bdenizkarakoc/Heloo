@@ -218,6 +218,10 @@ reels-factory/
 > **Telif riski kullanıcıdadır**: platformlar telif bildirimiyle videoyu kaldırabilir veya hesaba ihtar verebilir.
 > Şu an bu depoda kullanıcı isteğiyle `any` açıktır.
 >
+> **`music.license_mode`** — aynı mantık müzik için: `any` iken `assets/music/` içindeki her dosya (sanatçı adıyla
+> otomatik eşleşme, `music.file` ile belirli parça) ve Openverse'teki bütün lisanslar kullanılır. Şarkı indirme
+> (YouTube/Spotify vb.) özelliği yoktur; parçaları kendiniz edinip klasöre koyarsınız. Şu an `any` açıktır.
+>
 > Kişi görselleri `visual.subject` ile metin üzerinden doğrulanır (Vikipedi maddesinin ana görseli veya
 > adın başlık/açıklamada bitişik geçmesi); yüz tanıma kullanılmaz.
 

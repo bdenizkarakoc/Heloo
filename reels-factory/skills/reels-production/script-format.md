@@ -38,7 +38,7 @@ Türkçe TTS hızı ≈ 2,3 kelime/sn; 45 sn ≈ 100–110 kelime.
   "title": "Video başlığı (dosya adı buradan üretilir)",
   "category": "settings.yaml'daki kategori kimliği",
   "summary": "Bir cümlelik özet",
-  "music": {"queries": ["ambient space", "cinematic ambient"]},
+  "music": {"queries": ["ambient space", "cinematic ambient"], "file": "isteğe bağlı: assets/music/ içindeki dosya", "subject": "isteğe bağlı: sanatçı adı"},
   "scenes": [ { ...sahne... } ],
   "sources": [{"title": "...", "publisher": "...", "url": "https://..."}],
   "facts": [{"claim": "...", "source": 0}],

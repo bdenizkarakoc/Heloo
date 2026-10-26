@@ -217,6 +217,10 @@ visuals:
 # Müzik ve efektler (telif güvenliği: yalnızca izinli kaynaklar)
 # ---------------------------------------------------------------------
 music:
+  # strict: yalnızca kullanım izni kayıtlı müzik. any: lisans denetlenmez — assets/music/ içindeki her dosya ve
+  # Openverse'teki bütün lisanslar kullanılabilir. Telif riski KULLANICIDADIR (platformlar sesi kapatabilir/kaldırabilir).
+  license_mode: any         # kullanıcı isteğiyle açıldı (2026-10-26); önerilen: strict
+  vocal_duck_gain_db: -24   # sözlü şarkı anlatımın altında bu seviyeye kısılır
   provider_chain: [library, openverse, procedural]
   license_allow: [cc0, by]
   min_track_seconds: 40

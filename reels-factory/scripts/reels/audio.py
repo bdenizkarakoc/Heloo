@@ -81,27 +81,59 @@ def build_voice_track(script: dict, timeline: dict, voice_dir: Path, work: Path,
 # Müzik sağlayıcıları
 # ----------------------------------------------------------------------------
 
-def _music_library(cfg: Config, queries: list[str], work: Path, used: set[str]) -> dict | None:
+def music_license_mode(cfg: Config) -> str:
+    """strict: yalnızca kullanım izni kayıtlı müzik. any: lisans denetlenmez (telif riski kullanıcıda)."""
+    return "any" if str(cfg.get_path("music.license_mode", "strict")).lower() == "any" else "strict"
+
+
+def _norm(text: str) -> str:
+    from .util import tr_lower
+    t = tr_lower(text or "").translate(str.maketrans("çğıöşüâîû_-.", "cgiosuaiu   "))
+    return " ".join(re.sub(r"[^a-z0-9 ]+", " ", t).split())
+
+
+def _music_library(cfg: Config, queries: list[str], work: Path, used: set[str],
+                   want: str | None = None, subject: str | None = None) -> dict | None:
+    """assets/music/ kütüphanesi.
+
+    strict: yalnızca licenses.yaml'da izinli lisansla kayıtlı parçalar.
+    any   : klasördeki bütün ses dosyaları; licenses.yaml bilgisi varsa kullanılır.
+    want  : senaryodaki music.file (dosya adı) — doğrudan o parça.
+    subject: sanatçı/konu adı — dosya adında veya etiketlerinde geçen parçalar öne alınır.
+    """
     folder = ROOT / "assets" / "music"
     lic_file = folder / "licenses.yaml"
-    if not lic_file.exists():
-        return None
-    entries = (yaml.safe_load(lic_file.read_text(encoding="utf-8")) or {}).get("tracks", [])
+    entries = {}
+    if lic_file.exists():
+        for e in (yaml.safe_load(lic_file.read_text(encoding="utf-8")) or {}).get("tracks", []) or []:
+            entries[str(e.get("file", ""))] = e
+    strict = music_license_mode(cfg) == "strict"
     allowed = set(cfg.get_path("music.license_allow", ["cc0", "by"])) | {"owned", "licensed", "royalty-free"}
+    files = sorted(f for f in folder.glob("**/*") if f.suffix.lower() in AUDIO_EXT) if folder.exists() else []
     cands = []
-    for e in entries:
-        f = folder / str(e.get("file", ""))
-        if not f.exists() or str(e.get("license", "")).lower() not in allowed:
+    for f in files:
+        rel = str(f.relative_to(folder))
+        e = entries.get(rel) or entries.get(f.name) or {}
+        lic = str(e.get("license", "")).lower()
+        if strict and lic not in allowed:
             continue
-        moods = " ".join(e.get("mood", [])).lower()
-        score = sum(1 for q in queries for w in q.lower().split() if w in moods)
+        if want and _norm(want) not in (_norm(rel), _norm(f.stem)):
+            continue
+        tags = _norm(" ".join([rel, e.get("title", ""), e.get("artist", ""), " ".join(e.get("mood", []))]))
+        score = sum(1 for q in queries for w in _norm(q).split() if w in tags.split())
+        if subject and _norm(subject) in tags:
+            score += 10
         cands.append((score, f.name in used, f, e))
     if not cands:
+        if want:
+            raise StageError(f"music.file bulunamadı: assets/music/{want}")
         return None
     cands.sort(key=lambda x: (-x[0], x[1]))
     _, _, f, e = cands[0]
-    return {"path": f, "provider": "library", "title": e.get("title", f.stem),
-            "license": e.get("license"), "credit": e.get("credit", ""), "source": e.get("source", "")}
+    return {"path": f, "provider": "library", "title": e.get("title", f.stem), "artist": e.get("artist", ""),
+            "license": e.get("license") or "kayıtlı değil", "license_checked": bool(e.get("license")) or strict,
+            "credit": e.get("credit", ""), "source": e.get("source", ""), "vocals": bool(e.get("vocals", True))
+            if not strict else bool(e.get("vocals", False))}
 
 
 def _looks_vocal(path: Path) -> bool:
@@ -129,10 +161,12 @@ def _music_openverse(cfg: Config, queries: list[str], work: Path, used: set[str]
     reject = [w.lower() for w in cfg.get_path("music.reject_title_words", [])]
     min_ms = 1000 * float(cfg.get_path("music.min_track_seconds", 40))
     for q in queries:
+        strict = music_license_mode(cfg) == "strict"
+        params = {"q": q, "category": "music", "page_size": 20}
+        if strict:
+            params["license"] = allowed
         try:
-            data = retry(3, 2.0)(http_json)(
-                "GET", "https://api.openverse.org/v1/audio/",
-                params={"q": q, "license": allowed, "category": "music", "page_size": 20})
+            data = retry(3, 2.0)(http_json)("GET", "https://api.openverse.org/v1/audio/", params=params)
         except (StageError, TransientError) as exc:
             L.warning("Openverse müzik araması başarısız (%s): %s", q, exc)
             continue
@@ -140,7 +174,7 @@ def _music_openverse(cfg: Config, queries: list[str], work: Path, used: set[str]
             title = (r.get("title") or "").lower()
             if r.get("url") in used or any(w in title for w in reject):
                 continue
-            if (r.get("duration") or 0) < min_ms or r.get("license") not in allowed.split(","):
+            if (r.get("duration") or 0) < min_ms or (strict and r.get("license") not in allowed.split(",")):
                 continue
             ext = (r.get("filetype") or "mp3").replace("mp32", "mp3")
             dest = work / f"music_openverse.{ext if ext in ('mp3', 'ogg', 'wav', 'flac') else 'mp3'}"
@@ -155,7 +189,8 @@ def _music_openverse(cfg: Config, queries: list[str], work: Path, used: set[str]
             return {"path": dest, "provider": "openverse", "title": r.get("title"),
                     "license": f"CC {r.get('license', '').upper()} {r.get('license_version', '')}".strip(),
                     "credit": r.get("attribution") or f"\"{r.get('title')}\" — {r.get('creator')}",
-                    "source": r.get("foreign_landing_url") or r.get("url"), "url": r.get("url")}
+                    "source": r.get("foreign_landing_url") or r.get("url"), "url": r.get("url"),
+                    "license_checked": strict}
     return None
 
 
@@ -199,11 +234,14 @@ def _music_procedural(cfg: Config, queries: list[str], work: Path, used: set[str
             "license": "owned", "credit": "", "source": "generated"}
 
 
-def pick_music(cfg: Config, queries: list[str], work: Path, seconds: float, used: set[str]) -> dict | None:
+def pick_music(cfg: Config, queries: list[str], work: Path, seconds: float, used: set[str],
+               want: str | None = None, subject: str | None = None) -> dict | None:
+    if want:  # senaryo belirli bir parça istediyse yalnızca o (bulunamazsa hata)
+        return _music_library(cfg, queries, work, used, want=want)
     for name in cfg.get_path("music.provider_chain", ["library", "openverse", "procedural"]):
         try:
             if name == "library":
-                res = _music_library(cfg, queries, work, used)
+                res = _music_library(cfg, queries, work, used, subject=subject)
             elif name == "openverse":
                 res = _music_openverse(cfg, queries, work, used)
             elif name == "procedural":
@@ -263,6 +301,8 @@ def build_music_bed(music: dict, voice_wav: Path, total: float, work: Path, cfg:
         act[max(0, i - pre): i + post] = True
     bed_db = float(cfg.get_path("music.bed_gain_db", -8))
     duck_db = float(cfg.get_path("music.duck_gain_db", -17))
+    if music.get("vocals"):  # sözlü şarkı: anlatım sırasında daha derine kıs ki sözler karışmasın
+        duck_db = float(cfg.get_path("music.vocal_duck_gain_db", -24))
     target_db = np.where(act, duck_db, bed_db)
     g = np.empty(frames)
     cur = bed_db

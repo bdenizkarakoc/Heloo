@@ -199,8 +199,14 @@ def stage_music(job: Job, script: dict, tl: dict, cfg: Config) -> dict | None:
     cat = cfg.get_path(f"categories.{job.state['category']}", {})
     queries = (script.get("music") or {}).get("queries") or cat.get("music_queries", ["ambient"])
     recent = {h.get("music") for h in history()[-5:]}
+    mcfg = script.get("music") or {}
+    subject = mcfg.get("subject") or next((sc["visual"].get("subject") for sc in script["scenes"]
+                                            if sc["visual"].get("subject")), None)
     with job.stage("music") as info:
-        music = audio.pick_music(cfg, queries, job.d("audio"), tl["total"], {x for x in recent if x})
+        music = audio.pick_music(cfg, queries, job.d("audio"), tl["total"], {x for x in recent if x},
+                                 want=mcfg.get("file"), subject=subject)
+        if music and not music.get("license_checked", True):
+            job.warn(f"müziğin kullanım hakkı doğrulanmadı ({music.get('title')}) — telif riski kullanıcıda")
         if music:
             music["path"] = str(music["path"])
         write_json(job.dir / "audio" / "music.json", music or {})
@@ -300,13 +306,15 @@ def stage_export(job: Job, script: dict, final: Path, music: dict | None, cfg: C
         lines += [f"- {s.get('title', '')}: {s['url']}" for s in script.get("sources", [])]
         attributions = [c for c in credits if c.get("credit") or "CC" in str(c.get("license", ""))
                         or not c.get("license_checked", True)]
-        if attributions or (music and music.get("provider") == "openverse"):
+        if attributions or (music and (music.get("provider") == "openverse" or not music.get("license_checked", True))):
             lines += ["", "Görsel/müzik atıfları:"]
             lines += [f"- {c['scene']}: {c.get('credit') or c.get('title')} ({c.get('license')}"
                       f"{'' if c.get('license_checked', True) else '; kullanım hakkı doğrulanmadı'}) {c.get('source')}"
                       for c in attributions]
-            if music and music.get("provider") == "openverse":
-                lines.append(f"- Müzik: {music.get('credit')} ({music.get('license')}) {music.get('source')}")
+            if music and (music.get("provider") == "openverse" or not music.get("license_checked", True)):
+                note = "" if music.get("license_checked", True) else "; kullanım hakkı doğrulanmadı"
+                lines.append(f"- Müzik: {music.get('credit') or music.get('title')} ({music.get('license')}{note}) "
+                             f"{music.get('source')}")
         lines += ["", "Bu video yapay zekâ destekli bir üretim hattıyla hazırlanmıştır (seslendirme: sentetik ses)."]
         post = cap_dir / f"{slug}.txt"
         post.write_text("\n".join(lines) + "\n", encoding="utf-8")
