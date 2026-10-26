@@ -12,6 +12,9 @@ edge-tts>=7.0
 # İsteğe bağlı (kalite kontrolünde konuşma tanıma / anlaşılırlık ölçümü)
 faster-whisper>=1.0
 
+# Claude Code / Claude Desktop için MCP sunucusu (app/mcp_server.py)
+mcp>=1.2
+
 # İsteğe bağlı (tam otonom mod: konu, araştırma ve senaryo için Claude API)
 anthropic>=0.40
 

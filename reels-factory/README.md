@@ -328,6 +328,29 @@ görsel ve video** kartına anahtar gir:
 
 Yapay zekâ yalnızca gerçek kaynak bulunamayınca devreye girer (kategori `visual_providers` listesinde en sonda).
 
+## Claude Code MCP sunucuları
+
+`python scripts/factory.py mcp` (kurulum betiği de çalıştırır; uygulamada **📤 Yayın → Ayarlar → MCP sunucularını
+Claude Code'a ekle**) şu sunucuları Claude Code'a kullanıcı kapsamında ekler (`--list` yalnızca gösterir):
+
+| Sunucu | Ne işe yarar | Gerekli |
+|---|---|---|
+| `reels-fabrikasi` (`app/mcp_server.py`) | Video üret, görev durumu/logu, sesi iyileştir, stil öğren, videomu düzenle, kanca puanı, yayın **onay kuyruğuna** ekle | — (uygulama kapalıysa penceresiz başlatır) |
+| `playwright` | Tarayıcı otomasyonu (Instagram/TikTok'ta beğeni/yorum/gezinme için kullanılmaz) | Node.js |
+| `memory` | Oturumlar arası kalıcı bellek (`knowledge/claude-memory.jsonl`) | Node.js |
+| `filesystem` | Yalnızca Heloo klasöründe dosya okuma/yazma | Node.js |
+| `fetch` | URL → markdown | uv (kurulum betiği kurar) |
+| `git` | Heloo deposunda status/diff/commit | uv |
+| `github` | Repo, issue, PR, kod arama | `GITHUB_PAT` ya da Claude Code'da `/mcp` ile giriş |
+| `sentry` | Üretim hataları | Claude Code'da `/mcp` ile giriş |
+| `context7` | Kütüphanelerin güncel dokümanı | `CONTEXT7_API_KEY` varsa uzak, yoksa yerel sürüm |
+| `brave-search` | Web/görsel/video/haber araması | `BRAVE_API_KEY` (ücretsiz) |
+| `postgres` | Salt okunur SQL | `POSTGRES_DSN` |
+
+Anahtarlar `.env`'de tutulur (Yayın → Ayarlar), sonra sunucular Claude Code'un kendi ayarına (`~/.claude.json`)
+yazılır. Claude Desktop için: Ayarlar → Developer → Edit Config içine
+`"reels-fabrikasi": {"command": "python", "args": ["C:\\Users\\<ad>\\Documents\\Heloo\\reels-factory\\app\\mcp_server.py"]}`.
+
 ## Bulutta otomatik çalışma (Claude Code on the web)
 
 Zamanlanmış bir bulut görevi günde iki kez (İstanbul saatiyle ~09:47 ve ~18:47) `cloud/ROUTINE.md`

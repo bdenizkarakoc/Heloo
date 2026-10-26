@@ -190,6 +190,19 @@ def cmd_status(args, cfg) -> int:
     return 0
 
 
+def cmd_mcp(args, cfg) -> int:
+    from reels import mcp_setup
+    if args.list:
+        for name, conf, note in mcp_setup.servers():
+            print(f"{'✔' if conf else '–'} {name:<16} {note}")
+        return 0
+    res = mcp_setup.register()
+    for r in res["rows"]:
+        print(f"{r['status']:<8} {r['name']:<16} {r['note']}")
+    print(res["message"])
+    return 0 if res["ok"] else 1
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Otonom AI Reels Fabrikası")
     ap.add_argument("-v", "--verbose", action="store_true")
@@ -230,6 +243,8 @@ def main() -> int:
     p.add_argument("--target", type=int, default=7)
     p.add_argument("--edl", action="store_true", help="boşluk/dolgu/tekrar kesim listesi")
     p.add_argument("--floor", type=float, default=0.45)
+    p = sub.add_parser("mcp", help="MCP sunucularını Claude Code'a kaydet (reels-fabrikasi, playwright, github...)")
+    p.add_argument("--list", action="store_true", help="yalnızca listele, kaydetme")
     p = sub.add_parser("status", help="görev durumları")
     p.add_argument("job", nargs="?")
     args = ap.parse_args()
@@ -238,7 +253,7 @@ def main() -> int:
     cfg = load_config()
     handlers = {"doctor": cmd_doctor, "new": cmd_new, "validate": cmd_validate, "produce": cmd_produce,
                 "run": cmd_run, "status": cmd_status, "candidates": cmd_candidates, "selftest": cmd_selftest,
-                "hook": cmd_hook, "title": cmd_title, "chapters": cmd_chapters}
+                "hook": cmd_hook, "title": cmd_title, "chapters": cmd_chapters, "mcp": cmd_mcp}
     try:
         return handlers[args.cmd](args, cfg)
     except (StageError, FileNotFoundError) as exc:

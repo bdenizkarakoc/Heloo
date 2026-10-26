@@ -16,6 +16,7 @@ python scripts/factory.py run --count N          # tam otonom (Claude API anahta
 python app/server.py --open                      # yerel uygulama (kontrol paneli + otomatik mod; /studio: kendi videonu düzenle)
 python scripts/factory.py hook "..." "..."      # kanca puanı (Türkçe) · title "..." --thumb "..." · chapters x.srt
 python -m graphify update scripts                # kod haritası → scripts/graphify-out/GRAPH_REPORT.md (kodda gezinmeden önce)
+python scripts/factory.py mcp [--list]           # MCP sunucularını Claude Code'a kaydet
 python scripts/factory.py status [<görev>]
 ```
 
@@ -47,6 +48,8 @@ python scripts/factory.py status [<görev>]
 | `skills/youtube-agent/` | YouTube agent skill (MIT, değiştirilmeden): 11 beceri + 6 araç |
 | `scripts/reels/yt_tools.py` | Bu araçların Türkçe uyarlaması: kanca puanı, başlık/kapak denetimi, bölümler, kesim listesi |
 | `scripts/reels/knowledge.py` | Graphify: içerik bilgi haritası (brief → knowledge_map) ve kod haritası |
+| `app/mcp_server.py` | MCP sunucusu (stdio): fabrikayı Claude Code/Desktop'a araç olarak açar; yayın yalnızca onay kuyruğuna |
+| `scripts/reels/mcp_setup.py` | `factory.py mcp`: MCP sunucularını (reels-fabrikasi, playwright, memory, filesystem, fetch, git, github, sentry, context7, brave-search, postgres) Claude Code'a kaydeder |
 | `app/publish.html` | Yayın sayfası (`/publish`) |
 | `app/studio.html` | Stüdyo sayfası (`/studio`): yükleme, stil adlandırma, düzenleme seçenekleri, sonuçlar |
 | `assets/templates/*.j2` | HyperFrames kompozisyon şablonları (sahne, altyazı, üst katman) |

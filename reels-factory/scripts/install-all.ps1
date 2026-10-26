@@ -87,6 +87,8 @@ if ($LASTEXITCODE -ne 0) { Fail "Python paketleri kurulamadi." }
 Ok "requirements.txt"
 python -m pip install -q graphifyy
 if ($LASTEXITCODE -ne 0) { Warn "Graphify (bilgi haritasi) kurulamadi; diger her sey calisir." } else { Ok "Graphify (bilgi haritasi)" }
+python -m pip install -q uv
+if ($LASTEXITCODE -ne 0) { Warn "uv kurulamadi; fetch ve git MCP sunuculari atlanir." } else { Ok "uv (fetch/git MCP sunuculari icin)" }
 
 if (-not $NoVoice) {
   Step "Ses motoru (kendi sesinle seslendirme; PyTorch CPU ~250 MB, bir kez)"
@@ -141,6 +143,11 @@ foreach ($sk in $skills) {
   Copy-Item $sk.FullName $dst -Recurse
 }
 Ok ("Claude Code becerileri: " + $skills.Count + " (/yt-script, /yt-package, /yt-shorts ...)")
+
+# MCP sunuculari (reels-fabrikasi, playwright, memory, filesystem, fetch, git, github, sentry, context7; anahtarliysa brave-search, postgres)
+Step "Claude Code MCP sunuculari"
+python scripts/factory.py mcp
+if ($LASTEXITCODE -ne 0) { Warn "Bazi MCP sunuculari eklenemedi; uygulamada Yayin > Ayarlar > 'MCP sunucularini Claude Code'a ekle' ile tekrar deneyin." }
 
 # ---------------------------------------------------------------- 5. Denetim + kisayollar + baslat
 Step "Ortam denetimi"

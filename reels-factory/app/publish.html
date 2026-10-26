@@ -146,6 +146,16 @@
         <div class="row" style="margin-top:8px"><input id="oaiKey" type="password" placeholder="OpenAI API anahtarı (isteğe bağlı, gpt-image)"><button class="ghost" style="flex:0 0 auto" onclick="saveSecret('OPENAI_API_KEY', 'oaiKey')">Kaydet</button></div>
         <div id="stAi" class="muted" style="margin-top:6px"></div>
       </div>
+      <div class="card">
+        <h2>Claude Code MCP sunucuları</h2>
+        <p class="muted">Claude Code'a araç ekler: <b>reels-fabrikasi</b> (bu uygulama), playwright, memory, filesystem, fetch, git, github, sentry, context7 anahtarsız eklenir (github/sentry: Claude Code'da <code>/mcp</code> ile giriş). Aşağıdakiler isteğe bağlı; girdikten sonra "Kaydet ve ekle"ye basın.</p>
+        <div class="row"><input id="braveKey" type="password" placeholder="Brave Search API anahtarı (ücretsiz)"><button class="ghost" style="flex:0 0 auto" onclick="saveSecret('BRAVE_API_KEY', 'braveKey')">Kaydet</button></div>
+        <div class="row" style="margin-top:8px"><input id="c7Key" type="password" placeholder="Context7 API anahtarı (ücretsiz, isteğe bağlı)"><button class="ghost" style="flex:0 0 auto" onclick="saveSecret('CONTEXT7_API_KEY', 'c7Key')">Kaydet</button></div>
+        <div class="row" style="margin-top:8px"><input id="ghKey" type="password" placeholder="GitHub kişisel erişim belirteci (isteğe bağlı)"><button class="ghost" style="flex:0 0 auto" onclick="saveSecret('GITHUB_PAT', 'ghKey')">Kaydet</button></div>
+        <div class="row" style="margin-top:8px"><input id="pgDsn" type="password" placeholder="Postgres DSN: postgres://kullanici:parola@localhost:5432/db"><button class="ghost" style="flex:0 0 auto" onclick="saveSecret('POSTGRES_DSN', 'pgDsn')">Kaydet</button></div>
+        <div class="row" style="margin-top:8px"><button id="btnMcp" onclick="setupMcp()">MCP sunucularını Claude Code'a ekle</button></div>
+        <div id="stMcp" class="muted" style="margin-top:6px"></div>
+      </div>
     </div>
   </section>
 </main>
@@ -284,7 +294,10 @@ $("btnMetaConnect").onclick = async () => {
   const r = await api("/api/publish/meta/connect", { slug: curSlug(), token: $("metaToken").value, page_id: $("metaPages").value });
   r.error ? flash(r.error) : flash(`Bağlandı: ${r.page}${r.instagram ? " + @" + r.instagram : ""}`); $("metaToken").value = ""; loadChannels(curSlug());
 };
-window.saveSecret = async (name, inputId) => { const r = await api("/api/publish/secret", { name, value: $(inputId).value }); $(inputId).value = ""; r.error ? flash(r.error) : flash("Kaydedildi (.env)"); loadStatus(); };
+async function loadMcp() { try { const r = await (await fetch("/api/mcp")).json(); $("stMcp").textContent = r.map((x) => `${x.ready ? "✓" : "–"} ${x.name}`).join(" · "); } catch (e) { /* uygulama eski sürüm */ } }
+window.setupMcp = async () => { $("btnMcp").disabled = true; $("stMcp").textContent = "Ekleniyor…"; const r = await api("/api/mcp/setup", {}); $("btnMcp").disabled = false; $("stMcp").textContent = (r.rows || []).map((x) => `${x.status === "eklendi" ? "✓" : x.status === "hata" ? "✖" : "–"} ${x.name}: ${x.note}`).join("\n") + "\n" + (r.message || r.error || ""); $("stMcp").style.whiteSpace = "pre-line"; };
+loadMcp();
+window.saveSecret = async (name, inputId) => { const r = await api("/api/publish/secret", { name, value: $(inputId).value }); $(inputId).value = ""; r.error ? flash(r.error) : flash("Kaydedildi (.env)"); loadStatus(); loadMcp(); };
 $("btnYtSave").onclick = async () => { await saveSecret("YOUTUBE_CLIENT_ID", "ytId"); await saveSecret("YOUTUBE_CLIENT_SECRET", "ytSecret"); };
 $("btnYtConnect").onclick = async () => { if (!curSlug()) { flash("Önce kanalı kaydet"); return; } $("btnChSave").click(); location.href = `/api/publish/youtube/start?slug=${encodeURIComponent(curSlug())}`; };
 $("btnTtApp").onclick = async () => { await saveSecret("TIKTOK_CLIENT_KEY", "ttKey"); await saveSecret("TIKTOK_CLIENT_SECRET", "ttSecret"); };

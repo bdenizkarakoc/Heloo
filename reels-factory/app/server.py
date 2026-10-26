@@ -520,6 +520,9 @@ class Handler(BaseHTTPRequestHandler):
             p = self._safe(ROOT / "logs", f"{job_id}.log")
             text = p.read_text(encoding="utf-8", errors="replace") if p and p.exists() else ""
             return self._json({"log": text[-20000:]})
+        if path == "/api/mcp":
+            from reels import mcp_setup
+            return self._json([{"name": n, "ready": bool(c), "note": note} for n, c, note in mcp_setup.servers()])
         if path == "/api/doctor":
             return self._json(doctor.check(load_config(), network=True))
         return self.send_error(404)
@@ -650,6 +653,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(claude_setup.open_console("open"))
         if path == "/api/claude/test":
             return self._json(claude_setup.test())
+        if path == "/api/mcp/setup":  # MCP sunucularını Claude Code'a kaydet
+            from reels import mcp_setup
+            return self._json(mcp_setup.register())
         if path == "/api/cloud/sync":
             FACTORY.cloud_wake.set()
             return self._json({"ok": True})
@@ -720,7 +726,7 @@ class Handler(BaseHTTPRequestHandler):
     # Uygulamadan girilebilecek gizli değerler (başka ad yazılamaz; değerler asla geri gönderilmez)
     SECRET_NAMES = {"YOUTUBE_CLIENT_ID", "YOUTUBE_CLIENT_SECRET", "TIKTOK_CLIENT_KEY", "TIKTOK_CLIENT_SECRET",
                     "TELEGRAM_BOT_TOKEN", "PEXELS_API_KEY", "PIXABAY_API_KEY", "HF_TOKEN", "REPLICATE_API_TOKEN",
-                    "OPENAI_API_KEY"}
+                    "OPENAI_API_KEY", "BRAVE_API_KEY", "CONTEXT7_API_KEY", "GITHUB_PAT", "POSTGRES_DSN"}
 
     def _publish_post(self, action: str, data: dict):
         from reels.config import set_secret
