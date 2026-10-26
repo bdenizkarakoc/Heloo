@@ -16,6 +16,7 @@ import argparse
 import datetime as dt
 import json
 import mimetypes
+import os
 import queue
 import socket
 import sys
@@ -30,7 +31,7 @@ from urllib.parse import unquote, urlparse
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from reels import audience, claude_setup, cloud_sync, doctor, log, pipeline, publish, publish_sources, studio, voice  # noqa: E402
+from reels import audience, claude_setup, notes, cloud_sync, doctor, log, pipeline, publish, publish_sources, studio, voice  # noqa: E402
 from reels.config import load_config  # noqa: E402
 from reels.job import Job  # noqa: E402
 from reels.util import read_json, write_json  # noqa: E402
@@ -90,6 +91,10 @@ class Factory:
                     self.current = None
 
     def _run(self, task: dict) -> None:
+        if task["kind"] == "note":
+            src = studio.download_url(task["url"]) if task.get("url") else studio.UPLOADS / task["file"]
+            notes.make_note(src, task.get("url") or src.name)
+            return
         if task["kind"] == "pub_prepare":
             info = publish_sources.info_for(task["video"])
             it = publish.enqueue(info["video"], task.get("title") or info["title"],
@@ -376,6 +381,8 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith("/channels/"):
             p = self._safe(ROOT / "channels", path[len("/channels/"):])
             return self._file(p) if p and p.suffix.lower() == ".png" else self.send_error(403)
+        if path == "/api/notes":
+            return self._json({"vault": str(notes.vault()), "notes": notes.list_notes()})
         if path == "/api/publish/items":
             items = publish.items()
             for it in items:
@@ -523,6 +530,35 @@ class Handler(BaseHTTPRequestHandler):
             return self._voice_post(path[len("/api/voice/"):], data)
         if path.startswith("/api/publish/"):
             return self._publish_post(path[len("/api/publish/"):], data)
+        if path == "/api/shutdown":  # paneldeki "Kapat": arka plandaki bütün işler durur
+            L.info("Uygulama kullanıcı isteğiyle kapatılıyor")
+            self._json({"ok": True})
+            threading.Timer(0.5, lambda: os._exit(0)).start()
+            return None
+        if path.startswith("/api/notes/"):
+            try:
+                act = path[len("/api/notes/"):]
+                if act == "create":
+                    if data.get("url"):
+                        t = FACTORY.enqueue("note", url=str(data["url"]).strip(), topic="not: bağlantı")
+                    else:
+                        name = Path(str(data.get("file", ""))).name
+                        if not (studio.UPLOADS / name).is_file():
+                            return self._json({"error": "önce video yükleyin"}, 400)
+                        t = FACTORY.enqueue("note", file=name, topic=f"not: {name}")
+                    return self._json({"queued": [t]})
+                if act == "vault":
+                    return self._json({"vault": notes.set_vault(str(data.get("path", "")))})
+                if act == "to_video":
+                    meta = next((m for m in notes.list_notes(500) if m["path"] == data.get("path")), None)
+                    if not meta:
+                        return self._json({"error": "not bulunamadı"}, 400)
+                    t = FACTORY.enqueue("new", category=None, topic=None, text=notes.idea_text(meta, data.get("idea")),
+                                        draw=bool(data.get("draw")), source="not")
+                    return self._json({"queued": [t]})
+            except Exception as exc:  # noqa: BLE001
+                return self._json({"error": str(exc)}, 400)
+            return self.send_error(404)
         if path == "/api/new":
             n = max(1, min(10, int(data.get("count") or 1)))
             text = (data.get("text") or "").strip() or None

@@ -161,6 +161,30 @@ Panelin üstündeki **🎬 Stüdyo** bağlantısı (`http://127.0.0.1:8765/studi
 `studio/uploads/` altında kalır (silinmez). Konuşma tanıma Türkçe ve otomatik olduğu için sayı/özel adlarda
 hata olabilir; yayından önce altyazıları gözden geçir. Uzun videolarda yazıya dökme CPU'da birkaç dakika sürer.
 
+## Reel notları (Obsidian)
+
+Stüdyo → **3 · Reel'den not çıkar**: izlediğin bir Reels'i yükle veya bağlantısını yapıştır. Konuşma yerelde
+yazıya dökülür (faster-whisper), kareler ve ekrandaki yazılar Claude'a gösterilir; **özet, önemli noktalar,
+ekrandaki yazılar, doğrulanacak iddialar, video fikirleri ve konuşma metni** içeren bir Markdown notu
+Obsidian kasana (`<kasa>/Reels/`, kare tablosu `_kareler/` altında) yazılır; kasa ayarlanmamışsa
+`output/notes/Reels/`. Notun altındaki her fikrin yanında **video üret** vardır: fikir araştırılıp kendi özgün
+senaryomuza çevrilir (esinlenme, kopya değil). Var olan notların üzerine yazılmaz.
+
+Telefonu USB/adb ile kumanda edip Instagram'da otomatik gezinme veya yorum yapma **bilerek eklenmedi**:
+Instagram kullanım koşullarına aykırıdır ve hesabın kısıtlanmasına yol açabilir. Videoları sen seçersin.
+
+## Arka plan işlemlerini durdurma
+
+- Paneldeki **⏻ Kapat**: uygulamayı ve arka plandaki işleri (otomatik mod, bulut eşitleme, yayın zamanlayıcısı,
+  Telegram) durdurur. Kısayolla yeniden açılır.
+- Tamamen durdurmak ve Windows açılışında başlamasını kapatmak için PowerShell'de:
+
+```powershell
+irm https://raw.githubusercontent.com/bdenizkarakoc/Heloo/claude/autonomous-ai-reels-factory-x82681/reels-factory/scripts/stop-app.ps1 | iex
+```
+
+Açılışta başlatmayı geri açmak: `powershell -ExecutionPolicy Bypass -File scripts\install-app.ps1 -Startup`.
+
 ## Sesim (kendi sesinle seslendirme)
 
 Panelin üstündeki **🎙️ Sesim** bağlantısı (`/voice`):

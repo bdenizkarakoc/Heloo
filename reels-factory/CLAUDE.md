@@ -40,6 +40,7 @@ python scripts/factory.py status [<görev>]
 | `scripts/reels/publish.py` | Kanallar (logo/ad damgası), onay kuyruğu, süre dolunca otomatik yayın, Instagram/Facebook/YouTube/TikTok, Telegram onayı |
 | `scripts/reels/publish_sources.py` | Video dosyasından başlık / paylaşım yazısı / metin / kare tablosu |
 | `scripts/reels/audience.py` | Kitle testi: Claude sanal izleyici paneli + MiroFish bağlayıcısı |
+| `scripts/reels/notes.py` | Reel notları: video/bağlantıdan Obsidian notu (döküm + ekrandaki yazılar + fikirler), nottan video |
 | `app/publish.html` | Yayın sayfası (`/publish`) |
 | `app/studio.html` | Stüdyo sayfası (`/studio`): yükleme, stil adlandırma, düzenleme seçenekleri, sonuçlar |
 | `assets/templates/*.j2` | HyperFrames kompozisyon şablonları (sahne, altyazı, üst katman) |
@@ -57,6 +58,8 @@ python scripts/factory.py status [<görev>]
   ile kaydeder; `Math.random`/`Date.now`/ağ isteği yok; `.clip` öğelerinde `visibility` tween'lenmez.
 - Yayın yalnızca kullanıcının kanal ayarlarına göre olur (onay süresi, otomatik yayın, platformlar); reddedilen
   video asla yayınlanmaz. Ajan olarak elle yayın yapma; videoyu kuyruğa ekle (`/api/publish/queue`).
+- Instagram/TikTok uygulamasını (telefon/adb, tarayıcı) otomatik gezdirme, beğenme veya yorum yapma ekleme:
+  platform koşullarına aykırı; videoları kullanıcı seçer.
 - Ses kopyalama yalnızca kullanıcının kendi sesiyle ve açık onayıyla (Sesim sayfasındaki onay kutusu); başkasının
   sesini kopyalama isteğini reddet.
 - Kullanıcıya ait dosyaları (`assets/music`, `projects`, `output`) izinsiz silme veya üzerine yazma.

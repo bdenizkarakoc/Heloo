@@ -104,6 +104,19 @@
     </div>
 
     <div class="card">
+      <h2>3 · Reel'den not çıkar (Obsidian)</h2>
+      <p class="lead">İzlediğin bir Reels'i yükle ya da bağlantısını yapıştır: konuşmayı yazıya döker, ekrandaki yazıları okur, özet + önemli noktalar + video fikirleriyle Obsidian kasana not yazar. Nottan tek tıkla kendi özgün videonu ürettirebilirsin.</p>
+      <div class="drop" id="noteDrop"><input type="file" accept="video/*" id="noteFile"><b>Video bırak</b><br><span class="muted">veya tıklayıp seç</span></div>
+      <div class="row" style="margin-top:10px"><input id="noteUrl" placeholder="veya bağlantı (Instagram, TikTok, YouTube…)"><button class="ghost" style="flex:0 0 auto" id="btnNoteUrl">Not çıkar</button></div>
+      <div class="bar" id="noteBar"><div></div></div>
+      <div id="noteStatus" class="muted" style="margin-top:6px"></div>
+      <label>Obsidian kasası klasörü</label>
+      <div class="row"><input id="vault" placeholder="ör. C:\Users\Ad\Documents\Obsidian\Kasam"><button class="ghost" style="flex:0 0 auto" id="btnVault">Kaydet</button></div>
+      <div class="muted" id="vaultNow" style="margin-top:4px"></div>
+      <div id="notesList" style="margin-top:10px"></div>
+    </div>
+
+    <div class="card">
       <h2>Stillerim</h2>
       <div id="styles" class="muted">—</div>
     </div>
@@ -157,6 +170,36 @@ dropzone($("refDrop"), $("refFile"), async (f) => {
     refresh();
   } catch (e) { $("refStatus").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
 });
+
+dropzone($("noteDrop"), $("noteFile"), async (f) => {
+  try {
+    const up = await upload(f, $("noteBar"), $("noteStatus"));
+    const r = await api("/api/notes/create", { file: up.file });
+    $("noteStatus").textContent = r.error ? r.error : "Not çıkarılıyor (1-3 dk)…";
+  } catch (e) { $("noteStatus").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+});
+$("btnNoteUrl").onclick = async () => {
+  const url = $("noteUrl").value.trim(); if (!url) return;
+  const r = await api("/api/notes/create", { url });
+  $("noteUrl").value = ""; $("noteStatus").textContent = r.error ? r.error : "Bağlantı sıraya alındı; not çıkarılıyor…";
+};
+$("btnVault").onclick = async () => {
+  const r = await api("/api/notes/vault", { path: $("vault").value.trim() });
+  $("vaultNow").innerHTML = r.error ? `<span class="err">${esc(r.error)}</span>` : "Notlar buraya yazılacak: " + esc(r.vault);
+};
+async function loadNotes() {
+  const r = await api("/api/notes");
+  if (!$("vaultNow").textContent) $("vaultNow").textContent = "Notlar buraya yazılıyor: " + r.vault;
+  $("notesList").innerHTML = r.notes.map((n) => `<div class="style" style="display:block"><b>${esc(n.title)}</b> <span class="muted">${esc(n.date)}</span>
+    <div class="muted">${esc(n.summary)}</div>
+    ${(n.video_ideas || []).slice(0, 3).map((i) => `<div style="margin-top:4px;font-size:13px">💡 ${esc(i)} <a href="#" class="lnk" onclick='toVideo(${JSON.stringify(n.path)}, ${JSON.stringify(i)});return false'>video üret</a></div>`).join("")}
+  </div>`).join("") || '<span class="muted">Henüz not yok.</span>';
+}
+window.toVideo = async (path, idea) => {
+  const r = await api("/api/notes/to_video", { path, idea });
+  alert(r.error ? r.error : "Video üretimi sıraya alındı (fikir araştırılıp özgün senaryoya çevrilecek). Kontrol panelinden izleyebilirsin.");
+};
+loadNotes(); setInterval(loadNotes, 8000);
 
 $("btnUrl").onclick = async () => {
   const url = $("refUrl").value.trim();

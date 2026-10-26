@@ -50,6 +50,7 @@
   <a href="/studio" style="color:var(--acc2);text-decoration:none;font-weight:600">🎬 Stüdyo</a>
   <a href="/voice" style="color:var(--acc2);text-decoration:none;font-weight:600">🎙️ Sesim</a>
   <a href="/publish" style="color:var(--acc2);text-decoration:none;font-weight:600">📤 Yayın</a>
+  <button class="ghost" id="btnQuit" title="Uygulamayı ve arka plandaki bütün işleri durdurur" style="padding:6px 10px">⏻ Kapat</button>
   <span id="autoBadge" class="pill">otomatik mod kapalı</span>
 </header>
 <main>
@@ -242,6 +243,11 @@ async function refreshLog() {
 window.toPublish = async (video) => {
   const r = await api("/api/publish/queue", { video });
   alert(r.error ? r.error : "Onay kuyruğuna ekleniyor (logo/ad işleniyor, kitle testi yapılıyor). Yayın sayfasından izleyebilirsin.");
+};
+$("btnQuit").onclick = async () => {
+  if (!confirm("Uygulama ve arka plandaki işler (otomatik mod, bulut eşitleme, yayın zamanlayıcısı) durdurulsun mu? Masaüstü kısayoluyla yeniden açabilirsin.")) return;
+  try { await api("/api/shutdown", {}); } catch {}
+  document.body.innerHTML = '<p style="padding:40px;font:18px system-ui;color:#eef2fb">Reels Fabrikası kapatıldı. Yeniden açmak için masaüstündeki <b>Reels Fabrikasi</b> kısayolunu kullan.</p>';
 };
 window.showLog = (id) => { logJob = id; refreshLog(); };
 window.reproduce = async (id) => { await api("/api/produce", { job: id }); refreshStatus(); };
