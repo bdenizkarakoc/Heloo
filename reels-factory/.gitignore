@@ -44,3 +44,7 @@ publish/
 knowledge/
 scripts/graphify-out/
 graphify-out/
+
+# Kesim (kullanıcıya özel ayar ve işlem çıktıları)
+config/kesim.json
+output/kesim/

@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kesim</title>
+<style>
+  :root { --bg:#0b0f1a; --card:#141b2d; --line:#253049; --ink:#eef2fb; --muted:#9aa6c2; --acc:#ffd23f; --ok:#4fd1c5; --bad:#ff6b6b; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.45 system-ui, "Segoe UI", sans-serif; }
+  main { max-width: 560px; margin: 0 auto; padding: 18px 16px 30px; }
+  h1 { font-size: 22px; margin: 4px 0 2px; letter-spacing: .02em; } .sub { color: var(--muted); font-size: 13px; margin-bottom: 14px; }
+  .drop { border: 2px dashed var(--line); border-radius: 16px; padding: 34px 16px; text-align: center; color: var(--muted); cursor: pointer; transition: .15s; }
+  .drop.over, .drop:hover { border-color: var(--acc); color: var(--ink); background: #11182a; }
+  .drop b { display: block; font-size: 18px; color: var(--ink); margin-bottom: 4px; }
+  .drop input { display: none; }
+  .row { display: flex; gap: 8px; margin-top: 12px; } .row > input { flex: 1; }
+  input, select { padding: 10px 11px; border-radius: 10px; border: 1px solid var(--line); background: #0e1424; color: var(--ink); font: inherit; width: 100%; }
+  button { cursor: pointer; border: 0; border-radius: 10px; padding: 10px 14px; font: 600 14px system-ui, sans-serif; background: var(--acc); color: #111; white-space: nowrap; }
+  button.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+  button:disabled { opacity: .45; cursor: default; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .bar { height: 5px; background: #0e1424; border-radius: 4px; overflow: hidden; margin-top: 10px; display: none; } .bar > div { height: 100%; width: 0; background: var(--acc); }
+  .job { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px; margin-top: 12px; }
+  .job .top { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+  .pill { font-size: 12px; padding: 2px 9px; border-radius: 99px; background: #3b331a; color: var(--acc); }
+  .pill.done { background: #133a36; color: var(--ok); } .pill.failed { background: #3d1c22; color: var(--bad); }
+  video { width: 100%; max-height: 420px; border-radius: 10px; margin-top: 10px; background: #000; }
+  .acts { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; } .acts button { padding: 7px 10px; font-size: 13px; }
+  details { margin-top: 18px; color: var(--muted); } summary { cursor: pointer; font-size: 13px; }
+  details label { display: block; font-size: 12px; margin: 10px 0 4px; }
+  .chk { display: flex; gap: 8px; align-items: center; margin-top: 8px; font-size: 13px; } .chk input { width: auto; }
+  pre { white-space: pre-wrap; font-size: 12px; background: #0e1424; padding: 8px; border-radius: 8px; max-height: 160px; overflow: auto; }
+</style>
+</head>
+<body>
+<main>
+  <h1>✂ Kesim</h1>
+  <div class="sub" id="sub">Bırak, gerisini Kesim yapsın.</div>
+
+  <label class="drop" id="drop">
+    <b>Videolarını ve fotoğraflarını buraya bırak</b>
+    birleştirme · boşluk kesme · 9:16 · altyazı · renk · ses temizleme · müzik
+    <input type="file" id="files" multiple accept="video/*,image/*,.heic,.heif">
+  </label>
+  <div class="bar" id="bar"><div></div></div>
+  <div class="muted" id="msg" style="margin-top:6px"></div>
+
+  <div class="row">
+    <input id="topic" placeholder="ya da yaz: “Venüs'te bir gün” videosunu yap">
+    <button id="make">Yap</button>
+  </div>
+
+  <div id="jobs"></div>
+
+  <details>
+    <summary>Ayarlar</summary>
+    <label>Stil (boş: fabrikanın en son öğrendiği)</label>
+    <select id="style"></select>
+    <label>Uzunluk</label>
+    <select id="mode"><option value="auto">Otomatik (kısa ise tamamı, uzunsa en iyi anlar)</option><option value="full">Tamamı</option><option value="clips">En iyi anlardan kısa klipler</option></select>
+    <div class="chk"><input type="checkbox" id="music"><span>Müzik ekle</span></div>
+    <div class="chk"><input type="checkbox" id="learn"><span>Eski Kesim.exe'nin videolarından stil öğren</span></div>
+    <label>Kesim.exe yolu (boş: Masaüstü\kesim\Kesim.exe)</label>
+    <input id="exe" placeholder="C:\Users\...\Desktop\kesim\Kesim.exe">
+    <div class="acts">
+      <button class="ghost" id="save">Kaydet</button>
+      <button class="ghost" onclick="folder('inbox')">"Montaja at" klasörü</button>
+      <button class="ghost" onclick="folder('ready')">"Hazır" klasörü</button>
+      <button class="ghost" id="probe">Kesim.exe'yi incele</button>
+    </div>
+    <div class="muted" id="info" style="margin-top:8px"></div>
+    <pre id="probeOut" style="display:none"></pre>
+  </details>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const api = async (p, body) => (await fetch(p, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {})).json();
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+let ST = {};
+
+function upload(file) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", "/api/studio/upload?name=" + encodeURIComponent(file.name));
+    xhr.upload.onprogress = (e) => { if (e.lengthComputable) $("bar").firstElementChild.style.width = (100 * e.loaded / e.total) + "%"; };
+    xhr.onload = () => { const r = JSON.parse(xhr.responseText || "{}"); r.error ? reject(new Error(r.error)) : resolve(r); };
+    xhr.onerror = () => reject(new Error("bağlantı hatası"));
+    xhr.send(file);
+  });
+}
+
+async function go(fileList) {
+  const files = [...fileList]; if (!files.length) return;
+  $("bar").style.display = "block"; const names = [];
+  try {
+    for (let i = 0; i < files.length; i++) {
+      $("msg").textContent = `Yükleniyor ${i + 1}/${files.length}: ${files[i].name}`;
+      names.push((await upload(files[i])).file);
+    }
+    const r = await api("/api/kesim/edit", { files: names });
+    $("msg").textContent = r.error ? "✖ " + r.error : `Montaj başladı (${files.length} dosya, stil: ${r.options.style}). Bitince aşağıda ve Hazır klasöründe.`;
+  } catch (e) { $("msg").textContent = "✖ " + e.message; }
+  $("bar").style.display = "none"; $("files").value = ""; load();
+}
+
+const drop = $("drop");
+$("files").onchange = () => go($("files").files);
+["dragenter", "dragover"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add("over"); }));
+["dragleave", "drop"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove("over"); }));
+drop.addEventListener("drop", (e) => go(e.dataTransfer.files));
+
+$("make").onclick = async () => {
+  const t = $("topic").value.trim(); if (!t) return;
+  const r = await api("/api/new", { topic: t, text: t.length > 80 ? t : "", kesim: true, count: 1 });
+  $("msg").textContent = r.error ? "✖ " + r.error : "Video üretimi başladı (araştırma, senaryo, ses, görsel, müzik). Bitince Hazır klasörüne konur.";
+  $("topic").value = "";
+};
+
+window.folder = async (which) => { const r = await api("/api/kesim/folder", { which }); $("info").textContent = r.error || r.path; };
+window.publishVid = async (v) => { const r = await api("/api/publish/queue", { video: v }); $("msg").textContent = r.error ? "✖ " + r.error : "Yayın onay kuyruğuna eklendi (📤 Yayın)."; };
+window.openExe = async (v) => { const r = await api("/api/kesim/open", { video: v }); if (r.error) $("msg").textContent = "✖ " + r.error; };
+
+$("save").onclick = async () => {
+  ST = await api("/api/kesim/settings", { style: $("style").value, mode: $("mode").value, music: $("music").checked, learn: $("learn").checked, path: $("exe").value });
+  $("info").textContent = "Kaydedildi."; load();
+};
+$("probe").onclick = async () => {
+  $("probeOut").style.display = "block"; $("probeOut").textContent = "İnceleniyor… (Kesim kısa süre açılıp kapanabilir)";
+  const r = await api("/api/kesim/probe", { help: true });
+  $("probeOut").textContent = r.found ? `Tür: ${r.kind} · ${r.size_mb} MB\nKlasör: ${r.files.join(", ")}\n${r.help ? "Komut satırı (" + r.help.flag + "):\n" + r.help.text : "Komut satırı seçeneği yok (pencereli program)."}` : "Kesim.exe bulunamadı.";
+};
+
+function jobHtml(p) {
+  const st = p.status === "done" ? "done" : p.status === "failed" ? "failed" : "";
+  const clips = (p.clips || []).filter((c) => c.output);
+  return `<div class="job"><div class="top"><b>${esc(p.source_name || p.id)}</b><span class="pill ${st}">${esc(p.status === "done" ? "hazır" : p.status === "failed" ? "hata" : p.stage || "sırada")}</span></div>
+    <div class="muted">stil: ${esc(p.options?.style || "")}${p.error ? " · " + esc(p.error.slice(0, 200)) : ""}</div>
+    ${clips.map((c) => `<video src="/${c.output}" controls preload="metadata" poster="/${c.thumbnail || ""}"></video>
+      <div class="acts"><a href="/${c.output}" download><button class="ghost">İndir</button></a>
+      <button class="ghost" onclick="publishVid('${c.output}')">Yayına gönder</button>
+      ${ST.found ? `<button class="ghost" onclick="openExe('${c.output}')">Kesim.exe'de aç</button>` : ""}</div>`).join("")}
+    ${(p.notes || []).length ? `<div class="muted">${p.notes.map(esc).join("<br>")}</div>` : ""}</div>`;
+}
+
+async function load() {
+  try { ST = await api("/api/kesim"); } catch (e) { return; }
+  $("sub").textContent = `Stil: ${ST.default_style}${ST.learned ? " · Kesim stili v" + ST.learned.version : ""} · Klasör: ${ST.inbox}`;
+  $("jobs").innerHTML = (ST.projects || []).map(jobHtml).join("");
+  if (!$("style").options.length || document.activeElement?.closest("details") == null) {
+    $("style").innerHTML = `<option value="">Otomatik (en son öğrenilen)</option>` + (ST.styles || []).map((s) => `<option value="${esc(s.slug)}">${esc(s.name)} (v${s.version})</option>`).join("");
+    $("style").value = ST.style || ""; $("mode").value = ST.mode; $("music").checked = ST.music; $("learn").checked = ST.learn;
+    $("exe").value = ST.configured_path || "";
+    $("info").textContent = ST.found ? `Kesim.exe: ${ST.path}` : "Kesim.exe bulunamadı (isteğe bağlı).";
+  }
+}
+load(); setInterval(load, 5000);
+</script>
+</body>
+</html>

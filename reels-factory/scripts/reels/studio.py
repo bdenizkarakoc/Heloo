@@ -593,7 +593,7 @@ def suggest_name(filename: str) -> str:
     return (stem[:24] or "Yeni stil").title()
 
 
-def save_from_analysis(pid: str, name: str) -> dict:
+def save_from_analysis(pid: str, name: str, backup: bool = False) -> dict:
     proj = load_project(pid)
     if proj.get("status") != "done" or not proj.get("style"):
         raise StageError("analiz henüz bitmedi")
@@ -605,7 +605,11 @@ def save_from_analysis(pid: str, name: str) -> dict:
     style = {**proj["style"], "description": proj.get("summary", ""), "effects": proj.get("effects", []),
              "source": proj["source_name"], "created": now(), "version": 1, "history": [],
              "reference_sheet": str((ref_dir / "reference_sheet.jpg").relative_to(ROOT))}
-    saved = save_style(style, name, slug)
+    old = read_json(STYLES / f"{slug}.json", {}) if backup else {}
+    if old:  # aynı ada yeniden öğrenme: sürüm artar, önceki sürüm .bak olarak kalır
+        style.update(version=int(old.get("version", 1)) + 1,
+                     history=(old.get("history") or []) + [{"date": now(), "project": pid, "changes": ["yeniden öğrenildi"]}])
+    saved = save_style(style, name, slug, backup=backup)
     proj["saved_style"] = slug
     save_project(proj)
     return saved

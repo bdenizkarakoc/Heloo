@@ -328,6 +328,27 @@ görsel ve video** kartına anahtar gir:
 
 Yapay zekâ yalnızca gerçek kaynak bulunamayınca devreye girer (kategori `visual_providers` listesinde en sonda).
 
+## ✂ Kesim (sade montaj programı)
+
+Masaüstündeki **Kesim** simgesi (ve `Masaüstü\kesim\Kesim.lnk`) adres çubuğu olmayan küçük bir pencere açar:
+
+- **Bırak → montaj:** Videoları/fotoğrafları pencereye sürükle ya da `Masaüstü\kesim\Montaja at` klasörüne kopyala
+  (20 sn içinde bırakılanlar tek montaj olur). Fabrika her şeyi yapar: birleştirme (HEIC, dikey/yatay, HDR),
+  konuşma boşluklarını kesme, 9:16, kelime vurgulu altyazı, renk, zoom, ses temizleme, müzik. Sonuç pencerede
+  ve `Masaüstü\kesim\Hazır` klasöründe. Kısa ise tamamı, uzunsa en iyi anlardan klipler (Ayarlar'dan değişir).
+- **"Şu videoyu yap":** Konu yaz → fabrika araştırma, senaryo, ses, görsel/video ve müzikle üretir, Hazır'a koyar.
+- **Öğrenilen her şey Kesim'e geçer:** Kesim, Stüdyo'da öğrenilen/geliştirilen en güncel stili kullanır ve her
+  montajda bir iyileştirme turu yapıp stili yeni sürüm olarak kaydeder (eski sürüm `.bak`).
+- **Eski Kesim.exe:** Klasördeki `Kesim.exe` silinmez; bulunursa çıkardığı videolar toplanıp "Kesim" stili
+  bunlardan öğrenilir, sonuçlar pencereden Kesim.exe'de açılabilir. "Kesim.exe'yi incele" türünü ve komut
+  satırı seçeneklerini gösterir.
+- **Claude için Premiere yerine Kesim:** MCP sunucusunda (`reels-fabrikasi`) `kesim_montaj`, `kesim_video_yap`,
+  `kesim_kes`, `kesim_aralik_sil`, `kesim_birlestir` (geçişler: fade/beyaz/siyah/kay/yakinlas), `kesim_yazi_ekle`,
+  `kesim_renk` (sinematik, canli, sicak, soguk, siyah-beyaz, solgun), `kesim_hiz`, `kesim_cerceve`,
+  `kesim_muzik_ekle` (konuşmada kısılır), `kesim_ses_ayarla`, `kesim_ses_iyilestir`, `kesim_kapak`,
+  `kesim_hazira_koy`, `kesim_durum`. Her araç yeni dosya üretir; girdiye yazmaz.
+- Komut satırı: `python scripts/factory.py kesim video1.mp4 foto.heic [--mode full|clips|auto]`.
+
 ## Claude Code MCP sunucuları
 
 `python scripts/factory.py mcp` (kurulum betiği de çalıştırır; uygulamada **📤 Yayın → Ayarlar → MCP sunucularını

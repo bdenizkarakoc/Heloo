@@ -14,8 +14,12 @@ $startLnk = Join-Path $startupDir "Reels Fabrikasi (arka plan).lnk"
 $folderLnk = Join-Path $desktop "Reels Videolari.lnk"
 $cloudDir = Join-Path $root "output\cloud"
 
+$kesimDir = Join-Path $desktop "kesim"
+$kesimLnk = Join-Path $desktop "Kesim.lnk"
+$ready = "Haz" + [char]0x0131 + "r"
+
 if ($Remove) {
-  Remove-Item $deskLnk, $startLnk, $folderLnk -ErrorAction SilentlyContinue
+  Remove-Item $deskLnk, $startLnk, $folderLnk, $kesimLnk, (Join-Path $kesimDir "Kesim.lnk") -ErrorAction SilentlyContinue
   Write-Host "Kisayollar kaldirildi."; exit 0
 }
 
@@ -31,6 +35,19 @@ $lnk.WorkingDirectory = $root
 $lnk.Description = "Reels Fabrikasi kontrol paneli"
 $lnk.Save()
 Write-Host "Masaustu kisayolu: $deskLnk"
+
+# Kesim: sade montaj penceresi. Masaustu\kesim klasorune baslatici + "Montaja at" / "Hazir" klasorleri.
+# Klasordeki mevcut dosyalara (or. eski Kesim.exe) dokunulmaz.
+New-Item -ItemType Directory -Force -Path $kesimDir, (Join-Path $kesimDir "Montaja at"), (Join-Path $kesimDir $ready) | Out-Null
+foreach ($path in @((Join-Path $kesimDir "Kesim.lnk"), $kesimLnk)) {
+  $k = $shell.CreateShortcut($path)
+  $k.TargetPath = $pyw
+  $k.Arguments = "`"$server`" --open --page kesim"
+  $k.WorkingDirectory = $root
+  $k.Description = "Kesim: birak, montajlansin"
+  $k.Save()
+}
+Write-Host "Kesim: $kesimDir (Kesim.lnk, 'Montaja at', '$ready')"
 
 # Buluttan inen videolarin klasoru (uygulama 30 dakikada bir doldurur)
 New-Item -ItemType Directory -Force -Path $cloudDir | Out-Null
