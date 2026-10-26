@@ -13,7 +13,7 @@ python scripts/factory.py validate <görev>       # script.json doğrulama
 python scripts/factory.py candidates <görev> <sahne> [--query ...]
 python scripts/factory.py produce <görev> [--from <adım>]
 python scripts/factory.py run --count N          # tam otonom (Claude API anahtarı veya kurulu Claude Code)
-python app/server.py --open                      # yerel uygulama (kontrol paneli + otomatik mod)
+python app/server.py --open                      # yerel uygulama (kontrol paneli + otomatik mod; /studio: kendi videonu düzenle)
 python scripts/factory.py status [<görev>]
 ```
 
@@ -32,6 +32,9 @@ python scripts/factory.py status [<görev>]
 | `scripts/reels/audio.py` | Müzik (kütüphane/Openverse/prosedürel), ducking, SFX, iki geçişli loudnorm, mux |
 | `scripts/reels/compose.py` | Metin ölçümü (gerçek font), güvenli alan yerleşimi, HyperFrames proje üretimi, render |
 | `scripts/reels/qc.py` | Teknik QC, ASR ile anlaşılırlık/senkron, kontak tablosu, otomatik düzeltmeler |
+| `scripts/reels/studio.py` | Stüdyo: referanstan stil öğrenme (ölçüm + Claude görsel analizi), kullanıcı videosunu düzenleme, klip seçimi, stil iyileştirme |
+| `scripts/reels/studio_render.py` | Stüdyo render: jump cut, 9:16 çerçeve, renk, zoom, ASS kelime vurgulu altyazı, ilerleme çubuğu, müzik ducking |
+| `app/studio.html` | Stüdyo sayfası (`/studio`): yükleme, stil adlandırma, düzenleme seçenekleri, sonuçlar |
 | `assets/templates/*.j2` | HyperFrames kompozisyon şablonları (sahne, altyazı, üst katman) |
 | `config/settings.yaml` | Bütün ayarlar (gizli bilgi yok) |
 

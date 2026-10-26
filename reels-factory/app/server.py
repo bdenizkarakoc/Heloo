@@ -30,7 +30,7 @@ from urllib.parse import unquote, urlparse
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from reels import claude_setup, cloud_sync, doctor, log, pipeline  # noqa: E402
+from reels import claude_setup, cloud_sync, doctor, log, pipeline, studio  # noqa: E402
 from reels.config import load_config  # noqa: E402
 from reels.job import Job  # noqa: E402
 from reels.util import read_json, write_json  # noqa: E402
@@ -87,6 +87,12 @@ class Factory:
                     self.current = None
 
     def _run(self, task: dict) -> None:
+        if task["kind"] in ("studio_analyze", "studio_edit"):
+            with self.lock:
+                self.current["job"] = task["project"]
+            (studio.run_analyze if task["kind"] == "studio_analyze" else studio.run_edit)(task["project"])
+            L.info("✔ Stüdyo işi bitti: %s", task["project"])
+            return
         cfg = load_config()
         if task["kind"] == "new":
             job = pipeline.new_job(cfg, task.get("category") or None, task.get("topic") or None,
@@ -262,6 +268,17 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith("/output/"):
             p = self._safe(ROOT / "output", path[len("/output/"):])
             return self._file(p) if p else self.send_error(403)
+        if path.startswith("/studio/"):
+            p = self._safe(ROOT / "studio", path[len("/studio/"):])
+            if p and p.suffix.lower() in (".jpg", ".png", ".json") and "uploads" not in p.parts:
+                return self._file(p)
+            return self.send_error(403)
+        if path in ("/studio", "/studio.html"):
+            return self._file(ROOT / "app" / "studio.html")
+        if path == "/api/studio/styles":
+            return self._json(studio.list_styles())
+        if path == "/api/studio/projects":
+            return self._json(studio.list_projects())
         if path.startswith("/projects/"):
             p = self._safe(ROOT / "projects", path[len("/projects/"):])
             if p and p.suffix.lower() in (".jpg", ".png", ".json"):
@@ -298,10 +315,44 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(doctor.check(load_config(), network=True))
         return self.send_error(404)
 
+    # --- PUT: büyük video yükleme (diske akıtılarak; bellek kullanmaz)
+    def do_PUT(self):  # noqa: N802
+        url = urlparse(self.path)
+        if url.path != "/api/studio/upload":
+            return self.send_error(404)
+        from urllib.parse import parse_qs
+        name = studio.safe_upload_name((parse_qs(url.query).get("name") or ["video.mp4"])[0])
+        left = int(self.headers.get("Content-Length") or 0)
+        if left <= 0:
+            return self._json({"error": "boş dosya"}, 400)
+        studio.UPLOADS.mkdir(parents=True, exist_ok=True)
+        dest = studio.UPLOADS / name
+        tmp = dest.with_suffix(dest.suffix + ".part")
+        with open(tmp, "wb") as fh:
+            while left > 0:
+                chunk = self.rfile.read(min(1 << 20, left))
+                if not chunk:
+                    break
+                fh.write(chunk)
+                left -= len(chunk)
+        if left:
+            tmp.unlink(missing_ok=True)
+            return self._json({"error": "yükleme yarıda kesildi"}, 400)
+        tmp.replace(dest)
+        try:
+            info = studio.probe(dest)
+        except Exception as exc:  # noqa: BLE001
+            dest.unlink(missing_ok=True)
+            return self._json({"error": f"video okunamadı: {exc}"}, 400)
+        L.info("Video yüklendi: %s (%.0f sn)", name, info["duration"])
+        return self._json({"file": name, **info})
+
     # --- POST
     def do_POST(self):  # noqa: N802
         path = urlparse(self.path).path
         data = self._body()
+        if path.startswith("/api/studio/"):
+            return self._studio_post(path[len("/api/studio/"):], data)
         if path == "/api/new":
             n = max(1, min(10, int(data.get("count") or 1)))
             text = (data.get("text") or "").strip() or None
@@ -324,6 +375,23 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/cloud/sync":
             FACTORY.cloud_wake.set()
             return self._json({"ok": True})
+        return self.send_error(404)
+
+    def _studio_post(self, action: str, data: dict):
+        try:
+            if action in ("analyze", "edit"):
+                src = studio.UPLOADS / Path(str(data.get("file", ""))).name
+                if not src.is_file():
+                    return self._json({"error": "önce video yükleyin"}, 400)
+                opts = {k: data[k] for k in ("style", "mode", "count", "min_sec", "max_sec", "aspect", "frame",
+                                             "music", "captions", "improve_rounds", "notes", "title") if k in data}
+                proj = studio.new_project(action, src, opts)
+                FACTORY.enqueue(f"studio_{action}", project=proj["id"], topic=src.name)
+                return self._json(proj)
+            if action == "style/save":
+                return self._json(studio.save_from_analysis(data["project"], data.get("name", "")))
+        except Exception as exc:  # noqa: BLE001
+            return self._json({"error": str(exc)}, 400)
         return self.send_error(404)
 
 

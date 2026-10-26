@@ -1,0 +1,62 @@
+{
+  "name": "Sade",
+  "description": "Beyaz, küçük harf, ince konturlu altyazı; efektsiz, doğal renk.",
+  "pacing": {
+    "max_pause": 0.9,
+    "pad": 0.1
+  },
+  "frame": {
+    "mode": "blur"
+  },
+  "grade": {
+    "contrast": 1.0,
+    "saturation": 1.0,
+    "brightness": 0.0,
+    "gamma": 1.0,
+    "warmth": 0.0,
+    "vignette": false
+  },
+  "punch": {
+    "enabled": false,
+    "scale": 1.12
+  },
+  "captions": {
+    "enabled": true,
+    "weight": 700,
+    "size": 62.0,
+    "uppercase": false,
+    "color": "#FFFFFF",
+    "highlight": "#FFFFFF",
+    "outline": 4,
+    "outline_color": "#000000",
+    "shadow": 2,
+    "box": false,
+    "box_color": "#000000",
+    "words": 5,
+    "y": 0.64,
+    "pop": false
+  },
+  "title": {
+    "enabled": false,
+    "seconds": 3.0,
+    "size": 70,
+    "weight": 900,
+    "uppercase": true,
+    "fg": "#111111",
+    "bg": "#FFD23F",
+    "y": 0.17
+  },
+  "progress": {
+    "enabled": false,
+    "color": "#FFD23F",
+    "height": 10
+  },
+  "flash": {
+    "enabled": false
+  },
+  "music": {
+    "enabled": false,
+    "gain_db": -18,
+    "mood": "upbeat"
+  }
+}

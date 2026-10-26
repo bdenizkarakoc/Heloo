@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reels Stüdyosu</title>
+<style>
+  :root { --bg:#0b0f1a; --card:#141b2d; --line:#253049; --ink:#eef2fb; --muted:#9aa6c2; --acc:#ffd23f; --acc2:#4fd1c5; --bad:#ff6b6b; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { display: flex; align-items: center; gap: 14px; padding: 16px 22px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--bg); z-index: 5; }
+  header h1 { font-size: 19px; margin: 0; } header a { color: var(--acc2); text-decoration: none; font-size: 14px; }
+  main { display: grid; grid-template-columns: minmax(320px, 420px) 1fr; gap: 18px; padding: 18px 22px; }
+  @media (max-width: 960px) { main { grid-template-columns: 1fr; } }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin-bottom: 18px; }
+  .card h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 6px; }
+  .card p.lead { margin: 0 0 12px; color: var(--muted); font-size: 13px; }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
+  input, select, textarea { width: 100%; padding: 9px 10px; border-radius: 9px; border: 1px solid var(--line); background: #0e1424; color: var(--ink); font: inherit; }
+  textarea { resize: vertical; }
+  button { cursor: pointer; border: 0; border-radius: 10px; padding: 10px 14px; font: 600 14px system-ui, sans-serif; background: var(--acc); color: #111; }
+  button.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+  button:disabled { opacity: .45; cursor: default; }
+  .row { display: flex; gap: 10px; align-items: flex-end; } .row > * { flex: 1; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .drop { border: 2px dashed var(--line); border-radius: 12px; padding: 18px; text-align: center; color: var(--muted); cursor: pointer; transition: border-color .15s; }
+  .drop.over, .drop:hover { border-color: var(--acc); color: var(--ink); }
+  .drop input { display: none; }
+  .bar { height: 6px; background: #0e1424; border-radius: 4px; overflow: hidden; margin-top: 8px; display: none; }
+  .bar > div { height: 100%; width: 0; background: var(--acc); transition: width .2s; }
+  .pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; background: #1d2740; color: var(--muted); }
+  .pill.done { background: #133a36; color: var(--acc2); } .pill.failed { background: #3d1c22; color: var(--bad); }
+  .pill.running, .pill.queued { background: #3b331a; color: var(--acc); }
+  .chk { display: flex; gap: 8px; align-items: center; margin-top: 10px; font-size: 14px; } .chk input { width: auto; transform: scale(1.2); }
+  .seg { display: flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .seg label { flex: 1; margin: 0; text-align: center; padding: 8px 6px; cursor: pointer; color: var(--muted); font-size: 13px; }
+  .seg input { display: none; } .seg label:has(input:checked) { background: #24304d; color: var(--ink); }
+  .proj { border-top: 1px solid var(--line); padding: 14px 0; } .proj:first-child { border-top: 0; padding-top: 0; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin-top: 10px; }
+  .vid { background: #0e1424; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .vid video { width: 100%; aspect-ratio: 9/16; background: #000; display: block; object-fit: contain; }
+  .vid .meta { padding: 8px 10px; font-size: 13px; } .vid a, .lnk { color: var(--acc2); text-decoration: none; margin-right: 10px; font-size: 12px; }
+  .sheet { width: 100%; border-radius: 10px; border: 1px solid var(--line); margin-top: 10px; }
+  ul.fx { margin: 8px 0 0; padding-left: 18px; font-size: 13px; } ul.fx li { margin: 2px 0; }
+  .note { color: #e8c46a; font-size: 12px; margin-top: 4px; } .err { color: var(--bad); font-size: 12px; margin-top: 4px; }
+  .namebox { background: #0e1424; border: 1px solid var(--acc); border-radius: 12px; padding: 12px; margin-top: 12px; }
+  .namebox b { display: block; margin-bottom: 6px; }
+  .style { border-top: 1px solid var(--line); padding: 10px 0; display: flex; gap: 10px; } .style:first-child { border-top: 0; }
+  .style img { width: 88px; border-radius: 8px; border: 1px solid var(--line); object-fit: cover; align-self: flex-start; }
+  pre { background: #070a12; border: 1px solid var(--line); border-radius: 10px; padding: 10px; max-height: 200px; overflow: auto; font-size: 12px; white-space: pre-wrap; margin: 8px 0 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Reels Stüdyosu</h1>
+  <span id="aiNote" class="muted"></span>
+  <span style="flex:1"></span>
+  <a href="/">← Kontrol paneli</a>
+</header>
+<main>
+  <section>
+    <div class="card">
+      <h2>1 · Stil öğret</h2>
+      <p class="lead">Beğendiğin bir Reels'i yükle. Kesimlerini, renklerini, altyazı ve başlık tasarımını inceleyip bir stil çıkarır; sonra sana bu stile ne ad verileceğini sorar.</p>
+      <div class="drop" id="refDrop"><input type="file" accept="video/*" id="refFile"><b>Referans videoyu bırak</b><br><span class="muted">veya tıklayıp seç</span></div>
+      <div class="bar" id="refBar"><div></div></div>
+      <div id="refStatus" class="muted" style="margin-top:8px"></div>
+    </div>
+
+    <div class="card">
+      <h2>2 · Videomu düzenle</h2>
+      <p class="lead">Kendi videonu yükle (kısa ya da 20+ dakika). Konuşmayı yazıya döker, boşlukları keser, seçtiğin stille altyazı, başlık ve efektleri ekler.</p>
+      <div class="drop" id="ownDrop"><input type="file" accept="video/*" id="ownFile"><b>Kendi videonu bırak</b><br><span class="muted">veya tıklayıp seç</span></div>
+      <div class="bar" id="ownBar"><div></div></div>
+      <div id="ownStatus" class="muted" style="margin-top:8px"></div>
+
+      <label>Stil</label>
+      <select id="style"></select>
+      <label>Ne yapılsın?</label>
+      <div class="seg">
+        <label><input type="radio" name="mode" value="clips" checked>En iyi anlardan kısa klipler</label>
+        <label><input type="radio" name="mode" value="full">Tamamını düzenle</label>
+      </div>
+      <div class="row" id="clipOpts">
+        <div><label>Kaç klip</label><select id="count"><option value="0">Otomatik</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option></select></div>
+        <div><label>En kısa (sn)</label><input id="minSec" type="number" value="20" min="8"></div>
+        <div><label>En uzun (sn)</label><input id="maxSec" type="number" value="60" min="10"></div>
+      </div>
+      <div class="row">
+        <div><label>Format</label><select id="aspect"><option value="9:16">Dikey 9:16 (Reels)</option><option value="original">Videonun kendi oranı</option></select></div>
+        <div><label>Yatay videoyu</label><select id="frame"><option value="">Stile göre</option><option value="blur">bulanık arka planla sığdır</option><option value="crop">ortadan kırp</option><option value="fit">siyah boşlukla sığdır</option></select></div>
+      </div>
+      <label>Müzik</label>
+      <select id="music"><option value="">Stile göre</option><option value="1">Müzik ekle (sese göre kısılır)</option><option value="0">Müzik ekleme</option></select>
+      <div class="chk"><input type="checkbox" id="captions" checked><span>Kelime vurgulu altyazı</span></div>
+      <label>Kendi kendini geliştirsin</label>
+      <select id="improve"><option value="1">1 tur: sonucu inceleyip stili düzeltsin</option><option value="2">2 tur</option><option value="0">Kapalı</option></select>
+      <label>İsteklerin (isteğe bağlı)</label>
+      <textarea id="notes" rows="2" placeholder="ör. altyazılar daha büyük olsun, en komik anları seç"></textarea>
+      <div style="margin-top:14px"><button id="btnEdit" disabled>Düzenle</button></div>
+    </div>
+
+    <div class="card">
+      <h2>Stillerim</h2>
+      <div id="styles" class="muted">—</div>
+    </div>
+  </section>
+
+  <section>
+    <div class="card">
+      <h2>İşler</h2>
+      <div id="current" class="muted"></div>
+      <pre id="log" style="display:none"></pre>
+      <div id="projects" style="margin-top:12px" class="muted">Henüz iş yok.</div>
+    </div>
+  </section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const api = async (p, body) => (await fetch(p, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {})).json();
+const fmt = (s) => s >= 60 ? `${Math.floor(s / 60)} dk ${Math.round(s % 60)} sn` : `${Math.round(s)} sn`;
+let ownFile = null, refProject = null, namedProjects = new Set(), logPid = null;
+
+function upload(file, bar, status) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", "/api/studio/upload?name=" + encodeURIComponent(file.name));
+    bar.style.display = "block";
+    xhr.upload.onprogress = (e) => { if (e.lengthComputable) { bar.firstElementChild.style.width = (100 * e.loaded / e.total) + "%";
+      status.textContent = `Yükleniyor… %${Math.round(100 * e.loaded / e.total)} (${(e.total / 1e6).toFixed(0)} MB)`; } };
+    xhr.onload = () => { bar.style.display = "none"; const r = JSON.parse(xhr.responseText || "{}");
+      r.error ? reject(new Error(r.error)) : resolve(r); };
+    xhr.onerror = () => { bar.style.display = "none"; reject(new Error("bağlantı hatası")); };
+    xhr.send(file);
+  });
+}
+
+function dropzone(zone, input, onFile) {
+  zone.onclick = () => input.click();
+  input.onchange = () => input.files[0] && onFile(input.files[0]);
+  zone.ondragover = (e) => { e.preventDefault(); zone.classList.add("over"); };
+  zone.ondragleave = () => zone.classList.remove("over");
+  zone.ondrop = (e) => { e.preventDefault(); zone.classList.remove("over"); e.dataTransfer.files[0] && onFile(e.dataTransfer.files[0]); };
+}
+
+dropzone($("refDrop"), $("refFile"), async (f) => {
+  try {
+    const up = await upload(f, $("refBar"), $("refStatus"));
+    const p = await api("/api/studio/analyze", { file: up.file });
+    if (p.error) throw new Error(p.error);
+    refProject = p.id;
+    $("refStatus").textContent = `Yüklendi (${fmt(up.duration)}). İnceleniyor — sonuç sağda "İşler" listesinde.`;
+    refresh();
+  } catch (e) { $("refStatus").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+});
+
+dropzone($("ownDrop"), $("ownFile"), async (f) => {
+  try {
+    const up = await upload(f, $("ownBar"), $("ownStatus"));
+    ownFile = up.file;
+    $("ownStatus").innerHTML = `✔ <b>${esc(f.name)}</b> hazır · ${fmt(up.duration)} · ${up.width}×${up.height}${up.audio ? "" : " · <span class='err'>ses yok</span>"}`;
+    if (up.duration < 75) { document.querySelector("input[name=mode][value=full]").checked = true; syncMode(); }
+    $("btnEdit").disabled = false;
+  } catch (e) { $("ownStatus").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+});
+
+function syncMode() { $("clipOpts").style.display = document.querySelector("input[name=mode]:checked").value === "clips" ? "flex" : "none"; }
+document.querySelectorAll("input[name=mode]").forEach((r) => (r.onchange = syncMode));
+
+$("btnEdit").onclick = async () => {
+  const mode = document.querySelector("input[name=mode]:checked").value;
+  const body = { file: ownFile, style: $("style").value, mode, count: +$("count").value, min_sec: +$("minSec").value,
+    max_sec: +$("maxSec").value, aspect: $("aspect").value, captions: $("captions").checked,
+    improve_rounds: +$("improve").value, notes: $("notes").value.trim() };
+  if ($("frame").value) body.frame = $("frame").value;
+  if ($("music").value) body.music = $("music").value === "1";
+  const p = await api("/api/studio/edit", body);
+  if (p.error) { $("ownStatus").innerHTML = `<span class="err">${esc(p.error)}</span>`; return; }
+  $("ownStatus").textContent = "Sıraya alındı. İlerlemeyi sağdan izleyebilirsin.";
+  refresh();
+};
+
+async function loadStyles(select) {
+  const styles = await api("/api/studio/styles");
+  const prev = $("style").value;
+  $("style").innerHTML = styles.map((s) => `<option value="${esc(s.slug)}">${esc(s.name)}${s.builtin ? " (hazır)" : ` · s${s.version}`}</option>`).join("");
+  if (select) $("style").value = select; else if (prev) $("style").value = prev;
+  else { const mine = styles.find((s) => !s.builtin); if (mine) $("style").value = mine.slug; }
+  $("styles").innerHTML = styles.map((s) => `
+    <div class="style">${s.reference_sheet ? `<img src="/${esc(s.reference_sheet).replace(/^studio\//, "studio/")}" alt="">` : ""}
+      <div><b>${esc(s.name)}</b> <span class="pill ${s.builtin ? "" : "done"}">${s.builtin ? "hazır" : "sürüm " + s.version}</span>
+      <div class="muted">${esc(s.description)}</div>
+      ${s.effects && s.effects.length ? `<ul class="fx">${s.effects.slice(0, 5).map((e) => `<li>${esc(e)}</li>`).join("")}</ul>` : ""}</div></div>`).join("");
+}
+
+function projectHtml(p) {
+  const head = `<div><b>${p.kind === "analyze" ? "Stil öğrenme" : "Düzenleme"}</b> · ${esc(p.source_name)}
+    <span class="pill ${esc(p.status)}">${esc(p.status === "done" ? "bitti" : p.status === "failed" ? "hata" : p.status === "queued" ? "sırada" : "çalışıyor")}</span>
+    <a class="lnk" href="#" onclick="showLog('${esc(p.id)}');return false">log</a>
+    <div class="muted">${esc(p.stage || "")}${p.source_duration ? " · kaynak " + fmt(p.source_duration) : ""}</div></div>`;
+  let body = "";
+  if (p.kind === "analyze" && p.status === "done") {
+    body += `<div class="muted" style="margin-top:6px">${esc(p.summary || "")} <span class="pill">${esc(p.analysis_by === "kurallar" ? "ölçümlerle" : "Claude ile")}</span></div>`;
+    if (p.effects && p.effects.length) body += `<ul class="fx">${p.effects.map((e) => `<li>${esc(e)}</li>`).join("")}</ul>`;
+    if (p.reference_sheet) body += `<img class="sheet" src="/${esc(p.reference_sheet)}" alt="referans kareleri">`;
+    if (p.saved_style) body += `<div class="muted" style="margin-top:6px">✔ Stil kaydedildi: <b>${esc(p.saved_style)}</b></div>`;
+    else body += `<div class="namebox"><b>Bu stile ne isim verelim?</b>
+      <div class="row"><input id="nm-${esc(p.id)}" value="${esc(p.name_suggestion || "")}"><button style="flex:0 0 auto" onclick="saveStyle('${esc(p.id)}')">Kaydet</button></div></div>`;
+  }
+  if (p.kind === "edit" && p.clips) {
+    const done = p.clips.filter((c) => c.output);
+    if (p.clips_by) body += `<div class="muted" style="margin-top:6px">Anları seçen: ${esc(p.clips_by === "claude" ? "Claude" : "kurallar")} · ${p.clips.length} klip</div>`;
+    body += `<div class="grid">${p.clips.map((c) => c.output ? `
+      <div class="vid"><video src="/${esc(c.output)}" poster="/${esc(c.thumbnail)}" controls preload="none"></video>
+        <div class="meta"><div><b>${esc(c.title || "Klip")}</b></div>
+        <div class="muted">${fmt(c.duration)} · ${c.cut_seconds > 0 ? fmt(c.cut_seconds) + " boşluk kesildi" : "kesim yok"}${c.music ? " · müzik: " + esc(c.music) : ""}</div>
+        ${(c.qc || []).filter((q) => !q.ok).map((q) => `<div class="note">! ${esc(q.name)}: ${esc(q.detail)}</div>`).join("")}
+        <a href="/${esc(c.output)}" download>indir</a><a href="/${esc(c.srt)}" download>altyazı</a><a href="/${esc(c.sheet)}" target="_blank">kareler</a></div></div>`
+      : `<div class="vid"><div style="aspect-ratio:9/16;display:grid;place-items:center" class="muted">${esc(c.title || "Klip")}<br>sırada</div></div>`).join("")}</div>`;
+  }
+  (p.notes || []).forEach((n) => (body += `<div class="note">• ${esc(n)}</div>`));
+  if (p.error) body += `<div class="err">✖ ${esc(p.error)}</div>`;
+  return `<div class="proj">${head}${body}</div>`;
+}
+
+async function refresh() {
+  const [projects, status] = await Promise.all([api("/api/studio/projects"), api("/api/status")]);
+  const typing = document.activeElement && document.activeElement.id && document.activeElement.id.startsWith("nm-");
+  if (!typing) $("projects").innerHTML = projects.length ? projects.map(projectHtml).join("") : "Henüz iş yok.";
+  const c = status.current;
+  $("current").innerHTML = c ? `<span class="pill running">çalışıyor</span> ${esc(c.kind.startsWith("studio") ? "stüdyo" : "video üretimi")} · ${esc(c.job || "")}` : "";
+  if (c && c.job) logPid = logPid || c.job;
+  $("aiNote").textContent = status.provider === "manual" ? "Claude bağlı değil: stil ve klip seçimi yalnızca ölçümlerle yapılır"
+    : "Claude ile: " + (status.provider === "claude_cli" ? "bilgisayardaki Claude Code" : "Claude API");
+  if (logPid) {
+    const r = await api("/api/log/" + encodeURIComponent(logPid));
+    $("log").style.display = r.log ? "block" : "none";
+    const pre = $("log"), bottom = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 30;
+    pre.textContent = r.log; if (bottom) pre.scrollTop = pre.scrollHeight;
+  }
+}
+
+window.showLog = (pid) => { logPid = pid; refresh(); };
+window.saveStyle = async (pid) => {
+  const name = $("nm-" + pid).value.trim();
+  if (!name) return;
+  const s = await api("/api/studio/style/save", { project: pid, name });
+  if (s.error) { alert(s.error); return; }
+  document.activeElement.blur();
+  await loadStyles(s.slug); refresh();
+};
+
+loadStyles(); refresh(); syncMode();
+setInterval(refresh, 3000); setInterval(() => loadStyles(), 15000);
+</script>
+</body>
+</html>

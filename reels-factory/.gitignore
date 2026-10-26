@@ -30,3 +30,7 @@ assets/sfx/*
 
 # Uygulama durumu (otomatik mod ayarları)
 config/app.json
+
+# Video Stüdyosu (yüklenen videolar, öğrenilen stiller, çalışma klasörleri)
+studio/
+output/studio/

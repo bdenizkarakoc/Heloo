@@ -132,6 +132,31 @@ Güncelleme (yeni sürümü çeker, uygulamayı yeniden başlatır, kısayollar�
 powershell -ExecutionPolicy Bypass -File scripts\update.ps1
 ```
 
+## Video Stüdyosu (kendi videonu düzenle)
+
+Panelin üstündeki **🎬 Stüdyo** bağlantısı (`http://127.0.0.1:8765/studio`):
+
+1. **Stil öğret:** Beğendiğin bir Reels'i yükle. Kesim hızı, renk (parlaklık/kontrast/doygunluk/sıcaklık),
+   hareket, baskın vurgu renkleri, konuşma ve müzik ölçülür; kareler Claude'a gösterilip altyazı, başlık,
+   ilerleme çubuğu ve efekt stili çıkarılır. Sistem "Bu stile ne isim verelim?" diye sorar; ad verip kaydedersin
+   (`studio/styles/<ad>.json`). Claude bağlı değilse stil yalnızca ölçümlerden çıkarılır (sayfada belirtilir).
+2. **Videomu düzenle:** Kendi videonu yükle (birkaç saniyeden 20+ dakikaya). Konuşma faster-whisper ile kelime
+   kelime yazıya dökülür, sonra:
+   - **En iyi anlardan kısa klipler:** Claude dökümü okuyup tek başına anlaşılır, güçlü açılışlı anları seçer ve
+     başlık yazar (Claude yoksa kurallarla seçilir), ya da
+   - **Tamamını düzenle:** videonun tamamı.
+   Her klipte konuşma boşlukları kesilir (jump cut), görüntü 9:16'ya getirilir (bulanık arka plan / kırpma /
+   siyah boşluk) veya kendi oranında kalır; stile göre renk düzenleme, kesimlerde zoom, kelime vurgulu altyazı,
+   açılış başlığı, ilerleme çubuğu, beyaz flaş ve isteğe bağlı (konuşmaya göre kısılan) müzik eklenir; ses
+   -14 LUFS'a normalize edilir.
+3. **Kendi kendini geliştirme:** İlk klip üretildikten sonra Claude çıktının karelerini referansla karşılaştırır
+   (okunabilirlik, güvenli alan, yüzleri kapatma, referansa benzerlik, senin yazdığın istekler), stili düzeltir ve
+   klibi yeniden üretir; iyileşen stil yeni sürüm olarak kaydedilir (eski sürüm `.bak` olarak saklanır).
+
+Çıktılar `output/studio/<iş>/`: video, kapak, altyazı (`.srt`) ve kare tablosu. Yüklenen videolar
+`studio/uploads/` altında kalır (silinmez). Konuşma tanıma Türkçe ve otomatik olduğu için sayı/özel adlarda
+hata olabilir; yayından önce altyazıları gözden geçir. Uzun videolarda yazıya dökme CPU'da birkaç dakika sürer.
+
 ## Bulutta otomatik çalışma (Claude Code on the web)
 
 Zamanlanmış bir bulut görevi günde iki kez (İstanbul saatiyle ~09:47 ve ~18:47) `cloud/ROUTINE.md`
