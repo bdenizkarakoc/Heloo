@@ -128,6 +128,11 @@ Gövde: (videoya dönüşmesini istediğin metin)
 
 Gövdeye `görsel: arama` yazarsan çizim yerine lisanslı/arama görselleri kullanılır.
 
+E-posta okuma, zamanlanmış göreve Gmail bağlantısı eklenmişse çalışır (claude.ai → Routines → görev →
+Connectors → Gmail). Bağlantı yoksa metinlerini GitHub'da **`reels-videos` dalındaki `inbox/` klasörüne**
+`.txt` dosyası olarak ekle (GitHub mobil uygulaması/web: Add file → Create new file). İşlenen dosyalar
+`inbox/done/` altına taşınır; video bağlantıları çalışma sonunda telefon bildirimiyle gelir.
+
 ## Kullanım
 
 ### A) Claude Code ile (önerilen, anahtar gerektirmez)

@@ -5,6 +5,7 @@ Kullanıcı: biridaldc@gmail.com · Depo: bdenizkarakoc/Heloo · Kod dalı: `cla
 · Teslim dalı: `reels-videos` (yalnızca `scripts/deliver.sh` yazar).
 
 ## 0. Hazırlık
+Depo çalışma klasöründe yoksa önce klonla: `git clone https://github.com/bdenizkarakoc/Heloo.git && cd Heloo`.
 ```bash
 git fetch origin claude/autonomous-ai-reels-factory-x82681
 git checkout -B claude/autonomous-ai-reels-factory-x82681 origin/claude/autonomous-ai-reels-factory-x82681
@@ -20,7 +21,12 @@ cd reels-factory && bash scripts/cloud-setup.sh
 - Dış hizmet kesintisi (ör. edge-tts, Openverse geçici hata) kod hatası değildir; bir kez yeniden dene, sürerse raporla.
 
 ## 2. Kullanıcının metinleri (gelen kutusu)
-Gmail'de `from:biridaldc@gmail.com subject:Reels: is:unread newer_than:14d` ara (en fazla 2 ileti).
+**A) GitHub gelen kutusu (her zaman):** `bash scripts/inbox.sh list` — `reels-videos` dalındaki `inbox/*.txt|md`
+dosyaları. Her biri için `bash scripts/inbox.sh get <dosya> > /tmp/metin.txt`; ilk satır `Konu:` ile başlıyorsa
+konu ipucudur; içerikte `görsel: arama` geçiyorsa `--draw` kullanma. Aşağıdaki 2-4. adımları uygula, teslimden
+sonra `bash scripts/inbox.sh done <dosya>`.
+
+**B) Gmail (yalnızca Gmail araçları oturumda varsa):**  `from:biridaldc@gmail.com subject:Reels: is:unread newer_than:14d` ara (en fazla 2 ileti).
 Her biri için:
 1. Metin = e-postanın gövdesi (konudaki "Reels:" sonrası konu ipucudur).
 2. `python3 scripts/factory.py new --manual --draw --text-file <metin dosyası> [--topic "<konu>"]`
@@ -41,9 +47,10 @@ başlıkları tekrarlama) → SKILL.md akışı (araştırma, kaynaklı senaryo,
 ```bash
 bash scripts/deliver.sh output/videos/<slug>.mp4 output/thumbnails/<slug>.jpg output/captions/<slug>.txt output/captions/<slug>.srt
 ```
-Yazdırılan GitHub bağlantısını kullanıcıya e-postayla gönder (Gmail, alıcı: biridaldc@gmail.com,
+Yazdırılan GitHub bağlantısını (Gmail araçları varsa) kullanıcıya e-postayla gönder (Gmail, alıcı: biridaldc@gmail.com,
 konu: "Yeni Reels: <başlık>"). Gövdede: bağlantı, süre, QC özeti (geçen/uyarı), paylaşım metni (txt
 içeriği) ve "kullanım hakkı doğrulanmadı" uyarıları varsa bunlar. Video ekleme; yalnızca bağlantı.
+Gmail yoksa bağlantıları ve özeti son mesajında yaz — çalışma bitince kullanıcıya telefon bildirimi gider.
 
 ## Kurallar
 - Ücretli API/kredi harcama (ör. Higgsfield) yok; `.env` anahtarı yoksa ücretsiz yöntemler kullanılır.
