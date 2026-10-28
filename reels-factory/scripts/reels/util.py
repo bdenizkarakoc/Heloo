@@ -67,8 +67,11 @@ def run(cmd: list[str], cwd: Path | None = None, timeout: float | None = None,
         check: bool = True, env: dict | None = None, quiet: bool = False) -> subprocess.CompletedProcess:
     if not quiet:
         L.debug("$ %s", " ".join(str(c) for c in cmd))
+    from .cancel import check as cancel_check
+    cancel_check()
     proc = subprocess.run([str(c) for c in cmd], cwd=cwd, capture_output=True, text=True,
                           timeout=timeout, env=env)
+    cancel_check()  # süreç "Durdur" ile sonlandırıldıysa hata yerine durdurma olarak bildir
     if check and proc.returncode != 0:
         tail = (proc.stderr or proc.stdout or "")[-2500:]
         raise StageError(f"Komut başarısız ({proc.returncode}): {cmd[0]} ...\n{tail}")

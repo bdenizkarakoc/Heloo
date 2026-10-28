@@ -582,8 +582,9 @@ def produce(job: Job, cfg: Config, from_stage: str | None = None, autofix: bool 
         outputs = stage_export(job, script, final, music, cfg)
         job.set_status("done")
         return outputs
-    except Exception:
-        job.set_status("failed")
+    except Exception as exc:
+        from .cancel import Cancelled
+        job.set_status("stopped" if isinstance(exc, Cancelled) else "failed")
         raise
     finally:
         log.detach(handler)

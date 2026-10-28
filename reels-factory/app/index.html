@@ -25,6 +25,7 @@
   .muted { color: var(--muted); font-size: 13px; }
   .pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; background: #1d2740; color: var(--muted); }
   .pill.done { background: #133a36; color: var(--acc2); } .pill.failed { background: #3d1c22; color: var(--bad); }
+  .pill.stopped { background: #2a2f3d; color: var(--muted); }
   .pill.producing, .pill.running { background: #3b331a; color: var(--acc); }
   pre { background: #070a12; border: 1px solid var(--line); border-radius: 10px; padding: 10px; height: 260px; overflow: auto; font-size: 12px; white-space: pre-wrap; margin: 8px 0 0; }
   .stages { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
@@ -118,6 +119,10 @@
       <h2>Şu an</h2>
       <div id="current" class="muted">Boşta.</div>
       <div id="queue" class="muted"></div>
+      <div id="stopRow" style="display:none; margin-top:8px; gap:8px; flex-wrap:wrap">
+        <button class="ghost" id="btnStop">■ Durdur</button>
+        <button class="ghost" id="btnStopAll">Hepsini durdur (otomatik modu da kapat)</button>
+      </div>
       <pre id="log"></pre>
     </div>
     <div class="card">
@@ -179,7 +184,10 @@ async function refreshStatus() {
   $("current").innerHTML = c
     ? `<span class="pill running">çalışıyor</span> ${esc(c.kind === "new" ? (c.topic || "yeni konu") : "yeniden üretim")} · ${esc(c.job || "görev hazırlanıyor")} · başladı ${new Date(c.started).toLocaleTimeString("tr-TR")}`
     : "Boşta.";
-  $("queue").textContent = s.pending.length ? `Sırada: ${s.pending.length} görev` : "";
+  $("queue").innerHTML = s.pending.length ? `Sırada: ${s.pending.length} görev` + s.pending.map((t) =>
+    `<div class="muted">· ${esc(t.kind === "new" ? (t.topic || "yeni konu") : (t.topic || t.kind))} <button class="ghost" style="padding:2px 8px" onclick="stopTask('${esc(t.id)}')">Kaldır</button></div>`).join("") : "";
+  $("stopRow").style.display = c || s.pending.length ? "flex" : "none";
+  $("btnStop").style.display = c ? "" : "none";
   logJob = c && c.job ? c.job : logJob;
   const cl = s.cloud || {}, last = cl.last;
   $("cloudNote").innerHTML = cl.running ? "kontrol ediliyor…"
@@ -189,6 +197,18 @@ async function refreshStatus() {
   if (last && last.time !== lastCloudTime) { lastCloudTime = last.time; refreshCloud(); }
 }
 let lastCloudTime = null;
+window.stopTask = async (id) => { await fetch("/api/stop", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ task: id }) }); refreshStatus(); };
+$("btnStop").onclick = async () => {
+  if (!confirm("Şu an üretilen video durdurulsun mu? (Görev daha sonra kaldığı yerden yeniden üretilebilir.)")) return;
+  $("btnStop").disabled = true;
+  await fetch("/api/stop", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+  $("btnStop").disabled = false; refreshStatus();
+};
+$("btnStopAll").onclick = async () => {
+  if (!confirm("Çalışan ve sıradaki bütün işler durdurulsun ve otomatik mod kapatılsın mı?")) return;
+  await fetch("/api/stop", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ all: true }) });
+  autoInit = false; refreshStatus();
+};
 
 const vidCard = (title, v, sub) => `
     <div class="vid">
@@ -232,10 +252,10 @@ async function refreshJobs() {
   $("jobs").innerHTML = jobs.length ? jobs.map((j) => `
     <div class="job">
       <div class="row" style="align-items:flex-start">
-        <div><b>${esc(j.title || j.id)}</b> <span class="pill ${esc(j.status)}">${esc(j.status)}</span><div class="muted">${esc(j.id)}</div></div>
+        <div><b>${esc(j.title || j.id)}</b> <span class="pill ${esc(j.status)}">${esc(j.status === "stopped" ? "durduruldu" : j.status)}</span><div class="muted">${esc(j.id)}</div></div>
         <div style="flex:0 0 auto" class="row">
           <button class="ghost" onclick="showLog('${esc(j.id)}')">log</button>
-          ${j.status !== "producing" ? `<button class="ghost" onclick="reproduce('${esc(j.id)}')">yeniden üret</button>` : ""}
+          ${j.status !== "producing" ? `<button class="ghost" onclick="reproduce('${esc(j.id)}')">${j.status === "stopped" ? "kaldığı yerden devam et" : "yeniden üret"}</button>` : ""}
         </div>
       </div>
       <div class="stages">${Object.entries(j.stages).map(([k, v]) => `<span class="st ${esc(v)}">${esc(STAGE_TR[k] || k)}</span>`).join("")}</div>

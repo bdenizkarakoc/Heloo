@@ -116,6 +116,8 @@ class Job:
 
         Başarısız adımlar asla 'done' olarak işaretlenmez.
         """
+        from .cancel import Cancelled, check
+        check()  # "Durdur" istendiyse yeni adıma başlama
         st = self.stage_state(name)
         st["status"] = "running"
         st["started"] = _now()
@@ -127,6 +129,13 @@ class Job:
         L.info("▶ %s", name)
         try:
             yield info
+        except Cancelled:
+            # durdurulan adım yeniden "bekliyor": görev sonra kaldığı yerden sürdürülebilir
+            self.state["stages"][name] = {"status": "pending", "stopped": _now(), "attempts": st.get("attempts", 0)}
+            self.state["status"] = "stopped"
+            self.save()
+            L.warning("■ %s durduruldu", name)
+            raise
         except Exception as exc:
             st["status"] = "failed"
             st["error"] = f"{type(exc).__name__}: {exc}"[:2000]

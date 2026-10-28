@@ -98,6 +98,11 @@
       <audio id="tryAudio" controls style="display:none"></audio>
     </div>
     <div class="card"><h2>İşlem kaydı</h2><pre id="log">—</pre></div>
+    <div class="card">
+      <h2>Bütün ses verilerini sil</h2>
+      <p class="muted">Bütün ses profillerin, sohbet kayıtların, öğrenilmiş sesin ve ses tarzların bu bilgisayardan silinir; videolar varsayılan Türkçe sesle seslendirilir. Geri alınamaz.</p>
+      <button class="ghost" id="btnWipe" style="border-color:var(--bad); color:var(--bad)">Hepsini sil ve sıfırla</button> <span id="wipeState" class="muted"></span>
+    </div>
   </aside>
 </main>
 <script>
@@ -318,6 +323,15 @@ $("btnTry").onclick = async () => {
   if (r.error) { $("tryState").innerHTML = `<span class="err">${esc(r.error)}</span>`; return; }
   $("tryState").textContent = ""; $("tryAudio").style.display = "block";
   $("tryAudio").src = "/" + r.audio + "?t=" + Date.now(); $("tryAudio").play();
+};
+$("btnWipe").onclick = async () => {
+  const t = prompt("Sesim'deki BÜTÜN veriler (profiller, kayıtlar, öğrenilmiş ses, tarzlar) silinecek. Onaylamak için SİL yaz:");
+  if (t === null) return;
+  const r = await api("/api/voice/wipe", { confirm: t });
+  if (r.error) { $("wipeState").innerHTML = `<span class="err">${esc(r.error)}</span>`; return; }
+  slug = null; running = false; stop(); $("chat").innerHTML = ""; $("chatCard").style.display = "none"; $("setupCard").style.display = "block";
+  $("consent").checked = false; $("btnStart").disabled = true; openTurns.clear();
+  $("wipeState").textContent = `Silindi: ${r.profiles} profil, ${r.styles} tarz.`; loadProfiles(); loadStyles();
 };
 loadProfiles(); loadStyles(); refreshLog();
 setInterval(loadProfiles, 5000); setInterval(loadStyles, 6000); setInterval(refreshLog, 3000);

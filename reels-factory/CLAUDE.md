@@ -57,6 +57,7 @@ python scripts/factory.py status [<görev>]
 | `scripts/reels/mcp_setup.py` | `factory.py mcp`: MCP sunucularını (reels-fabrikasi, playwright, memory, filesystem, fetch, git, github, sentry, context7, brave-search, postgres) Claude Code'a kaydeder |
 | `app/publish.html` | Yayın sayfası (`/publish`) |
 | `app/studio.html` | Stüdyo sayfası (`/studio`): yükleme, stil adlandırma, düzenleme seçenekleri, sonuçlar |
+| `scripts/reels/cancel.py` | "Durdur": iş kuyruğunun alt süreçlerini izler (Popen kancası `reels/__init__.py`), süreç ağacıyla sonlandırır; `job.stage` ve `util.run` durdurmayı denetler (`Cancelled`, StageError değil) |
 | `scripts/reels/design.py` | Tasarım temaları: `design.themes` ayar katmanı (renk, yazı tipi, altyazı biçimi, geçiş seti, efektler), son kullanılmayanı seçer; görevde `design` olarak saklanır |
 | `remotion/` | Remotion (React) render motoru: `src/Reels.tsx` `composition/remotion.json`'ı HyperFrames şablonlarıyla aynı hareketlerle çizer (`render.engine: remotion` ya da `--engine remotion`) |
 | `assets/templates/*.j2` | HyperFrames kompozisyon şablonları (sahne, altyazı, üst katman) |

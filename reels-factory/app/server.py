@@ -32,7 +32,7 @@ from urllib.parse import unquote, urlparse
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from reels import audience, claude_setup, kesim, knowledge, notes, cloud_sync, doctor, log, pipeline, publish, publish_sources, studio, voice  # noqa: E402
+from reels import audience, cancel, claude_setup, kesim, knowledge, notes, cloud_sync, doctor, log, pipeline, publish, publish_sources, studio, voice  # noqa: E402
 from reels.config import load_config  # noqa: E402
 from reels.job import Job  # noqa: E402
 from reels.util import read_json, write_json  # noqa: E402
@@ -57,6 +57,7 @@ class Factory:
         self.pending: list[dict] = []
         self.current: dict | None = None
         self.lock = threading.Lock()
+        self.dropped: set[str] = set()  # sıradayken kaldırılan görevler
         self.auto = {**DEFAULT_AUTO, **(read_json(APP_STATE, {}) or {}).get("auto", {})}
         threading.Thread(target=self._worker, daemon=True, name="worker").start()
         threading.Thread(target=self._scheduler, daemon=True, name="scheduler").start()
@@ -82,15 +83,44 @@ class Factory:
             task = self.q.get()
             with self.lock:
                 self.pending = [t for t in self.pending if t["id"] != task["id"]]
+                if task["id"] in self.dropped:  # sıradayken kaldırıldı
+                    self.dropped.discard(task["id"])
+                    continue
                 self.current = {**task, "started": now().isoformat(timespec="seconds"), "job": task.get("job")}
+            cancel.clear()
             try:
                 self._run(task)
+            except cancel.Cancelled:
+                L.warning("■ Görev durduruldu: %s", (self.current or {}).get("job") or task.get("topic") or task["kind"])
             except Exception as exc:  # noqa: BLE001 — bir görevin hatası uygulamayı durdurmamalı
-                L.error("Görev başarısız: %s", exc)
-                L.debug("%s", traceback.format_exc())
+                if cancel.EVENT.is_set():
+                    L.warning("■ Görev durduruldu: %s", (self.current or {}).get("job") or task["kind"])
+                else:
+                    L.error("Görev başarısız: %s", exc)
+                    L.debug("%s", traceback.format_exc())
             finally:
+                cancel.clear()
                 with self.lock:
                     self.current = None
+
+    def stop(self, task_id: str | None = None, everything: bool = False) -> dict:
+        """Çalışan görevi durdurur (alt süreçler sonlandırılır) ve/veya sıradaki görevleri kaldırır.
+        everything: çalışan + sıradaki hepsi; otomatik mod da kapatılır (yenisi başlamasın)."""
+        stopped, dropped = None, []
+        with self.lock:
+            cur = self.current
+            for t in list(self.pending):
+                if everything or t["id"] == task_id:
+                    self.dropped.add(t["id"])
+                    dropped.append(t["id"])
+            self.pending = [t for t in self.pending if t["id"] not in self.dropped]
+        if cur and (everything or task_id in (None, cur["id"])):
+            killed = cancel.request()
+            stopped = {"id": cur["id"], "job": cur.get("job"), "killed_processes": killed}
+            L.warning("Durdurma istendi: %s (%d süreç sonlandırıldı)", cur.get("job") or cur["kind"], killed)
+        if everything and self.auto.get("enabled"):
+            self.save_auto({"enabled": False})
+        return {"stopped": stopped, "dropped": dropped, "auto_disabled": bool(everything)}
 
     def _kesim_loop(self) -> None:
         """Masaüstü\\kesim\\Montaja at klasörü ve Kesim.exe çıktıları (15 sn'de bir)."""
@@ -200,8 +230,8 @@ class Factory:
             handler = log.attach_job_log(job.id)
             try:
                 pipeline.auto_script(job, cfg)
-            except Exception:
-                job.set_status("failed")
+            except Exception as exc:
+                job.set_status("stopped" if isinstance(exc, cancel.Cancelled) else "failed")
                 raise
             finally:
                 log.detach(handler)
@@ -209,6 +239,12 @@ class Factory:
             job = Job.load(task["job"])
             with self.lock:
                 self.current["job"] = job.id
+            if not job.script_path.exists():  # senaryo yazılırken durdurulmuştu: önce senaryo
+                handler = log.attach_job_log(job.id)
+                try:
+                    pipeline.auto_script(job, cfg)
+                finally:
+                    log.detach(handler)
         out = pipeline.produce(job, cfg, from_stage=task.get("from_stage"))
         L.info("✔ Video hazır: %s", out.get("video"))
         if task.get("kesim") and out.get("video"):  # Kesim penceresinden istendi: Hazır klasörüne de koy
@@ -688,6 +724,8 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as exc:  # noqa: BLE001
                 return self._json({"error": str(exc)}, 400)
             return self.send_error(404)
+        if path == "/api/stop":  # üretimi durdur: {task?: id} ya da {all: true}
+            return self._json(FACTORY.stop(data.get("task") or None, bool(data.get("all"))))
         if path == "/api/new":
             n = max(1, min(10, int(data.get("count") or 1)))
             text = (data.get("text") or "").strip() or None
@@ -854,6 +892,12 @@ class Handler(BaseHTTPRequestHandler):
                         return self._json({"error": "önce dosyayı yükleyin"}, 400)
                     task["file"] = name
                 return self._json({"queued": [FACTORY.enqueue("voice_learn", topic="ses tarzı öğrenme", **task)]})
+            if action == "wipe":  # Sesim'in bütün verileri (profiller, kayıtlar, tarzlar) — arayüz onay ister
+                if str(data.get("confirm", "")).strip().upper() not in ("SİL", "SIL"):
+                    return self._json({"error": "onay için SİL yazın"}, 400)
+                res = voice.wipe_all()
+                _caps_cache.clear()
+                return self._json(res)
             if action == "style":  # tarzı etkinleştir (slug boş: kapat)
                 voice.set_active_style(data.get("slug") or None)
                 return self._json({"styles": voice.styles()})

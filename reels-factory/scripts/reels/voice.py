@@ -646,3 +646,20 @@ def delete_style(slug: str) -> None:
     if (read_json(ACTIVE_STYLE) or {}).get("slug") == slug:
         set_active_style(None)
     shutil.rmtree(STYLES / slugify(slug, 40), ignore_errors=True)
+
+
+def wipe_all() -> dict:
+    """Sesim'in topladığı her şeyi siler: bütün ses profilleri ve kayıtları, öğrenilmiş ses rengi, ses tarzları,
+    etkin ses/tarz seçimi ve okuma önbelleği. Seslendirme varsayılan Türkçe sese döner. Ses motoru (PyTorch) ve
+    indirilmiş model silinmez (kişisel veri değildir)."""
+    import shutil
+    n_prof = len(list(VOICES.glob("*/profile.json"))) if VOICES.exists() else 0
+    n_style = len(list(STYLES.glob("*/style.json"))) if STYLES.exists() else 0
+    if VOICES.exists():
+        for p in VOICES.iterdir():
+            if p.is_dir():
+                shutil.rmtree(p, ignore_errors=True)
+            else:
+                p.unlink(missing_ok=True)
+    L.warning("Sesim: bütün ses verileri silindi (%d profil, %d tarz)", n_prof, n_style)
+    return {"profiles": n_prof, "styles": n_style}

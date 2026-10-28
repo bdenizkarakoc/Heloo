@@ -135,6 +135,15 @@ Güncelleme (yeni sürümü çeker, uygulamayı yeniden başlatır, kısayollar�
 powershell -ExecutionPolicy Bypass -File scripts\update.ps1
 ```
 
+### Üretimi durdurma
+
+Kontrol panelinde **Şu an** kartında **■ Durdur** çalışan videoyu durdurur: o anki adımın alt süreçleri (ffmpeg,
+HyperFrames/Remotion render, Claude Code) süreç ağacıyla sonlandırılır, görev **durduruldu** olur ve durdurulan adım
+"bekliyor"a döner; görev listesinde **kaldığı yerden devam et** ile sürdürülebilir. Sıradaki işler tek tek
+**Kaldır**ılabilir; **Hepsini durdur** çalışan ve sıradaki bütün işleri durdurup otomatik modu kapatır
+(`POST /api/stop` → `{}` / `{"task": id}` / `{"all": true}`). Python içinde süren uzun hesaplar (konuşma tanıma
+gibi) o hesap bitince durur.
+
 ## Video Stüdyosu (kendi videonu düzenle)
 
 Panelin üstündeki **🎬 Stüdyo** bağlantısı (`http://127.0.0.1:8765/studio`):
@@ -255,6 +264,10 @@ parçalarıyla aynı uzunlukta yeniden kurar — ses rengi ve perde senden, tonl
 korunduğu için altyazı senkronu bozulmaz. Ölçülen sonuç (1,7 dk kayıtla yapılan testte): perde hedefle aynı
 (107 Hz), anlaşılırlık temel sesin %89'una karşı %78. Daha uzun ve temiz kayıt sonucu iyileştirir. Profesyonel
 klonlama kalitesi (ElevenLabs gibi ücretli hizmetler) değildir; tonlama tam olarak senin tonlaman olmaz.
+
+**Bütün ses verilerini sil:** Sesim sayfasının en altındaki **Hepsini sil ve sıfırla** (onay için "SİL" yazılır)
+bütün profilleri, kayıtları, öğrenilmiş sesi ve ses tarzlarını siler; seslendirme varsayılan Türkçe sese döner.
+İndirilmiş ses motoru/model silinmez (kişisel veri değildir).
 
 **Kayıtları yönetme:** her profilde **Kayıtları göster** (her cevabı dinle, **Bu kaydı sil**), **Baştan başla**
 (bütün kayıtlar ve öğrenilmiş ses silinir, sohbet en baştan başlar) ve **Profili sil**. Kayıt sildikten sonra

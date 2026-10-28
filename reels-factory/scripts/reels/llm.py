@@ -321,6 +321,8 @@ def generate_via_claude_cli(job_id: str, job_dir, topic: str | None, cfg: Config
     except subprocess.TimeoutExpired as exc:
         proc.kill()
         raise StageError("Claude Code zaman aşımı") from exc
+    from .cancel import check as cancel_check
+    cancel_check()  # "Durdur" ile sonlandırıldıysa
     if proc.returncode != 0:
         raise StageError(f"Claude Code hata kodu {proc.returncode}")
     path = job_dir / "script.json"
