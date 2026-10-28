@@ -10,8 +10,12 @@ import { fmt, mix, track } from "./ease";
 
 type Colors = { bg: string; bg2: string; ink: string; accent: string; accent2: string };
 type AnyRec = Record<string, any>;
+export type Look = {
+  caption_style?: string; chip?: string; grain?: number; vignette?: number; letterbox?: boolean; scanlines?: boolean;
+  cam_filter?: string; progress?: string;
+};
 export type ReelsProps = {
-  W: number; H: number; fps: number; total: number;
+  W: number; H: number; fps: number; total: number; look?: Look;
   brand: { font_family: string; colors: Colors };
   handle: string; margin: number; bar_y: number;
   scenes: { start: number; duration: number; d: AnyRec }[];
@@ -31,7 +35,7 @@ function useBrandFont() {
 }
 
 /* ------------------------------------------------------------------ sahne */
-const Scene: React.FC<{ d: AnyRec; c: Colors; W: number; H: number }> = ({ d, c, W, H }) => {
+const Scene: React.FC<{ d: AnyRec; c: Colors; W: number; H: number; look: Look }> = ({ d, c, W, H, look }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const t = frame / fps;
@@ -127,8 +131,8 @@ const Scene: React.FC<{ d: AnyRec; c: Colors; W: number; H: number }> = ({ d, c,
   const pill = (style: string, size: number): React.CSSProperties => style === "ghost"
     ? { display: "inline-block", padding: "14px 28px 13px", borderRadius: 999, background: "rgba(255,255,255,.12)", color: c.ink,
         fontWeight: 750, letterSpacing: ".06em", boxShadow: "inset 0 0 0 2px rgba(255,255,255,.22)", fontSize: size }
-    : { display: "inline-block", padding: "16px 30px 15px", borderRadius: 999, background: c.accent, color: c.bg, fontWeight: 800,
-        letterSpacing: ".08em", fontSize: size };
+    : { display: "inline-block", padding: "16px 30px 15px", borderRadius: look.chip === "bar" ? 6 : 999, background: c.accent, color: c.bg,
+        fontWeight: 800, letterSpacing: ".08em", fontSize: size, boxShadow: look.chip === "bar" ? `-12px 0 0 ${c.accent2}` : undefined };
 
   /* metin blokları */
   const blocks = (d.blocks || []).map((blk: AnyRec, bi: number) => {
@@ -233,9 +237,20 @@ const Scene: React.FC<{ d: AnyRec; c: Colors; W: number; H: number }> = ({ d, c,
     <AbsoluteFill style={{ background: c.bg, overflow: "hidden", fontFamily: `${FONT}, sans-serif`, color: c.ink }}>
       <AbsoluteFill style={{ background: c.bg, overflow: "hidden", opacity, clipPath: clip,
         transform: `translateX(${x}px) scale(${scale})`, filter: blur ? `blur(${blur}px)` : undefined }}>
-        <AbsoluteFill style={{ transform: `translate(${cx}px, ${cy}px) scale(${cs})` }}>{back}</AbsoluteFill>
+        <AbsoluteFill style={{ transform: `translate(${cx}px, ${cy}px) scale(${cs})`, filter: look.cam_filter || undefined }}>{back}</AbsoluteFill>
         <div style={{ position: "absolute", inset: 0, background: `linear-gradient(180deg, rgba(5,7,12,${d.shade_top}) 0%, rgba(5,7,12,0) 40%), `
           + `linear-gradient(0deg, rgba(5,7,12,${d.shade_bottom}) 0%, rgba(5,7,12,0) 46%), rgba(5,7,12,${d.shade_all})` }} />
+        {look.vignette ? <div style={{ position: "absolute", inset: 0,
+          background: `radial-gradient(ellipse at 50% 45%, rgba(0,0,0,0) 45%, rgba(0,0,0,${look.vignette}) 100%)` }} /> : null}
+        {look.scanlines ? <div style={{ position: "absolute", inset: 0, opacity: 0.16, background:
+          "repeating-linear-gradient(0deg, rgba(0,0,0,.9) 0px, rgba(0,0,0,.9) 2px, rgba(0,0,0,0) 2px, rgba(0,0,0,0) 5px)" }} /> : null}
+        {look.grain ? (() => {  /* şablondaki steps() kaymasıyla aynı: sabit doku, adım adım */
+          const n = Math.max(2, Math.round(J.dur * 12)), k = Math.min(n, Math.floor(camP * n)) / n;
+          return <div style={{ position: "absolute", left: -64, top: -64, width: W + 128, height: H + 128, opacity: look.grain,
+            mixBlendMode: "overlay", background: `url(${staticFile("assets/fx/grain.png")})`, transform: `translate(${64 * k}px, ${48 * k}px)` }} />;
+        })() : null}
+        {look.letterbox ? <><div style={{ position: "absolute", left: 0, top: 0, width: W, height: 110, background: "#000" }} />
+          <div style={{ position: "absolute", left: 0, top: H - 110, width: W, height: 110, background: "#000" }} /></> : null}
         {card}{chips}{blocks}{stat}{compare}{items}
         {wipeOn ? <div style={{ position: "absolute", left: 0, top: H, width: W, height: 22, background: c.accent, transform: `translateY(${wipeY}px)` }} /> : null}
         <div style={{ position: "absolute", inset: 0, background: "#000", opacity: dip }} />
@@ -245,7 +260,7 @@ const Scene: React.FC<{ d: AnyRec; c: Colors; W: number; H: number }> = ({ d, c,
 };
 
 /* ------------------------------------------------------------------ altyazı */
-const Captions: React.FC<{ cap: NonNullable<ReelsProps["captions"]>; c: Colors; W: number }> = ({ cap, c, W }) => {
+const Captions: React.FC<{ cap: NonNullable<ReelsProps["captions"]>; c: Colors; W: number; style: string }> = ({ cap, c, W, style }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const t = frame / fps;
@@ -265,12 +280,24 @@ const Captions: React.FC<{ cap: NonNullable<ReelsProps["captions"]>; c: Colors; 
             fontWeight: 900, letterSpacing: ".01em", wordSpacing: `${cap.word_spacing}em`, fontSize: g.size }}>
             {line.words.map((w: AnyRec, wi: number) => {
               const j = wt[w.id] || { start: 1e9, end: 1e9, emph: false };
-              const baseC = w.emph ? c.accent2 : c.ink, hot = w.emph ? c.accent2 : c.accent, big = w.emph ? 1.14 : 1.08;
+              const baseC = w.emph ? c.accent2 : c.ink, hot = w.emph ? c.accent2 : c.accent;
               const back = Math.max(j.start + 0.08, j.end);
-              const p = track(t, 0, [{ at: j.start, dur: 0.08, to: 1, ease: "power2.out" }, { at: back, dur: 0.16, to: 0, ease: "power2.out" }]);
+              let span: React.CSSProperties;
+              if (style === "box") {  /* konuşulan kelime renkli kutuda (şablondaki box ile aynı) */
+                const p = track(t, 0, [{ at: j.start, dur: 0.06, to: 1, ease: "power2.out" }, { at: back, dur: 0.12, to: 0, ease: "power2.out" }]);
+                span = { color: mix(baseC, c.bg, p), transform: `scale(${1 + 0.04 * p})`, padding: "0 .14em", margin: "0 -.06em",
+                  borderRadius: ".16em", background: p > 0.01 ? mix(c.bg, hot, p) : "transparent", textShadow: p > 0.5 ? undefined : "0 4px 18px rgba(0,0,0,.65)" };
+              } else {
+                const big = w.emph ? 1.14 : style === "shadow" ? 1.04 : 1.08;
+                const p = track(t, 0, [{ at: j.start, dur: 0.08, to: 1, ease: "power2.out" }, { at: back, dur: 0.16, to: 0, ease: "power2.out" }]);
+                span = style === "shadow"
+                  ? { color: mix(baseC, hot, p), transform: `scale(${1 + (big - 1) * p})`,
+                      textShadow: "0 3px 0 rgba(0,0,0,.55), 0 10px 30px rgba(0,0,0,.75), 0 0 2px rgba(0,0,0,.8)" }
+                  : { color: mix(baseC, hot, p), transform: `scale(${1 + (big - 1) * p})`, WebkitTextStroke: `${cap.stroke}px rgba(5,7,12,.94)`,
+                      paintOrder: "stroke fill", textShadow: "0 8px 26px rgba(0,0,0,.5)" };
+              }
               return <React.Fragment key={w.id}>
-                <span style={{ display: "inline-block", color: mix(baseC, hot, p), transform: `scale(${1 + (big - 1) * p})`,
-                  WebkitTextStroke: `${cap.stroke}px rgba(5,7,12,.94)`, paintOrder: "stroke fill", textShadow: "0 8px 26px rgba(0,0,0,.5)" }}>{w.text}</span>
+                <span style={{ display: "inline-block", ...span }}>{w.text}</span>
                 {wi < line.words.length - 1 ? " " : null}
               </React.Fragment>;
             })}
@@ -286,10 +313,11 @@ const Overlay: React.FC<{ p: ReelsProps }> = ({ p }) => {
   const c = p.brand.colors;
   const prog = Math.min(1, frame / p.fps / p.total);
   return <AbsoluteFill style={{ fontFamily: `${FONT}, sans-serif`, pointerEvents: "none" }}>
-    <div style={{ position: "absolute", left: p.margin, top: p.bar_y, width: p.W - 2 * p.margin, height: 7, borderRadius: 999,
+    {(p.look?.progress || "top") !== "none" ? <div style={{ position: "absolute", left: p.margin,
+      top: p.look?.progress === "bottom" ? p.H - 64 : p.bar_y, width: p.W - 2 * p.margin, height: 7, borderRadius: 999,
       background: "rgba(255,255,255,.20)", overflow: "hidden" }}>
       <div style={{ position: "absolute", inset: 0, borderRadius: 999, transformOrigin: "0 50%", transform: `scaleX(${prog})`,
-        background: `linear-gradient(90deg, ${c.accent}, ${c.accent2})` }} /></div>
+        background: `linear-gradient(90deg, ${c.accent}, ${c.accent2})` }} /></div> : null}
     {p.handle ? <div style={{ position: "absolute", left: p.margin, top: p.bar_y + 22, fontSize: 28, fontWeight: 700, letterSpacing: ".04em",
       color: "rgba(255,255,255,.78)", textShadow: "0 2px 10px rgba(0,0,0,.6)" }}>{p.handle}</div> : null}
   </AbsoluteFill>;
@@ -303,10 +331,10 @@ export const Reels: React.FC<ReelsProps> = (p) => {
       {p.scenes.map((s, i) => (
         <Sequence key={s.d.id || i} from={Math.round(s.start * p.fps)} durationInFrames={Math.max(1, Math.round(s.duration * p.fps))}
           style={{ zIndex: i + 1 }}>
-          <Scene d={s.d} c={c} W={p.W} H={p.H} />
+          <Scene d={s.d} c={c} W={p.W} H={p.H} look={p.look || {}} />
         </Sequence>
       ))}
-      {p.captions ? <AbsoluteFill style={{ zIndex: 90 }}><Captions cap={p.captions} c={c} W={p.W} /></AbsoluteFill> : null}
+      {p.captions ? <AbsoluteFill style={{ zIndex: 90 }}><Captions cap={p.captions} c={c} W={p.W} style={p.look?.caption_style || "stroke"} /></AbsoluteFill> : null}
       <AbsoluteFill style={{ zIndex: 95 }}><Overlay p={p} /></AbsoluteFill>
     </AbsoluteFill>
   );

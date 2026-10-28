@@ -17,6 +17,7 @@ from PIL import ImageFont
 
 from . import log
 from .config import Config, ROOT
+from .design import look
 from .util import StageError, norm_word, run, tr_upper, words_of, write_json
 
 L = log.get("compose")
@@ -141,6 +142,7 @@ class SceneBuilder:
         self.content_bottom = sz.get("content_bottom", 1100)
         self.overlap = float(cfg.get_path("render.transition_overlap", 0.4))
         self.colors = cfg.get_path("brand.colors", {})
+        self.look = look(cfg)
         self.boxes: list[dict] = []  # güvenli alan denetimi için bütün metin kutuları
 
     def max_w(self, y_bottom: float) -> float:
@@ -151,7 +153,7 @@ class SceneBuilder:
               hl_class: str = "hl", mode: str = "blur", t: float = 0.0, stagger: float = 0.06,
               line_gap: float = 1.06, max_bottom: float | None = None) -> dict:
         raw = words_of(text)
-        disp = [tr_upper(w) if upper else w for w in raw]
+        disp = [tr_upper(w) if upper and self.look.get("headline_upper", True) else w for w in raw]
         max_bottom = max_bottom or self.content_bottom
         size, lines = None, None
         for zone_w in (W - 2 * self.mx, W - 2 * self.rmx):
@@ -242,6 +244,9 @@ class SceneBuilder:
                 "panr": {"s0": 1.18, "s1": 1.18, "x0": -60, "x1": 60, "y0": 0, "y1": 0},
                 "up": {"s0": 1.16, "s1": 1.16, "x0": 0, "x1": 0, "y0": 70, "y1": -70},
             }.get(kind, {"s0": 1.0, "s1": 1.14, "x0": 0, "x1": 0, "y0": 0, "y1": 0})
+            k = float(self.look.get("move_scale", 1.0))  # temaya göre sakin ya da enerjik kamera
+            move = {"s0": round(1 + (move["s0"] - 1) * k, 4), "s1": round(1 + (move["s1"] - 1) * k, 4),
+                    "x0": move["x0"] * k, "x1": move["x1"] * k, "y0": move["y0"] * k, "y1": move["y1"] * k}
 
         blobs, dots = [], []
         if bg.get("fit") == "contain" and bg["type"] == "photo":
@@ -540,6 +545,16 @@ def _env() -> Environment:
                        undefined=StrictUndefined, autoescape=True, trim_blocks=False, lstrip_blocks=False)
 
 
+def grain_texture(dest: Path, size: int = 256) -> Path:
+    """Film greni dokusu: sabit tohumlu gürültü (her render aynı; şablonda Math.random yok)."""
+    import numpy as np
+    from PIL import Image
+    rng = np.random.default_rng(7)
+    n = (128 + rng.normal(0, 46, (size, size))).clip(0, 255).astype("uint8")
+    Image.fromarray(n, "L").convert("RGB").save(dest)
+    return dest
+
+
 def build_project(job_dir: Path, script: dict, timeline: dict, voice: dict[str, dict],
                   media: dict[str, dict | None], groups: list[dict], category: dict,
                   cfg: Config) -> dict:
@@ -550,6 +565,8 @@ def build_project(job_dir: Path, script: dict, timeline: dict, voice: dict[str, 
     (comp / "assets" / "media").mkdir(parents=True)
     (comp / "assets" / "fonts").mkdir(parents=True)
     (comp / "assets" / "vendor").mkdir(parents=True)
+    (comp / "assets" / "fx").mkdir(parents=True)
+    grain_texture(comp / "assets" / "fx" / "grain.png")
 
     font = cfg.path(cfg.get_path("brand.font_file"))
     shutil.copy(font, comp / "assets" / "fonts" / "brand.ttf")
@@ -574,13 +591,20 @@ def build_project(job_dir: Path, script: dict, timeline: dict, voice: dict[str, 
     sfx: list[dict] = []
     host_rows = []
     rm_scenes = []  # Remotion motoru için aynı hesaplanmış sahne verisi
+    lk = look(cfg)
+    allowed = [t for t in lk.get("transitions") or [] if t in ("zoom", "whip", "iris", "wipe", "cut")]
+
+    def trans(j: int) -> str:  # temanın geçiş seti: senaryodaki geçiş sette yoksa setten sırayla
+        t = scenes[j].get("transition", "cut")
+        return t if not allowed or t in allowed else allowed[(j - 1) % len(allowed)]
+
     for i, sc in enumerate(scenes):
-        enter = sc.get("transition", "cut") if i > 0 else "cut"
-        exit_kind = scenes[i + 1].get("transition", "cut") if i + 1 < len(scenes) else None
+        enter = trans(i) if i > 0 else "cut"
+        exit_kind = trans(i + 1) if i + 1 < len(scenes) else None
         d, ev = builder.build(i, sc, rows[sc["id"]], voice[sc["id"]], media.get(sc["id"]), enter,
                               exit_kind, category)
         sfx += ev
-        html = env.get_template("scene.html.j2").render(d=d, brand=brand, W=W, H=H)
+        html = env.get_template("scene.html.j2").render(d=d, brand=brand, W=W, H=H, look=lk)
         (comp / "compositions" / f"{sc['id']}.html").write_text(html, encoding="utf-8")
         host_rows.append({"id": sc["id"], "start": rows[sc["id"]]["start"], "duration": rows[sc["id"]]["duration"]})
         rm_scenes.append({"start": rows[sc["id"]]["start"], "duration": rows[sc["id"]]["duration"], "d": d})
@@ -593,13 +617,13 @@ def build_project(job_dir: Path, script: dict, timeline: dict, voice: dict[str, 
     sz = cfg.get_path("safe_zone", {})
     if groups:
         html = env.get_template("captions.html.j2").render(
-            groups=cap_tpl, groups_js=cap_js, brand=brand, W=W, H=H,
+            groups=cap_tpl, groups_js=cap_js, brand=brand, W=W, H=H, look=lk,
             center_y=(sz.get("caption_top", 1130) + sz.get("caption_bottom", 1330)) / 2,
             stroke=round(0.15 * int(cfg.get_path("captions.font_size", 78))), word_spacing=CAPTION_WS)
         (comp / "compositions" / "captions.html").write_text(html, encoding="utf-8")
     html = env.get_template("overlay.html.j2").render(
         brand=brand, W=W, H=H, total=timeline["total"], margin=sz.get("margin_x", 72), bar_y=176,
-        handle=cfg.get_path("brand.handle", ""))
+        handle=cfg.get_path("brand.handle", ""), look=lk)
     (comp / "compositions" / "overlay.html").write_text(html, encoding="utf-8")
     html = env.get_template("index.html.j2").render(
         title=script.get("title", ""), scenes=host_rows, total=timeline["total"], brand=brand, W=W, H=H,
@@ -610,6 +634,7 @@ def build_project(job_dir: Path, script: dict, timeline: dict, voice: dict[str, 
         "W": W, "H": H, "fps": cfg.get_path("output.fps", 30), "total": timeline["total"],
         "brand": {"font_family": brand.get("font_family", "Brand"), "colors": brand.get("colors", {})},
         "handle": cfg.get_path("brand.handle", ""), "margin": sz.get("margin_x", 72), "bar_y": 176, "scenes": rm_scenes,
+        "look": lk,
         "captions": {"groups": cap_tpl, "js": cap_js, "word_spacing": CAPTION_WS,
                      "center_y": (sz.get("caption_top", 1130) + sz.get("caption_bottom", 1330)) / 2,
                      "stroke": round(0.15 * int(cfg.get_path("captions.font_size", 78)))} if groups else None})

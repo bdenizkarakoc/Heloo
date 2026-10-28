@@ -256,6 +256,17 @@ korunduğu için altyazı senkronu bozulmaz. Ölçülen sonuç (1,7 dk kayıtla 
 (107 Hz), anlaşılırlık temel sesin %89'una karşı %78. Daha uzun ve temiz kayıt sonucu iyileştirir. Profesyonel
 klonlama kalitesi (ElevenLabs gibi ücretli hizmetler) değildir; tonlama tam olarak senin tonlaman olmaz.
 
+**Kayıtları yönetme:** her profilde **Kayıtları göster** (her cevabı dinle, **Bu kaydı sil**), **Baştan başla**
+(bütün kayıtlar ve öğrenilmiş ses silinir, sohbet en baştan başlar) ve **Profili sil**. Kayıt sildikten sonra
+**Yeniden öğren** ile ses güncellenir.
+
+**Kayıttan ses tarzı öğren:** bir ses kaydı/video yükle ya da bağlantı yapıştır. Konuşma yazıya dökülür ve tarz
+ölçülür: perde, tonlama aralığı (düz/hareketli), hız (hece/sn), enerji, duraksamalar. **Videolarda bu tarzı kullan**
+denince seslendirme bu tarza göre ayarlanır (Edge TTS sesi, hızı, perdesi ve sahneler arası duraksama; ölçüm temel
+sesin 5,2 hece/sn hızına göre kalibre edildi). Bu yalnızca **konuşma tarzıdır, sesin kendisi kopyalanmaz**.
+"Bu ses bana ait" işaretlenirse kayıt ~20 sn'lik parçalar hâlinde seçtiğin kendi profiline eğitim kaydı olarak da
+eklenir (sonra **Yeniden öğren**).
+
 Kurallar: yalnızca **kendi sesini** (veya yazılı izni olan birinin sesini) kopyala. Kayıtlar ve ses profili yalnızca
 bu bilgisayarda (`studio/voices/`) kalır; buluttaki otomatik üretim bu sesi kullanmaz (edge-tts kullanır).
 Bazı platformlar yapay zekâ ile üretilmiş sesin etiketlenmesini ister.
@@ -327,6 +338,25 @@ görsel ve video** kartına anahtar gir:
 | `OPENAI_API_KEY` | gpt-image görsel | Ücretli |
 
 Yapay zekâ yalnızca gerçek kaynak bulunamayınca devreye girer (kategori `visual_providers` listesinde en sonda).
+
+## Tasarım temaları ve anlatım biçimleri (her video farklı)
+
+Her video, son videolarda kullanılmamış bir **tasarım teması** alır (`config/settings.yaml` → `design.themes`;
+`scripts/reels/design.py`). Tema; renkleri, yazı tipini, başlık büyük/küçük harfini, altyazı biçimini (konturlu,
+kutulu kelime, gölgeli), etiket biçimini, geçiş setini, kamera hareketinin şiddetini ve görüntü efektlerini
+(film greni, vinyet, tarama çizgisi, sinema şeritleri, renk filtresi, ilerleme çubuğu konumu) belirler.
+Hazır temalar: Fabrika, Neon gece, Sinematik belgesel, Pop & kalın, Retro VHS, Doğa / sakin, Haber / net
+(kategoriye uygun olanlar öncelikli). Tema görevde saklanır; yeniden üretim aynı görünür. Yeni tema eklemek için
+`design.themes` altına bir blok yaz. Yazı tipleri OFL lisanslıdır (`assets/fonts/licenses/`). İki render motoru
+(HyperFrames ve Remotion) temaları aynı çizer.
+
+Konular da benzeşmesin diye her video bir **anlatım biçimi** alır (`script.formats`: efsane mi gerçek mi, liste,
+karşılaştırma, kısa hikâye, soru-cevap, zaman çizelgesi, "neden", tek çarpıcı sayı) ve senaryo yazara son
+videoların başlıkları "bunlardan uzak dur" diye verilir.
+
+**Pexels 4K:** `PEXELS_API_KEY` tanımlıysa (Yayın → Ayarlar; ücretsiz) video sahnelerinde Pexels'in resmî API'siyle
+4K klipler tercih edilir (`visuals.pexels.video_quality: 4k`); dosya `visuals.video_max_mb`'yi aşarsa aynı klibin
+1080p sürümü alınır. Pexels sitesi taranmaz (kullanım koşulları); yalnızca API kullanılır.
 
 ## Remotion (ikinci render motoru)
 

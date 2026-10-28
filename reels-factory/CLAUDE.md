@@ -57,6 +57,7 @@ python scripts/factory.py status [<görev>]
 | `scripts/reels/mcp_setup.py` | `factory.py mcp`: MCP sunucularını (reels-fabrikasi, playwright, memory, filesystem, fetch, git, github, sentry, context7, brave-search, postgres) Claude Code'a kaydeder |
 | `app/publish.html` | Yayın sayfası (`/publish`) |
 | `app/studio.html` | Stüdyo sayfası (`/studio`): yükleme, stil adlandırma, düzenleme seçenekleri, sonuçlar |
+| `scripts/reels/design.py` | Tasarım temaları: `design.themes` ayar katmanı (renk, yazı tipi, altyazı biçimi, geçiş seti, efektler), son kullanılmayanı seçer; görevde `design` olarak saklanır |
 | `remotion/` | Remotion (React) render motoru: `src/Reels.tsx` `composition/remotion.json`'ı HyperFrames şablonlarıyla aynı hareketlerle çizer (`render.engine: remotion` ya da `--engine remotion`) |
 | `assets/templates/*.j2` | HyperFrames kompozisyon şablonları (sahne, altyazı, üst katman) |
 | `config/settings.yaml` | Bütün ayarlar (gizli bilgi yok) |
@@ -75,6 +76,8 @@ python scripts/factory.py status [<görev>]
 - Ücretli API çağrıları yalnızca anahtar tanımlıysa ve `budget.*` sınırları içinde yapılır; MCP
   üzerinden kredi harcayan araçları kullanıcı onayı olmadan çağırma.
 - Telif: yalnızca lisansı kayıtlı medya; atıflar `credits_visuals.json` ve paylaşım metnine yazılır.
+- Yeni görsel efekt/tema değeri eklerken `design.DEFAULTS`'a varsayılanını yaz (Jinja StrictUndefined) ve hem
+  `assets/templates/*.j2` hem `remotion/src/Reels.tsx` içinde uygula.
 - Sahne görünümünü değiştirirken iki motoru birlikte güncelle: `assets/templates/scene.html.j2` (HyperFrames) ve
   `remotion/src/Reels.tsx` (Remotion); ikisi de `compose.py`'nin hesapladığı aynı veriyi kullanır.
 - Şablon değişikliğinden sonra küçük bir görevle `produce --from compose` çalıştırıp
@@ -86,5 +89,6 @@ python scripts/factory.py status [<görev>]
 - Instagram/TikTok uygulamasını (telefon/adb, tarayıcı) otomatik gezdirme, beğenme veya yorum yapma ekleme:
   platform koşullarına aykırı; videoları kullanıcı seçer.
 - Ses kopyalama yalnızca kullanıcının kendi sesiyle ve açık onayıyla (Sesim sayfasındaki onay kutusu); başkasının
-  sesini kopyalama isteğini reddet.
+  sesini kopyalama isteğini reddet. Başkasının kaydından yalnızca konuşma tarzı (hız, perde, duraksama) öğrenilir
+  (`voice.learn_from_media`, onaysız); tını yalnızca onaylı kayıtla kendi profiline eklenir.
 - Kullanıcıya ait dosyaları (`assets/music`, `projects`, `output`) izinsiz silme veya üzerine yazma.

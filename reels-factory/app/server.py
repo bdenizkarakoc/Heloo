@@ -154,6 +154,16 @@ class Factory:
                 self.current["job"] = task["item"]
             self._audience(task["item"], task.get("method", "claude"))
             return
+        if task["kind"] == "voice_learn":  # kayıttan / videodan / bağlantıdan konuşma tarzı
+            with self.lock:
+                self.current["job"] = "ses-tarzi"
+            handler = log.attach_job_log("ses-tarzi")
+            try:
+                src = studio.download_url(task["url"]) if task.get("url") else studio.UPLOADS / task["file"]
+                voice.learn_from_media(src, task.get("name") or "", bool(task.get("consent")), task.get("into") or None)
+            finally:
+                log.detach(handler)
+            return
         if task["kind"] in ("voice_build", "voice_setup"):
             with self.lock:
                 self.current["job"] = f"ses-{task.get('slug', 'motor')}"
@@ -427,7 +437,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._file(p) if p else self.send_error(403)
         if path.startswith("/studio/"):
             p = self._safe(ROOT / "studio", path[len("/studio/"):])
-            ok = (".jpg", ".png", ".json") + ((".wav", ".mp3") if p and "voices" in p.parts else ())
+            ok = (".jpg", ".png", ".json") + ((".wav", ".mp3", ".m4a") if p and "voices" in p.parts else ())
             if p and p.suffix.lower() in ok and "uploads" not in p.parts:
                 return self._file(p)
             return self.send_error(403)
@@ -493,6 +503,14 @@ class Handler(BaseHTTPRequestHandler):
             return None
         if path in ("/voice", "/voice.html"):
             return self._file(ROOT / "app" / "voice.html")
+        if path == "/api/voice/styles":
+            return self._json({"styles": voice.styles()})
+        if path == "/api/voice/turns":
+            from urllib.parse import parse_qs
+            try:
+                return self._json({"turns": voice.turns((parse_qs(url.query).get("slug") or [""])[0])})
+            except Exception as exc:  # noqa: BLE001
+                return self._json({"error": str(exc)}, 400)
         if path == "/api/voice/profiles":
             return self._json({"profiles": voice.profiles(), "active": voice.active(), **voice.engine_status()})
         if path == "/api/voice/say":
@@ -812,6 +830,36 @@ class Handler(BaseHTTPRequestHandler):
                 voice.set_active(data.get("slug") or None)
                 _caps_cache.clear()
                 return self._json({"active": voice.active()})
+            if action == "delete_turn":
+                return self._json(voice.delete_turn(str(data["slug"]), int(data["n"])))
+            if action == "reset":  # bütün kayıtları sil, sohbeti baştan başlat
+                return self._json(voice.reset(str(data["slug"])))
+            if action == "delete":
+                voice.delete_profile(str(data["slug"]))
+                _caps_cache.clear()
+                return self._json({"deleted": data["slug"]})
+            if action == "learn":  # ses kaydı / video / bağlantıdan tarz öğren
+                consent, into = bool(data.get("consent")), (data.get("into") or None)
+                if into and not consent:
+                    return self._json({"error": "Kaydı kendi ses profiline eklemek için bu sesin sana ait olduğunu onayla"}, 400)
+                task = {"name": str(data.get("name", "")).strip()[:60], "consent": consent, "into": into}
+                if data.get("url"):
+                    link = str(data["url"]).strip()
+                    if not link.startswith(("http://", "https://")):
+                        return self._json({"error": "geçerli bir bağlantı girin"}, 400)
+                    task["url"] = link
+                else:
+                    name = Path(str(data.get("file", ""))).name
+                    if not (studio.UPLOADS / name).is_file():
+                        return self._json({"error": "önce dosyayı yükleyin"}, 400)
+                    task["file"] = name
+                return self._json({"queued": [FACTORY.enqueue("voice_learn", topic="ses tarzı öğrenme", **task)]})
+            if action == "style":  # tarzı etkinleştir (slug boş: kapat)
+                voice.set_active_style(data.get("slug") or None)
+                return self._json({"styles": voice.styles()})
+            if action == "style_delete":
+                voice.delete_style(str(data["slug"]))
+                return self._json({"styles": voice.styles()})
             if action == "speak":
                 slug, text = str(data["slug"]), str(data.get("text", "")).strip()[:600]
                 if not text:

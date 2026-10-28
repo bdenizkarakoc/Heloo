@@ -11,7 +11,7 @@ import json
 import shutil
 from pathlib import Path
 
-from . import audio, captions, compose, log, qc, tts, visuals
+from . import audio, captions, compose, design, log, qc, tts, visuals
 from .config import Config, ROOT
 from .job import PROJECTS, STAGES, Job
 from .script_model import errors_only, normalize, validate
@@ -44,6 +44,18 @@ def pick_category(cfg: Config, wanted: str | None = None) -> str:
     return min(cats, key=lambda c: (counts[c] / max(0.1, float(cats[c].get("weight", 1))), list(cats).index(c)))
 
 
+def pick_format(cfg: Config) -> str | None:
+    """Son videolarda en uzun süredir kullanılmayan anlatım biçimi (deterministik)."""
+    fmts = list(cfg.get_path("script.formats", {}) or {})
+    if not fmts:
+        return None
+    last = {f: -1 for f in fmts}
+    for i, h in enumerate(history()):
+        if h.get("format") in last:
+            last[h["format"]] = i
+    return min(fmts, key=lambda f: (last[f], fmts.index(f)))
+
+
 def make_brief(job: Job, cfg: Config) -> dict:
     cat_id = job.state["category"]
     cat = cfg.get_path(f"categories.{cat_id}", {})
@@ -60,6 +72,11 @@ def make_brief(job: Job, cfg: Config) -> dict:
         "topic_hint": job.state.get("topic_hint"),
         "seed_topics": [t for t in cat.get("seed_topics", []) if t not in used_seeds],
         "past_titles": past[-50:],
+        "recent_titles_all": [h["title"] for h in history()[-12:] if h.get("title")],
+        "format": ({"name": job.state["format"], "instruction": cfg.get_path(f"script.formats.{job.state['format']}")}
+                   if job.state.get("format") else None),
+        "variety_rule": ("Son videolardan (recent_titles_all) farklı bir alt konu, kişi, yer ve açı seç; aynı olguyu "
+                         "başka kelimelerle tekrar etme. Anlatım biçimine (format) uy."),
         "target_seconds": cfg.get_path("output.duration.target", 45),
         "duration_range": [cfg.get_path("output.duration.min", 30), cfg.get_path("output.duration.max", 60)],
         "visual_providers": cat.get("visual_providers", ["openverse"]),
@@ -99,6 +116,7 @@ def new_job(cfg: Config, category: str | None = None, topic: str | None = None,
     if text:
         job.state["user_text"] = text.strip()
     job.state["draw"] = bool(draw)
+    job.state["format"] = pick_format(cfg)
     if media:
         add_user_media(job, media)
     job.save()
@@ -458,6 +476,7 @@ def stage_export(job: Job, script: dict, final: Path, music: dict | None, cfg: C
         hist = [h for h in history() if h.get("job") != job.id]
         hist.append({"job": job.id, "date": dt.date.today().isoformat(), "category": job.state["category"],
                      "topic_hint": job.state.get("topic_hint"), "title": script.get("title"),
+                     "design": job.state.get("design"), "format": job.state.get("format"),
                      "music": (music or {}).get("url") or (music or {}).get("title"), "output": info["video"]})
         write_json(HISTORY, hist)
     return job.state["outputs"]
@@ -498,6 +517,21 @@ def produce(job: Job, cfg: Config, from_stage: str | None = None, autofix: bool 
             L.info("senaryo değişmiş → ses adımından itibaren yeniden üretilecek")
             job.reset_from("voice")
         job.state["script_hash"] = h
+        # tasarım teması: görevde saklanır (yeniden üretim aynı görünür); yoksa son videolardan farklı biri seçilir
+        if "design" not in job.state:  # tema özelliğinden önce üretilmiş görevler eski görünümünü korur
+            job.state["design"] = (cfg.get_path("design.default") if job.state.get("outputs")
+                                   else design.pick(cfg, job.state.get("category"), history()))
+        cfg = design.apply(cfg, job.state["design"])
+        if job.state["design"]:
+            L.info("tasarım: %s", design.look(cfg).get("label"))
+        try:  # Sesim → etkin konuşma tarzı: sahneler arası duraksama (hız/perde/ses tts.synth_edge'de)
+            from .voice import active_style
+            st = active_style()
+            if st and st.get("edge", {}).get("scene_gap"):
+                cfg.setdefault("tts", {})["scene_gap"] = st["edge"]["scene_gap"]
+                L.info("ses tarzı: %s", st.get("name"))
+        except Exception as exc:  # noqa: BLE001
+            L.debug("ses tarzı okunamadı: %s", exc)
         job.set_status("producing")
 
         if not job.stage_done("script"):

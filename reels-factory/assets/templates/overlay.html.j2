@@ -12,7 +12,9 @@
                  letter-spacing: .04em; color: rgba(255,255,255,.78); text-shadow: 0 2px 10px rgba(0,0,0,.6); }
   </style>
   <div id="root" data-composition-id="overlay" data-width="{{ W }}" data-height="{{ H }}">
-    <div id="ov-track"><div id="ov-fill"></div></div>
+{%- if look.progress != "none" %}
+    <div id="ov-track"{% if look.progress == "bottom" %} style="top: {{ H - 64 }}px;"{% endif %}><div id="ov-fill"></div></div>
+{%- endif %}
 {%- if handle %}
     <div id="ov-handle">{{ handle }}</div>
 {%- endif %}
@@ -20,7 +22,9 @@
   <script>
     (function () {
       const tl = gsap.timeline({ paused: true });
+{%- if look.progress != "none" %}
       tl.fromTo("#ov-fill", { scaleX: 0 }, { scaleX: 1, duration: {{ total }}, ease: "none" }, 0);
+{%- endif %}
       window.__timelines["overlay"] = tl;
     })();
   </script>

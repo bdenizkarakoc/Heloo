@@ -7,9 +7,17 @@
     .cg { position: absolute; inset: 0; opacity: 0; transform-origin: 50% {{ center_y }}px; }
     .cap-row { position: absolute; left: 0; width: {{ W }}px; text-align: center; white-space: nowrap;
                line-height: 1; font-weight: 900; letter-spacing: .01em; word-spacing: {{ word_spacing }}em; }
+{%- if look.caption_style == "box" %}
+    .cap-w { display: inline-block; color: {{ c.ink }}; padding: 0 .14em; margin: 0 -.06em; border-radius: .16em;
+             background-color: rgba(0,0,0,0); text-shadow: 0 4px 18px rgba(0,0,0,.65); }
+{%- elif look.caption_style == "shadow" %}
+    .cap-w { display: inline-block; color: {{ c.ink }};
+             text-shadow: 0 3px 0 rgba(0,0,0,.55), 0 10px 30px rgba(0,0,0,.75), 0 0 2px rgba(0,0,0,.8); }
+{%- else %}
     .cap-w { display: inline-block; color: {{ c.ink }};
              -webkit-text-stroke: {{ stroke }}px rgba(5,7,12,.94); paint-order: stroke fill;
              text-shadow: 0 8px 26px rgba(0,0,0,.5); }
+{%- endif %}
     .cap-e { color: {{ c.accent2 }}; }
   </style>
   <div id="root" data-composition-id="captions" data-width="{{ W }}" data-height="{{ H }}">
@@ -26,16 +34,22 @@
   <script>
     (function () {
       const G = {{ groups_js | tojson }};
-      const ACC = "{{ c.accent }}", INK = "{{ c.ink }}", ACC2 = "{{ c.accent2 }}";
+      const ACC = "{{ c.accent }}", INK = "{{ c.ink }}", ACC2 = "{{ c.accent2 }}", BG = "{{ c.bg }}";
+      const STYLE = "{{ look.caption_style }}";
       const tl = gsap.timeline({ paused: true });
       G.forEach((g) => {
         const sel = "#" + g.id;
         tl.fromTo(sel, { opacity: 0, scale: 0.86, y: 18 },
                        { opacity: 1, scale: 1, y: 0, duration: 0.14, ease: "back.out(2.2)" }, g.start);
         g.words.forEach((w) => {
-          const base = w.emph ? ACC2 : INK;
-          tl.to("#" + w.id, { color: w.emph ? ACC2 : ACC, scale: w.emph ? 1.14 : 1.08, duration: 0.08, ease: "power2.out" }, w.start);
-          tl.to("#" + w.id, { color: base, scale: 1, duration: 0.16, ease: "power2.out" }, Math.max(w.start + 0.08, w.end));
+          const base = w.emph ? ACC2 : INK, back = Math.max(w.start + 0.08, w.end);
+          if (STYLE === "box") {  /* konuşulan kelime renkli kutuda */
+            tl.to("#" + w.id, { backgroundColor: w.emph ? ACC2 : ACC, color: BG, scale: 1.04, duration: 0.06, ease: "power2.out" }, w.start);
+            tl.to("#" + w.id, { backgroundColor: "rgba(0,0,0,0)", color: base, scale: 1, duration: 0.12, ease: "power2.out" }, back);
+          } else {
+            tl.to("#" + w.id, { color: w.emph ? ACC2 : ACC, scale: w.emph ? 1.14 : (STYLE === "shadow" ? 1.04 : 1.08), duration: 0.08, ease: "power2.out" }, w.start);
+            tl.to("#" + w.id, { color: base, scale: 1, duration: 0.16, ease: "power2.out" }, back);
+          }
         });
         tl.to(sel, { opacity: 0, duration: 0.1, ease: "power2.in" }, g.end - 0.1);
         tl.set(sel, { opacity: 0, visibility: "hidden" }, g.end);

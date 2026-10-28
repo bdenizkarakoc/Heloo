@@ -290,14 +290,27 @@ def _pexels(scene: dict, job_dir: Path, cfg: Config, budget: Budget) -> list[dic
     orient = cfg.get_path("visuals.pexels.orientation", "portrait")
     out = []
     if scene["visual"].get("kind") == "video":
-        data = retry(3, 2.0)(http_json)("GET", "https://api.pexels.com/videos/search", headers=hdr,
-                                         params={"query": q, "orientation": orient, "per_page": 10})
+        params = {"query": q, "orientation": orient, "per_page": 10}
+        if cfg.get_path("visuals.pexels.video_quality", "4k") == "4k":
+            params["size"] = "large"  # Pexels: large = 4K
+        data = retry(3, 2.0)(http_json)("GET", "https://api.pexels.com/videos/search", headers=hdr, params=params)
+        if not data.get("videos") and "size" in params:  # bu konuda 4K yoksa her kalitede ara
+            params.pop("size")
+            data = retry(3, 2.0)(http_json)("GET", "https://api.pexels.com/videos/search", headers=hdr, params=params)
         for v in data.get("videos", []):
             files = [f for f in v.get("video_files", []) if f.get("file_type") == "video/mp4" and f.get("height")]
-            files.sort(key=lambda f: abs((f.get("height") or 0) - 1920))
+            # "4k": en yüksek kalite (en fazla max_side), "hd": 1920'ye en yakın (daha küçük indirme)
+            if cfg.get_path("visuals.pexels.video_quality", "4k") == "4k":
+                cap = int(cfg.get_path("visuals.pexels.max_side", 4096))
+                files = [f for f in files if max(f.get("width") or 0, f["height"]) <= cap] or files
+                files.sort(key=lambda f: -(f["height"] * (f.get("width") or 1)))
+            else:
+                files.sort(key=lambda f: abs((f.get("height") or 0) - 1920))
             if files:
                 f = files[0]
-                out.append({"url": f["link"], "w": f.get("width"), "h": f.get("height"), "provider": "pexels",
+                hd = min(files, key=lambda x: abs(x["height"] - 1920))  # 4K inmezse (çok büyük) 1080p yedek
+                out.append({"url": f["link"], "fallback_url": hd["link"] if hd is not f else None,
+                            "w": f.get("width"), "h": f.get("height"), "provider": "pexels",
                             "kind": "video", "title": v.get("url", ""), "license": "Pexels License",
                             "credit": f"Video: {v.get('user', {}).get('name', '')} / Pexels",
                             "source": v.get("url", "")})
@@ -640,7 +653,13 @@ def _fetch(scene: dict, job_dir: Path, cfg: Config, providers: list[str], used: 
                         raw = png
                 else:
                     ext = Path(c["url"].split("?")[0]).suffix.lower() or (".mp4" if c["kind"] == "video" else ".jpg")
-                    raw = retry(3, 2.0)(download)(c["url"], out_dir / f"{scene['id']}_raw{ext}", max_mb=150)
+                    mb = float(cfg.get_path("visuals.video_max_mb", 400)) if c["kind"] == "video" else 150
+                    try:
+                        raw = retry(3, 2.0)(download)(c["url"], out_dir / f"{scene['id']}_raw{ext}", max_mb=mb)
+                    except StageError:
+                        if not c.get("fallback_url"):
+                            raise
+                        raw = retry(3, 2.0)(download)(c["fallback_url"], out_dir / f"{scene['id']}_raw{ext}", max_mb=mb)
                 if c["kind"] == "video" or raw.suffix.lower() in VID_EXT:
                     meta = prepare_video(raw, out_dir, scene["id"], seconds, scene["visual"].get("start"))
                 else:

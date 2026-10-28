@@ -104,6 +104,8 @@ Ton: {brief['tone']} | Hedef kitle: {brief['audience']}
 Konu ipucu: {brief.get('topic_hint') or 'yok — kategoriye uygun, merak uyandıran bir konu seç'}
 Örnek konular (ilham için): {', '.join(brief.get('seed_topics', []))}
 Daha önce işlenen başlıklar (TEKRARLAMA): {', '.join(brief.get('past_titles', [])) or 'yok'}
+Son videolar (bütün kategoriler; konu, kişi, yer ve açı olarak bunlardan UZAK DUR): {', '.join(brief.get('recent_titles_all', [])) or 'yok'}
+Anlatım biçimi (bu videoda zorunlu): {fmt_line(brief)}
 Bilgi haritasındaki işlenmiş kavramlar (Graphify; tekrar etme, bunlarla bağlantılı yeni bir konu seçebilirsin): {', '.join((brief.get('knowledge_map') or {}).get('covered_concepts', [])) or 'yok'}
 
 {user}Görev: 30-60 saniyelik bir Türkçe Reels videosu için tek bir konu seç ve web aramasıyla araştır.
@@ -129,6 +131,7 @@ def write_script(brief: dict, research_data: dict, cfg: Config, state: dict, pro
     prompt = f"""Aşağıdaki araştırmaya dayanarak senaryo yaz. Araştırmada olmayan bir bilgiyi ekleme.
 Kategori: {brief['category']} | Ton: {brief['tone']} | Hedef süre: {brief['target_seconds']} sn
 Görsel kaynak sırası: {', '.join(brief['visual_providers'])}
+Anlatım biçimi (senaryonun yapısı buna uymalı): {fmt_line(brief)}
 
 ARAŞTIRMA:
 {json.dumps(research_data, ensure_ascii=False, indent=1)}
@@ -144,6 +147,11 @@ Başlık ile ilk sahnenin headline'ı (kapak) aynı kelimeleri tekrar etmesin; b
 
 Yalnızca script.json içeriğini (tek bir JSON nesnesi) döndür."""
     return extract_json(_call(cfg, state, prompt, web=False))
+
+
+def fmt_line(brief: dict) -> str:
+    f = brief.get("format") or {}
+    return f"{f.get('name')}: {f.get('instruction')}" if f.get("name") else "serbest"
 
 
 def user_media_note(brief: dict) -> str:
@@ -256,6 +264,7 @@ SKILL.md'deki 2. (araştırma), 3. (senaryo) ve 4. (görseller) adımları uygul
 - Konu ipucu: {topic}
 - brief.json'da `user_media` varsa: kullanıcının kendi fotoğraf/videoları — HEPSİNİ kullan. Read ile bak, içeriğine uygun
   sahnelere `"visual": {{"kind": "photo"|"video", "user": "<dosya>"}}` olarak ata; senaryo bu medyayla uyumlu olsun.
+- brief.json'daki `format` anlatım biçimine uy; `recent_titles_all` konularından farklı bir alt konu/açı seç (`variety_rule`).
 - brief.json'da `knowledge_map` varsa: işlenmiş kavramları tekrarlama; ayrıntı için knowledge/corpus/graphify-out/GRAPH_REPORT.md.
 - WebSearch/WebFetch ile güvenilir kaynaklardan araştır; her sayıyı doğrula.
 - projects/{job}/script.json dosyasını yaz ve `{py} scripts/factory.py validate {job}` hatasız olana kadar düzelt.

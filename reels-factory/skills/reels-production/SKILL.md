@@ -29,7 +29,9 @@ python scripts/factory.py new --manual [--category bilim-uzay] [--topic "isteğe
 `--manual`: senaryoyu sen yazacaksın (aksi halde komut, Claude API'yi veya kurulu Claude Code'u
 arka planda çağırır). Kategori verilmezse sistem, ayarlardaki ağırlıklara göre en az kullanılan kategoriyi seçer.
 `projects/<görev>/brief.json` dosyasını oku: ton, hedef kitle, örnek konular, **daha önce işlenen
-başlıklar** (tekrarlama), hedef süre ve görsel sağlayıcı sırası.
+başlıklar** (tekrarlama), hedef süre ve görsel sağlayıcı sırası. `format` alanındaki **anlatım biçimine** uy
+(liste, karşılaştırma, hikâye...) ve `recent_titles_all` konularından farklı bir alt konu/açı seç (`variety_rule`).
+Görünümü (renk, yazı tipi, altyazı, efekt) sistem tasarım temasıyla otomatik değiştirir; senaryoya yazma.
 
 ## 2. Konu ve araştırma
 

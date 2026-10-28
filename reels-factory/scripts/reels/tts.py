@@ -67,9 +67,19 @@ def _edge_synth(text: str, voice: str, rate: str, pitch: str, mp3_path: Path) ->
 
 
 def synth_edge(text: str, out_dir: Path, sid: str, cfg: Config) -> tuple[Path, list[dict], str]:
-    ecfg = cfg.get_path("tts.edge", {})
+    ecfg = dict(cfg.get_path("tts.edge", {}))
+    voices = list(ecfg.get("voices", ["tr-TR-EmelNeural"]))
+    try:  # Sesim → etkin ses tarzı: öğrenilen hız, perde ve ses (tını kopyalanmaz)
+        from .voice import active_style
+        st = active_style()
+    except Exception:  # noqa: BLE001
+        st = None
+    if st and st.get("edge"):
+        e = st["edge"]
+        ecfg.update(rate=e.get("rate", ecfg.get("rate")), pitch=e.get("pitch", ecfg.get("pitch")))
+        voices = [e["voice"]] + [v for v in voices if v != e.get("voice")]
     last: Exception | None = None
-    for voice in ecfg.get("voices", ["tr-TR-EmelNeural"]):
+    for voice in voices:
         mp3 = out_dir / f"{sid}.edge.mp3"
         try:
             marks = retry(attempts=cfg.get_path("retry.attempts", 3),

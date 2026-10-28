@@ -14,7 +14,7 @@
   @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin-bottom: 18px; }
   .card h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 8px; }
-  input, textarea { width: 100%; padding: 9px 10px; border-radius: 9px; border: 1px solid var(--line); background: #0e1424; color: var(--ink); font: inherit; }
+  input, textarea, select { width: 100%; padding: 9px 10px; border-radius: 9px; border: 1px solid var(--line); background: #0e1424; color: var(--ink); font: inherit; }
   button { cursor: pointer; border: 0; border-radius: 10px; padding: 10px 16px; font: 600 14px system-ui, sans-serif; background: var(--acc); color: #111; }
   button.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); }
   button:disabled { opacity: .45; cursor: default; }
@@ -32,6 +32,7 @@
   .pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; background: #1d2740; color: var(--muted); }
   .pill.ready { background: #133a36; color: var(--acc2); } .pill.building, .pill.collecting { background: #3b331a; color: var(--acc); } .pill.failed { background: #3d1c22; color: var(--bad); }
   .prof { border-top: 1px solid var(--line); padding: 12px 0; } .prof:first-child { border-top: 0; padding-top: 0; }
+  .turn { border-left: 2px solid var(--line); padding: 6px 0 6px 10px; margin-top: 6px; } .turn audio { width: 100%; height: 32px; }
   audio { width: 100%; height: 36px; margin-top: 6px; }
   pre { background: #070a12; border: 1px solid var(--line); border-radius: 10px; padding: 10px; max-height: 160px; overflow: auto; font-size: 12px; white-space: pre-wrap; }
 </style>
@@ -78,6 +79,17 @@
       <h2>Ses profillerim</h2>
       <div id="engine" class="muted"></div>
       <div id="profiles" class="muted">Henüz profil yok.</div>
+    </div>
+    <div class="card">
+      <h2>Kayıttan ses tarzı öğren</h2>
+      <p class="muted">Bir ses kaydı ya da video yükle veya bağlantısını yapıştır (YouTube/Instagram/TikTok…). Konuşmanın hızı, tonlaması, enerjisi ve duraksamaları ölçülür; videolarda seslendirme bu tarza göre ayarlanır.</p>
+      <input id="stName" placeholder="Tarza bir ad ver (ör. Sakin anlatıcı)">
+      <input id="stUrl" placeholder="ya da bağlantı: https://..." style="margin-top:8px">
+      <input id="stFile" type="file" accept="audio/*,video/*" style="margin-top:8px">
+      <div class="chk"><input type="checkbox" id="stOwn"><span><b>Bu ses bana ait</b> — kaydı kendi ses profilime de ekle (sesimin öğrenilmesi için). İşaretlemezsen yalnızca konuşma tarzı öğrenilir, sesin kendisi kopyalanmaz.</span></div>
+      <select id="stInto" style="margin-top:6px; display:none"></select>
+      <div style="margin-top:8px"><button id="btnLearn">Öğren</button> <span id="stState" class="muted"></span></div>
+      <div id="styles" class="muted" style="margin-top:10px"></div>
     </div>
     <div class="card">
       <h2>Benim sesimle okut</h2>
@@ -212,14 +224,86 @@ async function loadProfiles() {
         ${p.status === "ready" ? (p.active ? `<button class="ghost" onclick="activate('')">Videolarda kullanma</button>` : `<button onclick="activate('${esc(p.slug)}')">Videolarda bu sesi kullan</button>`) : ""}
         ${p.status !== "building" ? `<button class="ghost" onclick="resume('${esc(p.slug)}', '${esc(p.name)}')">Sohbete devam et</button>` : ""}
         ${p.status !== "building" && p.speech_sec >= 60 ? `<button class="ghost" onclick="rebuild('${esc(p.slug)}')">${p.status === "ready" ? "Yeniden öğren" : "Sesimi öğren"}</button>` : ""}
-      </div></div>`;
+        ${p.status !== "building" ? `<button class="ghost" onclick="toggleTurns('${esc(p.slug)}')">Kayıtları göster</button>
+        <button class="ghost" onclick="resetProfile('${esc(p.slug)}', '${esc(p.name)}')">Baştan başla</button>
+        <button class="ghost" onclick="deleteProfile('${esc(p.slug)}', '${esc(p.name)}')">Profili sil</button>` : ""}
+      </div><div id="turns-${esc(p.slug)}" class="turns" style="display:${openTurns.has(p.slug) ? "block" : "none"}"></div></div>`;
   }).join("") : "Henüz profil yok.";
   $("btnTry").disabled = !readySlug;
+  for (const sl of openTurns) loadTurns(sl);
+  const sel = $("stInto"), cur = sel.value;
+  sel.innerHTML = r.profiles.map((p) => `<option value="${esc(p.slug)}">Eklenecek profil: ${esc(p.name)}</option>`).join("") || '<option value="">Önce bir ses profili başlat</option>';
+  if (cur) sel.value = cur;
 }
+
+/* ---------- kayıtlar: dinle / tek tek sil / baştan başla / profili sil ---------- */
+const openTurns = new Set();
+async function loadTurns(sl) {
+  const box = $("turns-" + sl); if (!box) return;
+  const r = await api("/api/voice/turns?slug=" + encodeURIComponent(sl));
+  box.innerHTML = (r.turns || []).length ? r.turns.map((t) => `<div class="turn"><div class="muted">#${t.n} · ${esc(t.source)} · ${t.speech_sec} sn — ${esc((t.transcript || "").slice(0, 90))}</div>
+      ${t.audio ? `<audio controls preload="none" src="/${esc(t.audio)}"></audio>` : ""}
+      <button class="ghost" onclick="deleteTurn('${esc(sl)}', ${t.n})">Bu kaydı sil</button></div>`).join("") : '<div class="muted">Kayıt yok.</div>';
+}
+window.toggleTurns = (sl) => { if (openTurns.has(sl)) openTurns.delete(sl); else openTurns.add(sl); loadProfiles(); };
+window.deleteTurn = async (sl, n) => {
+  if (!confirm(`#${n} numaralı kayıt silinsin mi?`)) return;
+  const r = await api("/api/voice/delete_turn", { slug: sl, n }); if (r.error) return alert(r.error);
+  loadProfiles();
+};
+window.resetProfile = async (sl, name) => {
+  if (!confirm(`"${name}" için bütün kayıtlar ve öğrenilmiş ses silinip sohbet en baştan başlasın mı?`)) return;
+  const r = await api("/api/voice/reset", { slug: sl }); if (r.error) return alert(r.error);
+  slug = null; $("vname").value = name; $("chat").innerHTML = ""; $("chatCard").style.display = "none"; $("setupCard").style.display = "block";
+  $("consent").checked = false; $("btnStart").disabled = true; $("setupCard").scrollIntoView();
+  loadProfiles(); alert("Kayıtlar silindi. Onay kutusunu işaretleyip “Sohbete başla” ile yeniden başlayabilirsin.");
+};
+window.deleteProfile = async (sl, name) => {
+  if (!confirm(`"${name}" ses profili tamamen silinsin mi? (kayıtlar ve öğrenilmiş ses geri alınamaz)`)) return;
+  const r = await api("/api/voice/delete", { slug: sl }); if (r.error) return alert(r.error);
+  if (slug === sl) { slug = null; $("chatCard").style.display = "none"; $("setupCard").style.display = "block"; }
+  loadProfiles();
+};
+
+/* ---------- kayıttan ses tarzı ---------- */
+$("stOwn").onchange = () => ($("stInto").style.display = $("stOwn").checked ? "block" : "none");
+$("btnLearn").onclick = async () => {
+  const url = $("stUrl").value.trim(), f = $("stFile").files[0];
+  if (!url && !f) return ($("stState").textContent = "Bir dosya seç ya da bağlantı yapıştır.");
+  const body = { name: $("stName").value.trim(), consent: $("stOwn").checked, into: $("stOwn").checked ? $("stInto").value : null };
+  $("btnLearn").disabled = true;
+  try {
+    if (url) body.url = url;
+    else {
+      $("stState").textContent = "yükleniyor…";
+      const up = await (await fetch("/api/studio/upload?name=" + encodeURIComponent(f.name), { method: "PUT", body: f })).json();
+      if (up.error) throw new Error(up.error);
+      body.file = up.file;
+    }
+    const r = await api("/api/voice/learn", body);
+    if (r.error) throw new Error(r.error);
+    $("stState").textContent = "Öğreniliyor… (yazıya dökme birkaç dakika sürebilir; işlem kaydından izleyebilirsin)";
+    $("stUrl").value = ""; $("stFile").value = "";
+  } catch (e) { $("stState").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+  $("btnLearn").disabled = false;
+};
+async function loadStyles() {
+  const r = await api("/api/voice/styles");
+  $("styles").innerHTML = (r.styles || []).map((x) => `<div class="prof"><b>${esc(x.name)}</b>${x.active ? ' <span class="pill ready">videolarda kullanılıyor</span>' : ""}
+    <div class="muted">${esc((x.metrics?.labels || []).join(" · "))}</div>
+    <div class="muted">${x.metrics ? `${x.metrics.rate_syll_sec} hece/sn · tonlama aralığı ${x.metrics.pitch_range_st} yarım ton · ${Math.round(x.metrics.f0_hz)} Hz` : ""} → seslendirme: hız ${esc(x.edge?.rate)}, perde ${esc(x.edge?.pitch)}</div>
+    ${x.added_to ? `<div class="muted">Kendi profiline eklendi: ${x.added_to.chunks} kayıt (${esc(x.added_to.slug)}) — “Yeniden öğren” ile sesine işle.</div>` : ""}
+    ${x.sample ? `<audio controls preload="none" src="/${esc(x.sample)}"></audio>` : ""}
+    <div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap">
+      ${x.active ? `<button class="ghost" onclick="useStyle('')">Kullanmayı bırak</button>` : `<button onclick="useStyle('${esc(x.slug)}')">Videolarda bu tarzı kullan</button>`}
+      <button class="ghost" onclick="delStyle('${esc(x.slug)}', '${esc(x.name)}')">Sil</button></div></div>`).join("") || "Henüz öğrenilmiş tarz yok.";
+}
+window.useStyle = async (sl) => { await api("/api/voice/style", { slug: sl }); loadStyles(); };
+window.delStyle = async (sl, name) => { if (confirm(`"${name}" tarzı silinsin mi?`)) { await api("/api/voice/style_delete", { slug: sl }); loadStyles(); } };
 
 async function refreshLog() {
   const s = await api("/api/status");
-  const job = s.current && s.current.job && s.current.job.startsWith("ses-") ? s.current.job : null;
+  const job = s.current && s.current.job && s.current.job.startsWith("ses-") ? s.current.job : null;  // ses-tarzi dahil
   if (job) { const r = await api("/api/log/" + encodeURIComponent(job)); $("log").textContent = r.log.split("\n").slice(-12).join("\n"); }
 }
 
@@ -235,8 +319,8 @@ $("btnTry").onclick = async () => {
   $("tryState").textContent = ""; $("tryAudio").style.display = "block";
   $("tryAudio").src = "/" + r.audio + "?t=" + Date.now(); $("tryAudio").play();
 };
-loadProfiles(); refreshLog();
-setInterval(loadProfiles, 5000); setInterval(refreshLog, 3000);
+loadProfiles(); loadStyles(); refreshLog();
+setInterval(loadProfiles, 5000); setInterval(loadStyles, 6000); setInterval(refreshLog, 3000);
 </script>
 </body>
 </html>

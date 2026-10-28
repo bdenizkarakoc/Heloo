@@ -418,3 +418,231 @@ def profiles() -> list[dict]:
                                            "preview", "sample", "error", "built", "created")}
                    | {"turns": len(p.get("turns", [])), "active": p.get("slug") == act, "target": TARGET_SPEECH_SEC})
     return out
+
+
+# ----------------------------------------------------------------------------
+# Kayıtları silme / sohbeti baştan başlatma
+# ----------------------------------------------------------------------------
+
+def _recount(prof: dict) -> None:
+    prof["speech_sec"] = round(sum(t.get("speech_sec", 0) for t in prof["turns"]), 1)
+    if prof.get("status") == "ready" and prof["speech_sec"] < MIN_SPEECH_SEC:
+        prof["status"] = "collecting"
+
+
+def delete_turn(slug: str, n: int) -> dict:
+    """Tek bir kaydı (sohbet cevabını) siler; profil yeniden oluşturulana kadar eski ses rengi kullanılmaya devam eder."""
+    d = vdir(slug)
+    prof = read_json(d / "profile.json")
+    keep = []
+    for t in prof["turns"]:
+        if int(t.get("n", 0)) == int(n):
+            for f in (d / "rec").glob(f"{int(n):03d}*"):
+                f.unlink(missing_ok=True)
+        else:
+            keep.append(t)
+    if len(keep) == len(prof["turns"]):
+        raise StageError("kayıt bulunamadı")
+    prof["turns"] = keep
+    _recount(prof)
+    prof["stale"] = True  # kayıtlar değişti: "Sesimi oluştur" ile yeniden öğrenilmeli
+    write_json(d / "profile.json", prof)
+    return {"speech_sec": prof["speech_sec"], "turns": len(keep)}
+
+
+def reset(slug: str) -> dict:
+    """Bütün kayıtları ve öğrenilmiş ses rengini siler, sohbeti en baştan başlatır (onay ve ad korunur)."""
+    import shutil
+    d = vdir(slug)
+    prof = read_json(d / "profile.json")
+    if active() == slug:
+        set_active(None)
+    shutil.rmtree(d / "rec", ignore_errors=True)
+    for name in ("matching_set.pt", "reference.wav", "preview.wav", "concat.txt", "base_probe.mp3"):
+        (d / name).unlink(missing_ok=True)
+    shutil.rmtree(d / "tries", ignore_errors=True)
+    (d / "rec").mkdir(parents=True, exist_ok=True)
+    fresh = {k: prof[k] for k in ("slug", "name", "created", "consent") if k in prof}
+    fresh.update(turns=[], speech_sec=0.0, status="collecting", pending_question=OPENING, reset_at=now())
+    write_json(d / "profile.json", fresh)
+    return {"slug": slug, "question": OPENING, "speech_sec": 0.0, "target": TARGET_SPEECH_SEC}
+
+
+def delete_profile(slug: str) -> None:
+    """Ses profilini tamamen siler (kayıtlar, öğrenilmiş ses rengi, örnekler)."""
+    import shutil
+    d = vdir(slug)
+    if active() == slug:
+        set_active(None)
+    shutil.rmtree(d)
+    L.info("ses profili silindi: %s", slug)
+
+
+def turns(slug: str) -> list[dict]:
+    d = vdir(slug)
+    prof = read_json(d / "profile.json")
+    return [{"n": t["n"], "question": t.get("question", ""), "transcript": t.get("transcript", ""),
+             "speech_sec": t.get("speech_sec", 0), "source": t.get("source", "sohbet"),
+             "audio": str((d / "rec" / t["file"]).relative_to(ROOT)) if (d / "rec" / t["file"]).exists() else None}
+            for t in prof["turns"]]
+
+
+# ----------------------------------------------------------------------------
+# Kayıttan / videodan / bağlantıdan konuşma tarzı öğrenme
+# ----------------------------------------------------------------------------
+
+STYLES = VOICES / "_styles"
+ACTIVE_STYLE = VOICES / "active_style.json"
+
+
+def f0_track(wav: Path) -> list[float]:
+    a = load_audio(wav, 16000, 1)
+    win, hop = 640, 320
+    out = []
+    for i in range(0, len(a) - win, hop):
+        x = a[i:i + win]
+        if np.sqrt((x ** 2).mean()) < 0.02:
+            continue
+        x = x - x.mean()
+        ac = np.correlate(x, x, "full")[win - 1:]
+        lo, hi = int(16000 / 350), int(16000 / 70)
+        if ac[0] > 0:
+            lag = lo + int(np.argmax(ac[lo:hi]))
+            if ac[lag] / ac[0] > 0.45:
+                out.append(16000 / lag)
+    return out
+
+
+def analyze_style(wav: Path, words: list[dict]) -> dict:
+    """Konuşma tarzı ölçümleri: perde ve aralığı (monoton/hareketli), hız, duraksama, enerji dalgalanması."""
+    a = load_audio(wav, 16000, 1)
+    hop = 6400  # 0,4 sn
+    n = len(a) // hop
+    rms = np.sqrt((a[: n * hop].reshape(n, hop) ** 2).mean(axis=1) + 1e-12) if n else np.array([1e-6])
+    db = 20 * np.log10(rms)
+    voiced = db > db.max() - 30
+    f0 = np.array(f0_track(wav)) if len(a) else np.array([])
+    med = float(np.median(f0)) if len(f0) else 0.0
+    rng = float(12 * np.log2(np.percentile(f0, 90) / np.percentile(f0, 10))) if len(f0) > 20 else 0.0
+    gaps = [b["start"] - a_["end"] for a_, b in zip(words, words[1:]) if b["start"] - a_["end"] > 0.25]
+    # konuşma süresi: ilk kelimeden son kelimeye, uzun duraksamalar hariç (kelime arası kısa boşluklar dahil)
+    speech = max(1.0, words[-1]["end"] - words[0]["start"] - sum(gaps)) if words else float(voiced.sum() * 0.4)
+    sylls = sum(syllables(w["word"]) for w in words)
+    rate = sylls / speech if words else 0.0
+    pause = float(np.mean(gaps)) if gaps else 0.0
+    energy = float(np.std(db[voiced])) if voiced.any() else 0.0
+    m = {"f0_hz": round(float(med), 1), "pitch_range_st": round(float(rng), 1), "rate_syll_sec": round(float(rate), 2),
+         "pause_sec": round(float(pause), 2), "energy_db_std": round(float(energy), 1), "speech_sec": round(float(speech), 1)}
+    m["labels"] = [
+        "kalın ses" if 0 < med < 160 else "ince ses",
+        "hızlı" if rate > 6.0 else "yavaş" if 0 < rate < 4.5 else "orta hız",
+        "hareketli tonlama" if rng > 7 else "düz tonlama" if rng < 4 else "dengeli tonlama",
+        "enerjik" if energy > 6.0 else "sakin" if energy < 3.5 else "dengeli enerji",
+        "uzun duraksamalar" if pause > 0.9 else "akıcı",
+    ]
+    return m
+
+
+def _edge_settings(m: dict) -> dict:
+    """Ölçümleri seslendirme ayarına çevirir (Edge TTS: ses, hız, perde) — tını kopyalanmaz."""
+    gender = "male" if 0 < m["f0_hz"] < 160 else "female"
+    base_rate = 5.2  # temel Türkçe ses (Emel, +%0) aynı yöntemle ölçüldü: 5,17 hece/sn
+    rate = int(max(-25, min(30, round((m["rate_syll_sec"] / base_rate - 1) * 100)))) if m["rate_syll_sec"] else 0
+    ref = 120 if gender == "male" else 200  # temel seslerin ölçülen perdesi
+    pitch = int(max(-30, min(30, round((m["f0_hz"] - ref) * 0.35)))) if m["f0_hz"] else 0
+    return {"voice": BASE_VOICES[gender], "rate": f"{rate:+d}%", "pitch": f"{pitch:+d}Hz",
+            "scene_gap": round(min(0.45, max(0.18, m["pause_sec"] or 0.28)), 2)}
+
+
+def learn_from_media(src: Path, name: str, consent: bool = False, into: str | None = None, on_stage=None) -> dict:
+    """Ses kaydı ya da videodaki konuşmadan tarz öğrenir. consent=True ve `into` (kendi profilin) verilirse kayıt,
+    o profile sohbet cevabı gibi eğitim verisi olarak da eklenir (yalnızca kendi sesin için)."""
+    from .studio import transcribe
+    cfg = load_config()
+    stage = on_stage or (lambda s: L.info("[ses tarzı] %s", s))
+    slug = slugify(name or src.stem, 40)
+    d = STYLES / slug
+    d.mkdir(parents=True, exist_ok=True)
+    stage("ses ayrıştırılıyor ve temizleniyor")
+    raw = d / "source.wav"
+    run(["ffmpeg", "-y", "-v", "error", "-i", src, "-vn", "-ac", "1", "-ar", "48000", "-t", "900", raw])
+    clean = enhance(raw, d / "clean.wav")
+    stage("konuşma yazıya dökülüyor")
+    words = transcribe(clean, d, cfg, model="small")
+    if not words:
+        raise StageError("kayıtta konuşma bulunamadı")
+    stage("tarz ölçülüyor")
+    m = analyze_style(clean, words)
+    style = {"slug": slug, "name": name or src.stem, "source": src.name, "created": now(), "metrics": m,
+             "edge": _edge_settings(m), "own_voice": bool(consent)}
+    write_json(d / "style.json", style)
+    # 20 sn'lik örnek: arayüzde dinlemek için
+    run(["ffmpeg", "-y", "-v", "error", "-ss", f"{max(0, words[0]['start'] - 0.2):.2f}", "-t", "20", "-i", clean,
+         "-c:a", "aac", "-b:a", "128k", d / "sample.m4a"])
+    if consent and into:
+        stage("kendi ses profiline ekleniyor")
+        added = _add_chunks(into, clean, words, src.name)
+        style["added_to"] = {"slug": into, "chunks": added}
+        write_json(d / "style.json", style)
+    raw.unlink(missing_ok=True)
+    L.info("✔ ses tarzı öğrenildi: %s (%s)", style["name"], ", ".join(m["labels"]))
+    return style
+
+
+def _add_chunks(slug: str, clean: Path, words: list[dict], source: str, target: float = 20.0) -> int:
+    """Uzun kaydı ~20 sn'lik parçalara (kelime sınırında) böler ve profile kayıt olarak ekler."""
+    d = vdir(slug)
+    prof = read_json(d / "profile.json")
+    if not (prof.get("consent") or {}).get("given"):
+        raise StageError("bu profil için ses onayı yok")
+    (d / "rec").mkdir(exist_ok=True)
+    n = max([t["n"] for t in prof["turns"]] + [0])
+    chunk, added = [], 0
+    for i, w in enumerate(words):
+        chunk.append(w)
+        last = i == len(words) - 1
+        if chunk[-1]["end"] - chunk[0]["start"] >= target or last:
+            s0, s1 = max(0.0, chunk[0]["start"] - 0.15), chunk[-1]["end"] + 0.25
+            if s1 - s0 >= 3:
+                n += 1
+                out = d / "rec" / f"{n:03d}.wav"
+                run(["ffmpeg", "-y", "-v", "error", "-ss", f"{s0:.2f}", "-to", f"{s1:.2f}", "-i", clean, out])
+                sp = speech_seconds(out)
+                prof["turns"].append({"n": n, "question": f"(yüklenen kayıt: {source})", "file": out.name,
+                                      "speech_sec": round(sp, 1), "source": "yükleme",
+                                      "transcript": " ".join(x["word"] for x in chunk)})
+                added += 1
+            chunk = []
+    _recount(prof)
+    prof["stale"] = True
+    write_json(d / "profile.json", prof)
+    return added
+
+
+def styles() -> list[dict]:
+    act = (read_json(ACTIVE_STYLE) or {}).get("slug")
+    out = []
+    for f in sorted(STYLES.glob("*/style.json")) if STYLES.exists() else []:
+        s = read_json(f)
+        sample = f.parent / "sample.m4a"
+        out.append({**{k: s.get(k) for k in ("slug", "name", "source", "created", "metrics", "edge", "own_voice", "added_to")},
+                    "sample": str(sample.relative_to(ROOT)) if sample.exists() else None, "active": s.get("slug") == act})
+    return out
+
+
+def set_active_style(slug: str | None) -> None:
+    if slug and not (STYLES / slug / "style.json").exists():
+        raise StageError("ses tarzı bulunamadı")
+    write_json(ACTIVE_STYLE, {"slug": slug, "at": now()})
+
+
+def active_style() -> dict | None:
+    slug = (read_json(ACTIVE_STYLE) or {}).get("slug")
+    return read_json(STYLES / slug / "style.json") if slug and (STYLES / slug / "style.json").exists() else None
+
+
+def delete_style(slug: str) -> None:
+    import shutil
+    if (read_json(ACTIVE_STYLE) or {}).get("slug") == slug:
+        set_active_style(None)
+    shutil.rmtree(STYLES / slugify(slug, 40), ignore_errors=True)
