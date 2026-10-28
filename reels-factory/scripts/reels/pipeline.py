@@ -349,7 +349,8 @@ def stage_compose(job: Job, script: dict, tl: dict, metas: dict, media: dict, gr
         res = compose.build_project(job.dir, script, tl, metas, media, groups, cat, cfg)
         if res["safe_zone_problems"]:
             raise StageError("güvenli alan ihlali: " + "; ".join(res["safe_zone_problems"]))
-        lint = compose.lint(Path(res["dir"]))
+        # HyperFrames lint yalnızca o motorla render edilecekse durdurucu (Remotion aynı veriyi React ile çizer)
+        lint = compose.lint(Path(res["dir"])) if compose.engine(cfg) == "hyperframes" else {"errorCount": 0, "engine": "remotion"}
         write_json(job.dir / "composition" / "lint.json", lint)
         write_json(job.dir / "audio" / "sfx_events.json", res["sfx"])
         errs = int(lint.get("errorCount", 0))
@@ -365,12 +366,15 @@ def stage_render(job: Job, cfg: Config) -> Path:
     comp = job.dir / "composition"
     out = job.dir / "render" / "video.mp4"
     with job.stage("render") as info:
+        eng = compose.engine(cfg)
+        draw = compose.render_remotion if eng == "remotion" else compose.render
+        info["engine"] = eng
         try:
-            compose.render(comp, out, cfg)
+            draw(comp, out, cfg)
             info["workers"] = cfg.get_path("render.workers", 4)
         except StageError as exc:
             L.warning("render başarısız (%s); 2 işçi ile yeniden deneniyor", str(exc)[:300])
-            compose.render(comp, out, cfg, workers=2)
+            draw(comp, out, cfg, workers=2)
             info["workers"] = 2
             info["retried"] = True
         info["mb"] = round(out.stat().st_size / 1e6, 2)

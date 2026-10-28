@@ -11,7 +11,7 @@ python scripts/factory.py doctor                 # ortam/hizmet denetimi
 python scripts/factory.py new --manual --category <kat>   # görev + brief.json (senaryoyu ajan yazar)
 python scripts/factory.py validate <görev>       # script.json doğrulama
 python scripts/factory.py candidates <görev> <sahne> [--query ...]
-python scripts/factory.py produce <görev> [--from <adım>]
+python scripts/factory.py produce <görev> [--from <adım>] [--engine hyperframes|remotion]
 python scripts/factory.py run --count N          # tam otonom (Claude API anahtarı veya kurulu Claude Code)
 python app/server.py --open                      # yerel uygulama (kontrol paneli + otomatik mod; /studio: kendi videonu düzenle)
 python scripts/factory.py hook "..." "..."      # kanca puanı (Türkçe) · title "..." --thumb "..." · chapters x.srt
@@ -57,6 +57,7 @@ python scripts/factory.py status [<görev>]
 | `scripts/reels/mcp_setup.py` | `factory.py mcp`: MCP sunucularını (reels-fabrikasi, playwright, memory, filesystem, fetch, git, github, sentry, context7, brave-search, postgres) Claude Code'a kaydeder |
 | `app/publish.html` | Yayın sayfası (`/publish`) |
 | `app/studio.html` | Stüdyo sayfası (`/studio`): yükleme, stil adlandırma, düzenleme seçenekleri, sonuçlar |
+| `remotion/` | Remotion (React) render motoru: `src/Reels.tsx` `composition/remotion.json`'ı HyperFrames şablonlarıyla aynı hareketlerle çizer (`render.engine: remotion` ya da `--engine remotion`) |
 | `assets/templates/*.j2` | HyperFrames kompozisyon şablonları (sahne, altyazı, üst katman) |
 | `config/settings.yaml` | Bütün ayarlar (gizli bilgi yok) |
 
@@ -74,6 +75,8 @@ python scripts/factory.py status [<görev>]
 - Ücretli API çağrıları yalnızca anahtar tanımlıysa ve `budget.*` sınırları içinde yapılır; MCP
   üzerinden kredi harcayan araçları kullanıcı onayı olmadan çağırma.
 - Telif: yalnızca lisansı kayıtlı medya; atıflar `credits_visuals.json` ve paylaşım metnine yazılır.
+- Sahne görünümünü değiştirirken iki motoru birlikte güncelle: `assets/templates/scene.html.j2` (HyperFrames) ve
+  `remotion/src/Reels.tsx` (Remotion); ikisi de `compose.py`'nin hesapladığı aynı veriyi kullanır.
 - Şablon değişikliğinden sonra küçük bir görevle `produce --from compose` çalıştırıp
   `qc/contact_sheet.jpg` dosyasına bak; HyperFrames lint hatası adımı durdurur.
 - HyperFrames kuralları: her kompozisyon tek, duraklatılmış GSAP timeline'ı `window.__timelines["<id>"]`

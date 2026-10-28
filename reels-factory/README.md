@@ -328,6 +328,24 @@ görsel ve video** kartına anahtar gir:
 
 Yapay zekâ yalnızca gerçek kaynak bulunamayınca devreye girer (kategori `visual_providers` listesinde en sonda).
 
+## Remotion (ikinci render motoru)
+
+Videolar HyperFrames (HTML + GSAP) yerine [Remotion](https://www.remotion.dev) (React) ile de çizilebilir. Yerleşim
+yine Python'da hesaplanır (`compose.build_project` → `composition/remotion.json`); `remotion/src/Reels.tsx` aynı
+sahne türlerini (başlık, sayaç, karşılaştırma, liste, kart, video), geçişleri, kelime vurgulu altyazıyı ve ilerleme
+çubuğunu aynı hareketlerle çizer. Ses, mix adımında eklenir; QC aynıdır.
+
+```bash
+python scripts/factory.py produce <görev> --from compose --engine remotion   # tek görev
+python scripts/factory.py run --count 1 --engine remotion
+# kalıcı: config/settings.yaml → render.engine: remotion
+cd remotion && npx remotion studio src/index.ts                             # Remotion Studio (önizleme)
+```
+
+Kurulum: `install-all` `remotion/` klasöründe `npm install` ve `npx remotion browser ensure` çalıştırır. Lisans:
+Remotion bireyler ve en fazla 3 çalışanlı şirketler için ücretsizdir; daha büyük şirketler şirket lisansı almalıdır
+([remotion.pro/license](https://remotion.pro/license)).
+
 ## ✂ Kesim masaüstü programı + 🏭 Fabrika sekmesi
 
 Kesim (Electron video editörü; kaynak `../kesim-kaynak/`, SelfEdit dahil) fabrikaya bağlanır. Kurulum betiği

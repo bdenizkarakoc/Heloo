@@ -102,6 +102,11 @@ if (-not $NoVoice) {
 Step "Node paketleri (HyperFrames, GSAP) ve render tarayicisi"
 npm install --silent
 if ($LASTEXITCODE -ne 0) { Fail "npm install basarisiz." }
+# Remotion: ikinci render motoru (config/settings.yaml -> render.engine: remotion). Kurulamazsa HyperFrames kullanilir.
+Push-Location (Join-Path $App "remotion")
+npm install --silent --no-audit --no-fund
+if ($LASTEXITCODE -eq 0) { npx --yes remotion browser ensure | Out-Null; Ok "Remotion (React render motoru)" } else { Warn "Remotion kurulamadi; HyperFrames ile devam edilir." }
+Pop-Location
 npx hyperframes browser ensure
 npx hyperframes telemetry disable 2>$null | Out-Null
 Ok "HyperFrames hazir"

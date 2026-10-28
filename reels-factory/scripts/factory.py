@@ -236,10 +236,12 @@ def main() -> int:
     p.add_argument("job")
     p.add_argument("--from", dest="from_stage")
     p.add_argument("--no-autofix", action="store_true")
+    p.add_argument("--engine", choices=["hyperframes", "remotion"], help="render motoru (varsayılan: ayar dosyası)")
     p = sub.add_parser("run", help="tam otonom üretim (Claude API)")
     p.add_argument("--category")
     p.add_argument("--topic")
     p.add_argument("--count", type=int, default=1)
+    p.add_argument("--engine", choices=["hyperframes", "remotion"], help="render motoru (varsayılan: ayar dosyası)")
     p = sub.add_parser("candidates", help="sahne için görsel adaylarını listele")
     p.add_argument("job")
     p.add_argument("scene")
@@ -268,6 +270,8 @@ def main() -> int:
 
     log.setup_logging(args.verbose)
     cfg = load_config()
+    if getattr(args, "engine", None):
+        cfg.setdefault("render", {})["engine"] = args.engine
     handlers = {"doctor": cmd_doctor, "new": cmd_new, "validate": cmd_validate, "produce": cmd_produce,
                 "run": cmd_run, "status": cmd_status, "candidates": cmd_candidates, "selftest": cmd_selftest,
                 "hook": cmd_hook, "title": cmd_title, "chapters": cmd_chapters, "mcp": cmd_mcp, "kesim": cmd_kesim}

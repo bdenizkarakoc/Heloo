@@ -17,7 +17,7 @@ from PIL import ImageFont
 
 from . import log
 from .config import Config, ROOT
-from .util import StageError, norm_word, run, tr_upper, words_of
+from .util import StageError, norm_word, run, tr_upper, words_of, write_json
 
 L = log.get("compose")
 W, H = 1080, 1920
@@ -573,6 +573,7 @@ def build_project(job_dir: Path, script: dict, timeline: dict, voice: dict[str, 
     scenes = script["scenes"]
     sfx: list[dict] = []
     host_rows = []
+    rm_scenes = []  # Remotion motoru için aynı hesaplanmış sahne verisi
     for i, sc in enumerate(scenes):
         enter = sc.get("transition", "cut") if i > 0 else "cut"
         exit_kind = scenes[i + 1].get("transition", "cut") if i + 1 < len(scenes) else None
@@ -582,6 +583,7 @@ def build_project(job_dir: Path, script: dict, timeline: dict, voice: dict[str, 
         html = env.get_template("scene.html.j2").render(d=d, brand=brand, W=W, H=H)
         (comp / "compositions" / f"{sc['id']}.html").write_text(html, encoding="utf-8")
         host_rows.append({"id": sc["id"], "start": rows[sc["id"]]["start"], "duration": rows[sc["id"]]["duration"]})
+        rm_scenes.append({"start": rows[sc["id"]]["start"], "duration": rows[sc["id"]]["duration"], "d": d})
         if sc.get("role") == "payoff" and not any(e["name"] == "riser" for e in sfx) and i > 0:
             t = rows[sc["id"]]["start"]
             sfx.append({"name": "riser", "time": t, "align": "end", "trim_tail": 2.2, "gain_db": -4})
@@ -604,6 +606,13 @@ def build_project(job_dir: Path, script: dict, timeline: dict, voice: dict[str, 
         fps=cfg.get_path("output.fps", 30), captions=bool(groups))
     (comp / "index.html").write_text(html, encoding="utf-8")
 
+    write_json(comp / "remotion.json", {
+        "W": W, "H": H, "fps": cfg.get_path("output.fps", 30), "total": timeline["total"],
+        "brand": {"font_family": brand.get("font_family", "Brand"), "colors": brand.get("colors", {})},
+        "handle": cfg.get_path("brand.handle", ""), "margin": sz.get("margin_x", 72), "bar_y": 176, "scenes": rm_scenes,
+        "captions": {"groups": cap_tpl, "js": cap_js, "word_spacing": CAPTION_WS,
+                     "center_y": (sz.get("caption_top", 1130) + sz.get("caption_bottom", 1330)) / 2,
+                     "stroke": round(0.15 * int(cfg.get_path("captions.font_size", 78)))} if groups else None})
     zone_problems = check_safe_zones(builder.boxes + cap_boxes, cfg)
     sfx.sort(key=lambda e: e["time"])
     return {"dir": str(comp), "sfx": sfx, "safe_zone_problems": zone_problems,
@@ -632,6 +641,41 @@ def lint(comp_dir: Path) -> dict:
         return json.loads(proc.stdout[start:])
     except (ValueError, json.JSONDecodeError):
         return {"errorCount": 0 if proc.returncode == 0 else 1, "raw": (proc.stdout + proc.stderr)[-2000:]}
+
+
+def engine(cfg: Config) -> str:
+    """Render motoru: hyperframes (varsayılan) ya da remotion (React; `remotion/` klasöründe npm install gerekir)."""
+    e = str(cfg.get_path("render.engine", "hyperframes")).lower()
+    return e if e in ("hyperframes", "remotion") else "hyperframes"
+
+
+REMOTION_DIR = ROOT / "remotion"
+
+
+def remotion_bin() -> Path:
+    name = "remotion.cmd" if os.name == "nt" else "remotion"
+    b = REMOTION_DIR / "node_modules" / ".bin" / name
+    if not b.exists():
+        raise StageError("Remotion bulunamadı: reels-factory/remotion klasöründe `npm install` çalıştırın")
+    return b
+
+
+def render_remotion(comp_dir: Path, out: Path, cfg: Config, workers: int | None = None) -> Path:
+    """composition/remotion.json verisini Remotion ile çizer (sessiz video; ses mix adımında eklenir)."""
+    props = comp_dir / "remotion.json"
+    if not props.exists():
+        raise StageError("remotion.json yok: önce compose adımı çalışmalı")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    cmd = [remotion_bin(), "render", "src/index.ts", "Reels", str(out), f"--props={props}", f"--public-dir={comp_dir}",
+           "--codec=h264", f"--crf={cfg.get_path('output.crf', 18)}", "--muted", "--log=error",
+           f"--concurrency={workers or cfg.get_path('render.workers', 4)}"]
+    browser = cfg.get_path("render.remotion_browser") or os.environ.get("REMOTION_BROWSER")
+    if browser:
+        cmd.append(f"--browser-executable={browser}")
+    run(cmd, cwd=REMOTION_DIR, timeout=cfg.get_path("render.timeout_sec", 1800), env=_env_vars())
+    if not out.exists() or out.stat().st_size < 10_000:
+        raise StageError("Remotion render çıktı üretmedi")
+    return out
 
 
 def render(comp_dir: Path, out: Path, cfg: Config, workers: int | None = None, quality: str | None = None) -> Path:

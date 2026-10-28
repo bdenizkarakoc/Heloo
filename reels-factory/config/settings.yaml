@@ -261,7 +261,8 @@ audio:
 # Render (HyperFrames)
 # ---------------------------------------------------------------------
 render:
-  engine: hyperframes
+  engine: hyperframes        # hyperframes (HTML+GSAP) ya da remotion (React; remotion/ klasöründe npm install)
+  remotion_browser: ""       # boş: Remotion kendi Chrome Headless Shell'ini indirir; ya da bir Chrome yolu
   quality: looks             # HyperFrames kalite profili (CRF output.crf ile ayrıca verilir)
   workers: 4
   transition_overlap: 0.4

@@ -1,0 +1,15 @@
+{
+  "name": "reels-factory-remotion",
+  "private": true,
+  "description": "Reels Fabrikası için Remotion render motoru (render.engine: remotion)",
+  "scripts": {
+    "studio": "remotion studio src/index.ts",
+    "render": "remotion render src/index.ts Reels"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.534",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "remotion": "4.0.534"
+  }
+}
