@@ -253,7 +253,10 @@ class SceneBuilder:
             explicit = sc["visual"].get("fit") in ("cover", "contain", "card")
             bg = {"type": media["kind"], "src": media["file"], "bgsrc": media["bg"],
                   "fit": media.get("fit", "cover"),
-                  "dim": (graphic_layout and media["kind"] == "photo" and not explicit) or bool(media.get("fallback")),
+                  # büyük ortalanmış metinli sahnelerde (grafik yerleşimler, bilgi kartı) fotoğraf bulanık ve koyu arka
+                  # plandır: yazı dolu/parlak fotoğrafın üstünde metin kaybolmasın
+                  "dim": ((graphic_layout or layout == "fact") and media["kind"] == "photo" and not explicit)
+                         or bool(media.get("fallback")),
                   "pos": {"top": "0%", "center": "50%", "bottom": "100%"}.get(sc["visual"].get("align", "center"), "50%")}
             if bg["fit"] == "card" and layout != "photo":
                 bg["fit"] = "cover"  # kart kutusu yalnızca photo yerleşiminde tanımlı
