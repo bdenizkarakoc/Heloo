@@ -91,7 +91,25 @@ def synth_edge(text: str, out_dir: Path, sid: str, cfg: Config) -> tuple[Path, l
         except (StageError, TransientError) as exc:
             L.warning("edge-tts %s başarısız: %s", voice, exc)
             last = exc
+        if last and "döndürmedi" in str(last):
+            # Hizmet bu metni/ayarı seslendirmedi: sade metin ve varsayılan hız/perdeyle bir kez daha
+            plain = _plain_text(text)
+            try:
+                if plain:
+                    return mp3, _edge_synth(plain, voice, "+0%", "+0Hz", mp3), f"edge:{voice}"
+            except (StageError, TransientError) as exc:
+                L.warning("edge-tts %s sade metinle de başarısız: %s", voice, exc)
+    L.warning("edge-tts seslendiremedi; metin: %r (hız %s, perde %s)", text[:120], ecfg.get("rate"), ecfg.get("pitch"))
     raise StageError(f"edge-tts kullanılamadı: {last}")
+
+
+def _plain_text(text: str) -> str:
+    """Seslendirme hizmetinin takılabileceği simgeleri (emoji, işaret, biçim karakterleri) atar."""
+    import re
+    import unicodedata
+    t = unicodedata.normalize("NFC", text).replace("…", "...").replace("’", "'").replace("“", '"').replace("”", '"')
+    t = "".join(c for c in t if c.isalnum() or c.isspace() or c in ".,!?;:'\"-()%")
+    return re.sub(r"\s+", " ", t).strip()
 
 
 def synth_elevenlabs(text: str, out_dir: Path, sid: str, cfg: Config) -> tuple[Path, list[dict], str]:
