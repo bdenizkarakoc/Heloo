@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import time
 import wave
 from pathlib import Path
 
@@ -81,25 +82,37 @@ def synth_edge(text: str, out_dir: Path, sid: str, cfg: Config) -> tuple[Path, l
         ecfg.update(rate=e.get("rate", ecfg.get("rate")), pitch=e.get("pitch", ecfg.get("pitch")))
         voices = [e["voice"]] + [v for v in voices if v != e.get("voice")]
     last: Exception | None = None
-    for voice in voices:
-        mp3 = out_dir / f"{sid}.edge.mp3"
-        try:
-            marks = retry(attempts=cfg.get_path("retry.attempts", 3),
-                          backoff=cfg.get_path("retry.backoff", 2.0))(_edge_synth)(
-                text, voice, ecfg.get("rate", "+0%"), ecfg.get("pitch", "+0Hz"), mp3)
-            return mp3, marks, f"edge:{voice}"
-        except (StageError, TransientError) as exc:
-            L.warning("edge-tts %s başarısız: %s", voice, exc)
-            last = exc
-        if last and "döndürmedi" in str(last):
-            # Hizmet bu metni/ayarı seslendirmedi: sade metin ve varsayılan hız/perdeyle bir kez daha
-            plain = _plain_text(text)
+    mp3 = out_dir / f"{sid}.edge.mp3"
+    # "ses döndürmedi" çoğunlukla hizmetin geçici kısıtlamasıdır: bekleyip birkaç tur daha denenir
+    for wait in (0, 20, 60):
+        if wait:
+            L.warning("edge-tts ses vermedi; %d sn bekleyip yeniden deneniyor", wait)
+            time.sleep(wait)
+        for voice in voices:
             try:
-                if plain:
-                    return mp3, _edge_synth(plain, voice, "+0%", "+0Hz", mp3), f"edge:{voice}"
+                marks = retry(attempts=cfg.get_path("retry.attempts", 3),
+                              backoff=cfg.get_path("retry.backoff", 2.0))(_edge_synth)(
+                    text, voice, ecfg.get("rate", "+0%"), ecfg.get("pitch", "+0Hz"), mp3)
+                return mp3, marks, f"edge:{voice}"
             except (StageError, TransientError) as exc:
-                L.warning("edge-tts %s sade metinle de başarısız: %s", voice, exc)
+                L.warning("edge-tts %s başarısız: %s", voice, exc)
+                last = exc
+            if "döndürmedi" in str(last):
+                # bu metni/ayarı seslendirmediyse sade metin ve varsayılan hız/perdeyle bir kez daha
+                plain = _plain_text(text)
+                try:
+                    if plain:
+                        return mp3, _edge_synth(plain, voice, "+0%", "+0Hz", mp3), f"edge:{voice}"
+                except (StageError, TransientError) as exc:
+                    L.warning("edge-tts %s sade metinle de başarısız: %s", voice, exc)
+        if "döndürmedi" not in str(last):
+            break
     L.warning("edge-tts seslendiremedi; metin: %r (hız %s, perde %s)", text[:120], ecfg.get("rate"), ecfg.get("pitch"))
+    try:
+        from importlib.metadata import version
+        last = f"{last} (edge-tts {version('edge-tts')}; güncellemek için: python -m pip install -U edge-tts)"
+    except Exception:  # noqa: BLE001
+        pass
     raise StageError(f"edge-tts kullanılamadı: {last}")
 
 

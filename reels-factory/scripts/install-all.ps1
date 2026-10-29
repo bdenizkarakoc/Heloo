@@ -103,6 +103,7 @@ python -m pip install -q --upgrade pip
 python -m pip install -q -r requirements.txt
 if ($LASTEXITCODE -ne 0) { Fail "Python paketleri kurulamadi." }
 Ok "requirements.txt"
+python -m pip install -q --upgrade edge-tts   # Microsoft hizmeti degistikce eski surum "ses dondurmedi" verir
 python -m pip install -q --upgrade "graphifyy[mcp]>=0.9.95"
 if ($LASTEXITCODE -ne 0) { Warn "Graphify (bilgi haritasi) kurulamadi; diger her sey calisir." } else {
   Ok "Graphify (bilgi haritasi)"
