@@ -423,6 +423,25 @@ OFFTOPIC = re.compile(r"\b(viewing|visitors?|students?|people|crowd|team|briefin
                       r"engineers?|technicians?|celebrat\w*)\b", re.I)
 
 
+def broader_queries(query: str, subject: str | None = None, limit: int = 4) -> list[str]:
+    """Sonuç vermeyen sorgu için giderek genelleşen sorgular: ilk 3 ve ilk 2 kelime,
+    ardından kişi/varlık adı ve sorgunun en uzun kelimesi."""
+    words = [w for w in re.split(r"\s+", query.strip()) if w]
+    out = [" ".join(words[:n]) for n in (3, 2) if len(words) > n]
+    if subject:
+        out.append(subject)
+    if words:
+        longest = max(words, key=len)
+        if len(longest) >= 4:
+            out.append(longest)
+    seen, res = {query.strip().lower()}, []
+    for q in out:
+        if q.lower() not in seen:
+            seen.add(q.lower())
+            res.append(q)
+    return res[:limit]
+
+
 def relevance(c: dict, query: str) -> float:
     terms = {t for t in re.findall(r"[a-z0-9]+", (query or "").lower()) if len(t) > 2}
     title = (c.get("title") or "").lower()

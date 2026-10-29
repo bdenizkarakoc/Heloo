@@ -317,6 +317,16 @@ def stage_visuals(job: Job, script: dict, tl: dict, cfg: Config) -> dict:
             else:
                 meta = visuals.fetch_scene_visual(sc, job.dir, cfg, providers, used, budget,
                                                   rows[sc["id"]]["duration"])
+                if meta is None and sc["visual"]["kind"] in ("photo", "video") and not sc["visual"].get("pick"):
+                    # çok özel sorgu hiçbir şey bulamadıysa daha genel sorgularla bir daha (grafik arka plan son çare)
+                    for q in visuals.broader_queries(sc["visual"].get("query", ""), sc["visual"].get("subject")):
+                        trial = {**sc, "visual": {k: v for k, v in sc["visual"].items() if k != "subject"} | {"query": q}}
+                        meta = visuals.fetch_scene_visual(trial, job.dir, cfg, providers, used, budget,
+                                                          rows[sc["id"]]["duration"])
+                        if meta:
+                            L.info("%s: görsel genel sorguyla bulundu: %s", sc["id"], q)
+                            meta["query_used"] = q
+                            break
             media[sc["id"]] = meta
             if meta is None and sc["visual"]["kind"] in ("photo", "video"):
                 job.warn(f"{sc['id']}: uygun görsel bulunamadı → hareketli grafik arka plan kullanıldı")
