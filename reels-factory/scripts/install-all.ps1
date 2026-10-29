@@ -67,10 +67,16 @@ if (Test-Path (Join-Path $Dir ".git")) {
   git checkout -- "reels-factory/package-lock.json" "reels-factory/remotion/package-lock.json" 2>$null
   $changed = @(git status --porcelain --untracked-files=no)
   if ($changed.Count) {
-    # Elle degistirilmis kod dosyalari silinmez: kenara alinir (git stash list / git stash pop ile geri gelir)
-    $stamp = Get-Date -Format "yyyy-MM-dd HH:mm"
-    git stash push -m "kurulum oncesi yerel degisiklikler $stamp" | Out-Null
-    if ($LASTEXITCODE -eq 0) { Warn ("Degistirilmis " + $changed.Count + " dosya kenara alindi (git stash list; geri almak: git stash pop)") }
+    # Bilgisayardaki kaydedilmemis calisma: dokunmadan dur (kaybolmasin, gizlenmesin)
+    Pop-Location
+    Write-Host ""
+    Write-Host ("  Bu bilgisayarda kaydedilmemis " + $changed.Count + " degisiklik var; kaybolmasin diye guncelleme yapilmadi.") -ForegroundColor Yellow
+    Write-Host "  Once bunlari kaydedip GitHub'a ayri bir dala gonderin (Claude birlestirir):" -ForegroundColor Yellow
+    Write-Host "    cd `"$Dir`""
+    Write-Host "    git add -A -- . `":(exclude)reels-factory/.claude`""
+    Write-Host "    git commit -m `"Bilgisayardaki degisiklikler`""
+    Write-Host "    git push origin HEAD:yerel-degisiklikler"
+    Fail "Yerel degisiklikler var (yukaridaki adimlar)."
   }
   git pull --ff-only origin $Branch
   if ($LASTEXITCODE -ne 0) {
