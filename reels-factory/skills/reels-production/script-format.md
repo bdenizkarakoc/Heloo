@@ -74,7 +74,7 @@ Türkçe TTS hızı ≈ 2,3 kelime/sn; 45 sn ≈ 100–110 kelime.
 | `compare` | `items`: 2–3 × `{label, value, suffix?, display?}` (zorunlu), `title`, `cues` [her öğe için tetik kelimesi], `note` (ör. "Gün > Yıl") | İki/üç değeri çubuklarla karşılaştırma |
 | `list` | `items`: 2–4 kısa madde (zorunlu, ≤28 karakter), `title`, `cues` | Madde madde bilgi |
 | `fact` | `headline` (≤90, zorunlu), `label`, `highlight` | Vurgulu tek cümlelik bilgi kartı |
-| `outro` | `headline` (≤60, zorunlu), `highlight`, `cta` | Kapanış + takip çağrısı |
+| `outro` | `headline` (≤60, zorunlu), `highlight`, `cta` (≤28, tek satır) | Kapanış + takip çağrısı |
 
 Ekran yazıları kısa tutulur; sığmazsa kompozitör puntoyu küçültür, yine sığmazsa hata verir.
 

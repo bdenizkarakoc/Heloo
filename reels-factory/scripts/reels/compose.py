@@ -197,9 +197,26 @@ class SceneBuilder:
                 "bottom": bottom, "size": size, "hl_ids": [w["id"] for l in out_lines for w in l["words"] if w["hl"]]}
 
     def chip(self, cid: str, text: str, y: float, size: int, t: float, style: str = "chip") -> dict:
-        disp = tr_upper(text)
-        w = self.m.width(disp, size, 800, 0.08) + 60
-        if w > W - 2 * self.mx:
+        disp, max_w = tr_upper(text), W - 2 * self.mx
+        width = lambda t, s: self.m.width(t, s, 800, 0.08) + 60  # noqa: E731
+        floor = max(26, int(size * 0.6))  # uzun etiket önce küçülür
+        while size > floor and width(disp, size) > max_w:
+            size -= 2
+        if width(disp, size) > max_w:
+            # yine sığmazsa anlamlı ilk bölüm (virgül/tireye kadar) kalır; o da sığmazsa kelime kelime kısalır
+            import re
+            parts = [p.strip() for p in re.split(r"[,;:—–]| - ", disp) if p.strip()]
+            short = next((" ".join(parts[:k]) for k in range(len(parts), 0, -1)
+                          if width(" ".join(parts[:k]), size) <= max_w), "")
+            if not short:
+                words = disp.split()
+                while len(words) > 1 and width(" ".join(words), size) > max_w:
+                    words.pop()
+                short = " ".join(words)
+            L.warning("%s: etiket kısaltıldı: %s → %s", cid, text, short)
+            disp = short
+        w = width(disp, size)
+        if w > max_w:
             raise TextFitError(f"{cid}: etiket çok uzun: {text}")
         self.boxes.append({"id": cid, "x0": (W - w) / 2, "x1": (W + w) / 2, "y0": y, "y1": y + size + 31})
         return {"tpl": {"id": cid, "text": disp, "y": round(y), "size": size, "style": style},

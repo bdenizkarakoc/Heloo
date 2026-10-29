@@ -25,6 +25,7 @@ VISUAL_KINDS = {"photo", "video", "graphic"}
 TRANSITIONS = {"zoom", "whip", "iris", "wipe", "cut"}
 DEFAULT_TRANSITIONS = ["zoom", "whip", "wipe", "iris", "whip", "zoom", "wipe", "iris", "whip"]
 
+MAX_CTA_CHARS = 28
 MAX_HEADLINE_CHARS = {"hook": 42, "photo": 48, "fact": 90, "outro": 60}
 
 
@@ -80,6 +81,13 @@ def normalize(script: dict, cfg: Config) -> dict:
         sc.setdefault("layout", "hook" if i == 0 else "photo")
         sc["narration"] = autofix_text(str(sc.get("narration", "")))
         sc.setdefault("on_screen", {})
+        cta = str(sc["on_screen"].get("cta") or "").strip()
+        if len(cta) > MAX_CTA_CHARS:  # takip çağrısı tek satırlık etikettir: ilk bölümü kalır
+            head = re.split(r"[,;:—–]", cta)[0].strip()
+            if not (4 <= len(head) <= MAX_CTA_CHARS):  # yarım cümle yerine kanalın kısa çağrısı
+                brand = str(cfg.get_path("brand.cta", "") or "")
+                head = brand if 0 < len(brand) <= MAX_CTA_CHARS else "Takip et"
+            sc["on_screen"]["cta"] = head.rstrip(",;:—–-. ")
         vis = dict(sc.get("visual") or {})
         vis.setdefault("kind", "graphic" if sc["layout"] in ("compare", "list") else "photo")
         vis.setdefault("fit", "auto")
