@@ -63,8 +63,20 @@ if (Test-Path (Join-Path $Dir ".git")) {
   Push-Location $Dir
   git fetch origin $Branch
   git checkout $Branch 2>$null; if ($LASTEXITCODE -ne 0) { git checkout -b $Branch "origin/$Branch" }
+  # Kurulumun kendi urettigi dosyalar (npm kilit dosyalari) guncellemeyi engellemesin
+  git checkout -- "reels-factory/package-lock.json" "reels-factory/remotion/package-lock.json" 2>$null
+  $changed = @(git status --porcelain --untracked-files=no)
+  if ($changed.Count) {
+    # Elle degistirilmis kod dosyalari silinmez: kenara alinir (git stash list / git stash pop ile geri gelir)
+    $stamp = Get-Date -Format "yyyy-MM-dd HH:mm"
+    git stash push -m "kurulum oncesi yerel degisiklikler $stamp" | Out-Null
+    if ($LASTEXITCODE -eq 0) { Warn ("Degistirilmis " + $changed.Count + " dosya kenara alindi (git stash list; geri almak: git stash pop)") }
+  }
   git pull --ff-only origin $Branch
-  if ($LASTEXITCODE -ne 0) { Pop-Location; Fail "Guncelleme yapilamadi (klasorde degistirilmis kod dosyalari olabilir). 'git status' ile bakin." }
+  if ($LASTEXITCODE -ne 0) {
+    git merge --no-edit "origin/$Branch"  # yerel commit varsa birlestir (gecmis yeniden yazilmaz)
+    if ($LASTEXITCODE -ne 0) { git merge --abort 2>$null; Pop-Location; Fail "Guncelleme yapilamadi: yerel commitlerle cakisma var. Heloo klasorunde 'git status' calistirip ekran goruntusunu gonderin." }
+  }
   Pop-Location
 } else {
   if (Test-Path $Dir) { Fail "$Dir var ama bir git deposu degil. Baska klasor: `$env:RF_DIR='C:\ReelsFabrikasi' yazip tekrar calistirin." }
@@ -107,11 +119,13 @@ if (-not $NoVoice) {
 }
 
 Step "Node paketleri (HyperFrames, GSAP) ve render tarayicisi"
-npm install --silent
+npm ci --silent --no-audit --no-fund   # kilit dosyasini degistirmez (sonraki guncellemeyi engellemez)
+if ($LASTEXITCODE -ne 0) { npm install --silent --no-save --no-audit --no-fund }
 if ($LASTEXITCODE -ne 0) { Fail "npm install basarisiz." }
 # Remotion: ikinci render motoru (config/settings.yaml -> render.engine: remotion). Kurulamazsa HyperFrames kullanilir.
 Push-Location (Join-Path $App "remotion")
-npm install --silent --no-audit --no-fund
+npm ci --silent --no-audit --no-fund
+if ($LASTEXITCODE -ne 0) { npm install --silent --no-save --no-audit --no-fund }
 if ($LASTEXITCODE -eq 0) { npx --yes remotion browser ensure | Out-Null; Ok "Remotion (React render motoru)" } else { Warn "Remotion kurulamadi; HyperFrames ile devam edilir." }
 Pop-Location
 npx hyperframes browser ensure
