@@ -286,7 +286,7 @@ visuals:
   video_min_relevance: 2.0   # klip başlığında sorgu kelimesi geçmeli (ilgisiz stok video yerine fotoğraf)
   candidates_per_scene: 6
   license_allow: [cc0, pdm, by]   # Openverse: yalnızca ticari kullanım + değişikliğe izin verenler
-  user_agent: "ReelsFactory/0.1 (+https://github.com/; automated short-video generator)"
+  user_agent: "ReelsFactory/0.1 (+https://github.com/bdenizkarakoc/Heloo; automated short-video generator)"
   openai:
     model: gpt-image-1
     size: 1024x1536

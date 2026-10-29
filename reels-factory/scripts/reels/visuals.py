@@ -626,7 +626,9 @@ def fetch_scene_visual(scene: dict, job_dir: Path, cfg: Config, providers: list[
     vis = scene["visual"]
     if (cfg.get_path("visuals.prefer_video", False) and vis.get("kind") == "photo" and vis.get("query")
             and not vis.get("subject") and not vis.get("pick") and not vis.get("providers")):
-        trial = {**scene, "visual": {**vis, "kind": "video", "providers": VIDEO_PROVIDERS,
+        # NASA arşivi yalnızca kategorisi NASA kullanan konularda (tarih/müzik videosunda uzay klibi aranmaz)
+        vids = [p for p in VIDEO_PROVIDERS if p != "nasa_video" or "nasa" in providers]
+        trial = {**scene, "visual": {**vis, "kind": "video", "providers": vids,
                                      "min_relevance": float(cfg.get_path("visuals.video_min_relevance", 2.0))}}
         meta = _fetch(trial, job_dir, cfg, providers, used, budget, seconds)
         if meta:
