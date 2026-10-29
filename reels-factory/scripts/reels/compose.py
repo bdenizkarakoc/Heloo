@@ -253,7 +253,7 @@ class SceneBuilder:
             explicit = sc["visual"].get("fit") in ("cover", "contain", "card")
             bg = {"type": media["kind"], "src": media["file"], "bgsrc": media["bg"],
                   "fit": media.get("fit", "cover"),
-                  "dim": graphic_layout and media["kind"] == "photo" and not explicit,
+                  "dim": (graphic_layout and media["kind"] == "photo" and not explicit) or bool(media.get("fallback")),
                   "pos": {"top": "0%", "center": "50%", "bottom": "100%"}.get(sc["visual"].get("align", "center"), "50%")}
             if bg["fit"] == "card" and layout != "photo":
                 bg["fit"] = "cover"  # kart kutusu yalnızca photo yerleşiminde tanımlı

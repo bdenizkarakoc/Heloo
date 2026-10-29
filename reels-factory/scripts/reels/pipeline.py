@@ -295,6 +295,24 @@ def stage_captions(job: Job, script: dict, metas: dict, cfg: Config) -> tuple[di
     return tl, words, groups
 
 
+def _fill_missing(script: dict, media: dict) -> None:
+    """Görseli bulunamayan fotoğraf/video sahnesi boş grafik yerine, yanındaki sahnelerde olmayan (aynı görsel üst üste
+    gelmesin) en yakın sahnenin görselini bulanık ve koyu arka plan olarak kullanır."""
+    ids = [sc["id"] for sc in script["scenes"]]
+    kinds = {sc["id"]: sc["visual"]["kind"] for sc in script["scenes"]}
+    for i, sid in enumerate(ids):
+        if media.get(sid) or kinds[sid] not in ("photo", "video"):
+            continue
+        near = {(media.get(ids[j]) or {}).get("file") for j in (i - 1, i + 1) if 0 <= j < len(ids)}
+        for j in sorted(range(len(ids)), key=lambda j: (abs(j - i), j > i)):
+            m = media.get(ids[j])
+            if j != i and m and m.get("kind") == "photo" and not m.get("fallback") and m.get("file") not in near \
+                    and m.get("bg"):
+                media[sid] = {**m, "fallback": True, "fit": "cover", "reused_from": ids[j]}
+                L.info("%s: görsel yok → %s görseli koyu arka plan olarak kullanıldı", sid, ids[j])
+                break
+
+
 _FOUND_MEDIA = {"agent_media", "url", "ai_image", "ai_video"}  # kullanıcı/ajan/üretim: denetlenmez
 
 
@@ -304,19 +322,27 @@ def _find_visual(sc: dict, job: Job, cfg: Config, providers: list[str], used: di
     Genel sorguyla gelen — ve vet_all ise (tarih gibi dönemin önemli olduğu kategoriler) her — arama görseli
     Claude'a sahnenin metniyle denetletilir; uygun değilse sıradaki aday denenir."""
     vis = sc["visual"]
+    rejected: list[str] = []      # aynı başlıklı (aynı çekimden) adaylar tekrar denetlenmez
+    budget_vets = int(cfg.get_path("visuals.max_vets_per_scene", 5))
     tries = [(None, vis)]
     if vis["kind"] in ("photo", "video") and not vis.get("pick"):
         tries += [(q, {k: v for k, v in vis.items() if k != "subject"} | {"query": q})
                   for q in visuals.broader_queries(vis.get("query", ""), vis.get("subject"))]
     for q, v in tries:
         for _ in range(3 if (vet_all or q) else 1):  # reddedilen kaynak `used`a girer, sıradaki aday gelir
-            meta = visuals.fetch_scene_visual({**sc, "visual": v}, job.dir, cfg, providers, used, budget, seconds)
+            if budget_vets <= 0 and (vet_all or q):
+                return None
+            meta = visuals.fetch_scene_visual({**sc, "visual": {**v, "skip_titles": rejected}}, job.dir, cfg,
+                                              providers, used, budget, seconds)
             if not meta:
                 break
             if not ((q or vet_all) and meta.get("provider", "").split(":")[0] not in _FOUND_MEDIA):
                 return meta
+            budget_vets -= 1
             ok, why = visuals.vet_image(job.dir / "visuals" / meta["file"], sc.get("narration", ""),
                                         meta.get("title", ""), cfg)
+            if not ok:
+                rejected.append(meta.get("title", ""))
             L.info("%s: %s → '%s': %s (%s)", sc["id"], f"genel sorgu '{q}'" if q else "görsel",
                    meta.get("title", "")[:50], "uygun" if ok else "uygun değil", why)
             if ok:
@@ -350,10 +376,12 @@ def stage_visuals(job: Job, script: dict, tl: dict, cfg: Config) -> dict:
                                     vet_all=bool(cat.get("vet_images")))
             media[sc["id"]] = meta
             if meta is None and sc["visual"]["kind"] in ("photo", "video"):
-                job.warn(f"{sc['id']}: uygun görsel bulunamadı → hareketli grafik arka plan kullanıldı")
+                job.warn(f"{sc['id']}: uygun görsel bulunamadı → yakın sahnenin görseli koyu arka plan "
+                         "(o da yoksa hareketli grafik) kullanıldı")
             if meta and sc["visual"]["kind"] == "video" and meta["kind"] != "video":
                 job.warn(f"{sc['id']}: video klip istenmişti, fotoğraf + kamera hareketi kullanıldı "
                          "(video üretim/stok sağlayıcısı yapılandırılmamış)")
+        _fill_missing(script, media)
         unchecked = [sid for sid, m in media.items() if m and not m.get("license_checked", True)]
         if unchecked:
             job.warn(f"lisansı doğrulanmamış görseller (license_mode: any): {', '.join(unchecked)} — "

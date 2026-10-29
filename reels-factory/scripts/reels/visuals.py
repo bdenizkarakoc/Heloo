@@ -731,7 +731,8 @@ def _fetch(scene: dict, job_dir: Path, cfg: Config, providers: list[str], used: 
             cands = [cands[pick_index]] + [c for i, c in enumerate(cands) if i != pick_index]
         for idx, c in enumerate(cands[: cfg.get_path("visuals.candidates_per_scene", 6) * 2]):
             src_id = c.get("url") or c.get("path")
-            if src_id in used["sources"] or src_id in skip:
+            if src_id in used["sources"] or src_id in skip or \
+                    (c.get("title") and c.get("title") in scene["visual"].get("skip_titles", ())):
                 continue
             subject = scene["visual"].get("subject")
             if subject and SKIP_FILES.search(f"{c.get('title', '')} {c.get('file', '')}"):
