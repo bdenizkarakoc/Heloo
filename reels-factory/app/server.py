@@ -32,7 +32,7 @@ from urllib.parse import unquote, urlparse
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from reels import audience, cancel, claude_setup, kesim, knowledge, notes, cloud_sync, doctor, log, pipeline, publish, publish_sources, studio, voice  # noqa: E402
+from reels import audience, cancel, claude_setup, kesim, knowledge, llm, notes, photos, progress, cloud_sync, doctor, log, pipeline, publish, publish_sources, studio, voice  # noqa: E402
 from reels.config import load_config  # noqa: E402
 from reels.job import Job  # noqa: E402
 from reels.util import read_json, write_json  # noqa: E402
@@ -59,6 +59,7 @@ class Factory:
         self.lock = threading.Lock()
         self.dropped: set[str] = set()  # sıradayken kaldırılan görevler
         self.auto = {**DEFAULT_AUTO, **(read_json(APP_STATE, {}) or {}).get("auto", {})}
+        self.retries: list[dict] = []  # Claude sınırı yüzünden duran elle istenmiş videolar: sıfırlanınca yeniden
         threading.Thread(target=self._worker, daemon=True, name="worker").start()
         threading.Thread(target=self._scheduler, daemon=True, name="scheduler").start()
         self.cloud: dict = {"running": False, "last": None}
@@ -220,16 +221,41 @@ class Factory:
                     self.auto_queue(c["output"], "studio")
             return
         cfg = load_config()
-        if task["kind"] == "new":
+        if task["kind"] == "compose":  # Video Kur: görsel, senaryo, ses, altyazı, kurgu ayrı ayrı
+            from reels import composer
+            got: dict = {}
+            try:
+                composer.run_compose(task, lambda j: got.update(job=j))
+            except Exception:
+                L.exception("Video Kur hazırlanamadı")
+                raise
+            job = got["job"]
+            with self.lock:
+                self.current["job"] = job.id
+        elif task["kind"] == "new":
             media = [studio.UPLOADS / Path(f).name for f in (task.get("media") or [])
                      if (studio.UPLOADS / Path(f).name).is_file()]
-            job = pipeline.new_job(cfg, task.get("category") or None, task.get("topic") or None,
-                                   text=task.get("text") or None, draw=bool(task.get("draw")), media=media or None)
+            if task.get("job"):  # sınırdan sonra yeniden deneme: aynı görev
+                job = Job.load(task["job"])
+            else:
+                job = pipeline.new_job(cfg, task.get("category") or None, task.get("topic") or None,
+                                       text=task.get("text") or None, draw=bool(task.get("draw")), media=media or None)
             with self.lock:
                 self.current["job"] = job.id
             handler = log.attach_job_log(job.id)
             try:
                 pipeline.auto_script(job, cfg)
+            except llm.ClaudeLimitError:
+                job.set_status("failed")
+                if task.get("source") != "otomatik" and int(task.get("tries", 0)) < 3:
+                    until = llm.cli_limited() or time.time() + 3600
+                    retry = {**task, "job": job.id, "tries": int(task.get("tries", 0)) + 1}
+                    retry.pop("id", None)
+                    retry.pop("added", None)
+                    with self.lock:
+                        self.retries.append({"at": until, "task": retry})
+                    L.info("%s yeniden denenecek: %s", job.id, dt.datetime.fromtimestamp(until).strftime("%H:%M"))
+                raise
             except Exception as exc:
                 job.set_status("stopped" if isinstance(exc, cancel.Cancelled) else "failed")
                 raise
@@ -338,11 +364,23 @@ class Factory:
             time.sleep(20)
             try:
                 with self.lock:
+                    due = [r for r in self.retries if r["at"] <= time.time()]
+                    self.retries = [r for r in self.retries if r["at"] > time.time()]
+                for r in due:
+                    self.enqueue(r["task"].pop("kind"), **r["task"])
+                with self.lock:
                     a = dict(self.auto)
                     busy = self.current is not None or bool(self.pending)
                 if not a["enabled"] or busy or not a.get("next_run"):
                     continue
                 if now() < dt.datetime.fromisoformat(a["next_run"]):
+                    continue
+                until = llm.cli_limited()
+                if until and (llm.api_down() or not llm.available()):
+                    # Claude Code sınırı dolu, API de yok: boşuna görev açma, sıfırlanınca devam et
+                    L.info("Otomatik mod: Claude sınırı dolu, %s'e ertelendi", dt.datetime.fromtimestamp(until).strftime("%H:%M"))
+                    with self.lock:
+                        self.auto["next_run"] = dt.datetime.fromtimestamp(until).isoformat(timespec="seconds")
                     continue
                 nxt = now() + dt.timedelta(hours=float(a["interval_hours"]))
                 if self._today_count() >= int(a["daily_max"]):
@@ -387,7 +425,7 @@ class Factory:
 
 FACTORY: Factory | None = None
 _caps_cache: dict = {}
-KESIM_API = 2  # Kesim'in beklediği uç sürümü; Kesim daha eski bir fabrika görürse (boşta ise) yeniden başlatır
+KESIM_API = 4  # Kesim'in beklediği uç sürümü (4: Fotoğraflarım + araç komutları); Kesim daha eski bir fabrika görürse (boşta ise) yeniden başlatır
 KESIM_RESULTS: dict = {}  # Kesim'in yan işleri (altyazı, AI planı, ses) -> durum/sonuç
 
 
@@ -400,7 +438,7 @@ def job_summary(job: Job) -> dict:
             "stages": {k: v.get("status") for k, v in st.get("stages", {}).items()},
             "errors": {k: v.get("error") for k, v in st.get("stages", {}).items() if v.get("error")},
             "warnings": [w["msg"] for w in st.get("warnings", [])][-6:],
-            "outputs": st.get("outputs", {})}
+            "outputs": st.get("outputs", {}), "progress": progress.job_progress(st)}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -429,7 +467,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         size = path.stat().st_size
         ctype = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
-        if ctype.startswith("text/") or ctype in ("application/json",):
+        if ctype.startswith("text/") or ctype in ("application/json", "application/javascript"):
             ctype += "; charset=utf-8"
         rng = self.headers.get("Range")
         start, end = 0, size - 1
@@ -548,7 +586,8 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as exc:  # noqa: BLE001
                 return self._json({"error": str(exc)}, 400)
         if path == "/api/voice/profiles":
-            return self._json({"profiles": voice.profiles(), "active": voice.active(), **voice.engine_status()})
+            return self._json({"profiles": voice.profiles(), "active": voice.active(), **voice.engine_status(),
+                               "clone": voice.clone_status()})
         if path == "/api/voice/say":
             from urllib.parse import parse_qs
             text = (parse_qs(url.query).get("text") or [""])[0][:400]
@@ -556,19 +595,66 @@ class Handler(BaseHTTPRequestHandler):
                 return self._file(voice.say(text))
             except Exception as exc:  # noqa: BLE001
                 return self._json({"error": str(exc)}, 502)
+        if path == "/favicon.ico":  # tarayıcının kendiliğinden istediği simge: konsolda 404 hatası olmasın
+            self.send_response(204)
+            self.end_headers()
+            return None
         if path in ("/kesim", "/kesim.html"):
             return self._file(ROOT / "app" / "kesim.html")
         if path.startswith("/api/kesim/result/"):
             return self._json(KESIM_RESULTS.get(path.rsplit("/", 1)[-1], {"status": "unknown"}))
+        if path == "/api/kesim/brief":  # montaj sihirbazının soruları
+            from reels import brief
+            return self._json(brief.options())
+        if path.startswith("/api/kesim/library"):  # internetten ücretsiz medya: arama, hazır aramalar, atıflar
+            from urllib.parse import parse_qs
+            from reels import library
+            sub = path[len("/api/kesim/library"):].strip("/")
+            try:
+                if sub == "presets":
+                    return self._json(library.presets())
+                if sub == "credits":
+                    return self._json(library.credits())
+                q = parse_qs(url.query)
+                return self._json(library.search((q.get("kind") or ["sfx"])[0], (q.get("q") or [""])[0],
+                                                 int((q.get("page") or ["1"])[0] or 1)))
+            except Exception as exc:  # noqa: BLE001 — geçersiz istek 400, kaynak (Openverse/Commons) hatası 502
+                from reels.util import StageError
+                bad = isinstance(exc, (StageError, ValueError)) and "HTTP" not in str(exc)
+                return self._json({"error": str(exc)[:300]}, 400 if bad else 502)
         if path.startswith("/api/kesim/style"):
             try:
                 return self._json(kesim.style_data(path[len("/api/kesim/style"):].strip("/")))
             except Exception as exc:  # noqa: BLE001
                 return self._json({"error": str(exc)}, 400)
+        if path in ("/kur", "/kur.html"):  # Video Kur: görsel, senaryo, ses, altyazı, kurgu ayrı ayrı
+            return self._file(ROOT / "app" / "kur.html")
+        if path in ("/photos", "/photos.html"):
+            return self._file(ROOT / "app" / "photos.html")
+        if path == "/komut.js":  # /komut menüsü + büyüyen metin kutusu (Kesim ile aynı dosya)
+            return self._file(ROOT / "kesim-app" / "fabrika" / "komut.js")
+        if path == "/komutlar.js":  # Fabrika sayfalarının ortak /komut listesi
+            return self._file(ROOT / "app" / "komutlar.js")
+        if path == "/api/photos":  # Fotoğraflarım (?data=1: Kesim için küçük önizlemeler veriyle)
+            try:
+                items = photos.list_photos()
+                if "data=1" in (url.query or ""):
+                    for it in items[:150]:
+                        it["thumb"] = photos.thumb_data(it["name"])
+                return self._json({"dir": str(photos.photo_dir()), "photos": items})
+            except Exception as exc:  # noqa: BLE001
+                return self._json({"error": str(exc)}, 400)
+        if path.startswith("/photos/thumb/"):
+            try:
+                t = photos.thumb(unquote(path[len("/photos/thumb/"):]))
+            except Exception:  # noqa: BLE001 — bozuk/okunamayan fotoğraf
+                t = None
+            return self._file(t) if t else self.send_error(404)
         if path == "/api/kesim":
             st = kesim.status()
             st["styles"] = [{"slug": x["slug"], "name": x["name"], "version": x["version"]} for x in studio.list_styles()]
-            st["projects"] = [p for p in studio.list_projects(15) if p.get("options", {}).get("kesim")][:8]
+            st["projects"] = [{**p, "progress": progress.project_progress(p)} for p in studio.list_projects(15)
+                              if p.get("options", {}).get("kesim")][:8]
             st["api"] = KESIM_API
             return self._json(st)
         if path in ("/studio", "/studio.html"):
@@ -592,10 +678,13 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({
                 "ready": _caps_cache["ready"], "missing": _caps_cache["missing"],
                 "provider": resolve_provider(cfg), "capabilities": doctor.capabilities(cfg),
+                "claude_limit": llm.limit_message() if llm.cli_limited() and (llm.api_down() or not llm.available()) else None,
                 "categories": {k: v.get("label", k) for k, v in cfg.get_path("categories", {}).items()},
                 "license": {"visuals": cfg.get_path("visuals.license_mode", "strict"),
                             "music": cfg.get_path("music.license_mode", "strict")},
                 **FACTORY.snapshot()})
+        if path == "/api/progress":  # şu an çalışan (yüzde, adımlar), sıradakiler (başlamadı), son bitenler
+            return self._json(progress.overview(FACTORY.snapshot()))
         if path == "/api/jobs":
             jobs = sorted(Job.all(), key=lambda j: j.state.get("created", ""), reverse=True)[:40]
             return self._json([job_summary(j) for j in jobs])
@@ -726,6 +815,59 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_error(404)
         if path == "/api/stop":  # üretimi durdur: {task?: id} ya da {all: true}
             return self._json(FACTORY.stop(data.get("task") or None, bool(data.get("all"))))
+        if path.startswith("/api/photos/"):
+            act = path[len("/api/photos/"):]
+            try:
+                if act == "add":  # yüklenen fotoğrafları Fotoğraflarım klasörüne taşı
+                    return self._json({"added": photos.add_uploads(list(data.get("files") or []))})
+                if act == "video":
+                    return self._json(photos.make_video([str(x) for x in data.get("photos") or []],
+                                                        str(data.get("mode") or "montaj"), str(data.get("istek") or ""),
+                                                        FACTORY.enqueue, str(data.get("ref") or "").strip() or None))
+                if act == "open":
+                    return self._json({"path": photos.open_folder()})
+            except Exception as exc:  # noqa: BLE001
+                return self._json({"error": str(exc)}, 400)
+            return self.send_error(404)
+        if path == "/api/compose":  # Video Kur
+            opts = {k: data.get(k) for k in ("media", "photos", "senaryo", "senaryo_mod", "ses", "kayit", "altyazi",
+                                             "kurgu", "muzik", "baslik", "category", "ref")}
+            if not (opts["senaryo"] or "").strip() and opts["ses"] not in ("kayit", "yok"):
+                return self._json({"error": "senaryo boş: metni yaz ya da “kendi kaydım”ı seç"}, 400)
+            if opts["ses"] == "yok":   # seslendirme yok: müzikli montaj (Kesim hattı)
+                files = [studio.UPLOADS / Path(str(f)).name for f in opts["media"] or []]
+                if opts["photos"]:
+                    files = photos.to_uploads(list(opts["photos"])) + files
+                files = [f for f in files if f.is_file()]
+                if not files:
+                    return self._json({"error": "seslendirmesiz montaj için görsel ekleyin"}, 400)
+                istek = " ".join(x for x in (opts.get("kurgu") or "", opts.get("senaryo") or "") if x).strip()
+                ans = {"serbest": istek, **({"title": opts["baslik"]} if opts.get("baslik") else {})}
+                if (opts.get("ref") or "").strip():   # şunun aynısı: referansın kurgusu birebir
+                    ans["reference"] = {"url": opts["ref"].strip(), "mode": "birebir"}
+                if opts.get("muzik") == "yok":
+                    ans["muzik"] = "yok"
+                proj = kesim.start(files, FACTORY.enqueue, ans if any(ans.values()) else None)
+                return self._json({"mode": "montaj", "project": proj["id"], "options": proj.get("options", {})})
+            t = FACTORY.enqueue("compose", opts=opts, kesim=True, topic="Video Kur: " + ((opts.get("baslik") or opts.get("senaryo") or "kendi kaydım")[:50]))
+            return self._json({"mode": "video", "task": t["id"]})
+        if path in ("/api/assistant", "/api/assistant/listen"):  # AI asistan: istek → anlaşılır plan; ses → yazı
+            from reels import assistant
+            try:
+                if path.endswith("listen"):
+                    return self._json(assistant.listen(str(data.get("file", ""))))
+                return self._json(assistant.plan(str(data.get("text", "")), list(data.get("commands") or [])[:60],
+                                                 str(data.get("context") or "")))
+            except Exception as exc:  # noqa: BLE001
+                return self._json({"error": str(exc)}, 400)
+        if path in ("/api/tools/hook", "/api/tools/title"):  # /kanca ve /baslik komutları (YouTube agent araçları)
+            from reels import yt_tools
+            try:
+                if path.endswith("hook"):
+                    return self._json(yt_tools.hook_score(str(data.get("text", ""))[:300]))
+                return self._json(yt_tools.title_check(str(data.get("title", ""))[:200], data.get("thumb") or None))
+            except Exception as exc:  # noqa: BLE001
+                return self._json({"error": str(exc)}, 400)
         if path == "/api/new":
             n = max(1, min(10, int(data.get("count") or 1)))
             text = (data.get("text") or "").strip() or None
@@ -792,6 +934,26 @@ class Handler(BaseHTTPRequestHandler):
                     rep = audiofx.enhance_media(src, dest, data.get("strength") or "orta")
                     return {"output": dest.relative_to(ROOT).as_posix(), "steps": rep["steps"]}
                 return self._json(self._kesim_side("enhance", enh))
+            if action == "video-enhance":  # iyileştir + 1080p/2K/4K (yüklenmiş dosya; istenirse Hazır'a da kopyala)
+                src = studio.UPLOADS / Path(str(data.get("file", ""))).name
+                if not src.is_file():
+                    return self._json({"error": "önce dosyayı yükleyin"}, 400)
+
+                def vfx():
+                    from reels import videofx
+                    tgt = str(data.get("target") or "orijinal").lower()
+                    dest = ROOT / "output" / "kesim" / "iyilestir" / f"{src.stem}-{tgt}.mp4"
+                    rep = videofx.enhance_video(src, dest, tgt, str(data.get("denoise") or "hafif"),
+                                                str(data.get("sharpen") or "orta"), data.get("color", True) is not False,
+                                                bool(data.get("audio")))
+                    rep["output"] = dest.relative_to(ROOT).as_posix()
+                    if data.get("ready"):
+                        rep["ready"] = kesim.to_ready(dest)
+                    return rep
+                return self._json(self._kesim_side("video-enhance", vfx))
+            if action == "library/fetch":  # kütüphaneden seçilen öğeyi indir (atfı credits.json'a yazılır)
+                from reels import library
+                return self._json(self._kesim_side("library", lambda: library.fetch(str(data.get("id", "")))))
             if action == "assist":
                 import base64
                 frames = [base64.b64decode(str(f).split(",")[-1]) for f in (data.get("frames") or [])[:4]]
@@ -803,7 +965,7 @@ class Handler(BaseHTTPRequestHandler):
                 files = [f for f in files if f.is_file()]
                 if not files:
                     return self._json({"error": "önce video veya fotoğraf bırakın"}, 400)
-                return self._json(kesim.start(files, FACTORY.enqueue))
+                return self._json(kesim.start(files, FACTORY.enqueue, data.get("brief") or None))
             if action == "settings":
                 return self._json(kesim.save_settings(data))
             if action == "probe":
@@ -904,15 +1066,23 @@ class Handler(BaseHTTPRequestHandler):
             if action == "style_delete":
                 voice.delete_style(str(data["slug"]))
                 return self._json({"styles": voice.styles()})
+            if action == "tune":  # klon ayarları: duygu (exaggeration), benzerlik/tempo (cfg_weight), motor
+                return self._json(voice.tune(str(data["slug"]), data))
+            if action == "reref":  # klon örneğini yeniden seç (ya da belirli bir kayıttan)
+                return self._json({"ref": voice.clone_reference(str(data["slug"]), force=True,
+                                                                turn_file=data.get("file") or None).relative_to(ROOT).as_posix()})
             if action == "speak":
                 slug, text = str(data["slug"]), str(data.get("text", "")).strip()[:600]
                 if not text:
                     return self._json({"error": "metin boş"}, 400)
+                engine = data.get("engine") if data.get("engine") in ("klon", "knn") else "auto"
                 d = voice.vdir(slug) / "tries"
                 d.mkdir(exist_ok=True)
                 import hashlib
-                out = voice.speak(slug, text, d / (hashlib.sha1(text.encode()).hexdigest()[:12] + ".wav"))
-                return self._json({"audio": out.relative_to(ROOT).as_posix()})
+                key = json.dumps([text, engine, voice.read_json(voice.vdir(slug) / "profile.json").get("clone")], ensure_ascii=False)
+                out = voice.speak(slug, text, d / (hashlib.sha1(key.encode()).hexdigest()[:12] + ".wav"), engine)
+                return self._json({"audio": out.relative_to(ROOT).as_posix(),
+                                   "engine": "klon" if engine != "knn" and voice.clone_available() else "knn"})
         except Exception as exc:  # noqa: BLE001
             return self._json({"error": str(exc)}, 400)
         return self.send_error(404)

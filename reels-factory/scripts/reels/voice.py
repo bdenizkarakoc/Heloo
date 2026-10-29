@@ -4,9 +4,12 @@ Akış: sohbet (uygulama soru sorar, kullanıcı mikrofonla cevaplar; ~5 dk) →
 kompresörle iyileştirilir ve yazıya dökülür → profil: ses perdesi (F0), konuşma hızı, en yakın temel Türkçe ses →
 kNN-VC (MIT lisanslı, yerel, ücretsiz) ile ses rengi dönüşümü için eşleştirme kümesi.
 
-Seslendirme: metin önce temel Türkçe sesle (edge-tts; kelime zamanlarıyla) okunur, hız/perde kullanıcıya göre
-ayarlanır, sonra kNN-VC kullanıcının kendi kayıtlarından seçtiği ses parçalarıyla aynı uzunlukta yeniden üretir
-(kelime zamanları korunur). Yalnızca kullanıcının kendi sesi ve açık onayıyla kullanılır.
+Seslendirme (iki motor):
+- klon (varsayılan, ekran kartı): Chatterbox Multilingual (MIT) metni doğrudan kullanıcının sesiyle Türkçe okur;
+  kayıtlardan seçilen en temiz ~10 sn örnek kullanılır, her cümle Whisper ile geri dinlenip yanlış okunan yeniden
+  üretilir. Ayrı Python ortamında çalışır (`studio/cache/venv-tts`, `tts_worker.py`).
+- kNN-VC (yedek, işlemci): temel Türkçe ses (edge-tts) kullanıcının ses rengine dönüştürülür.
+Yalnızca kullanıcının kendi sesi ve açık onayıyla kullanılır.
 """
 from __future__ import annotations
 
@@ -200,8 +203,9 @@ def add_answer(slug: str, data: bytes, ext: str = "webm") -> dict:
     if sp > 0.8:
         try:
             from .studio import transcribe
-            transcript = " ".join(w["word"] for w in transcribe(clean, d / "rec", cfg, model="small"))
-            (d / "rec" / f"words_small_0.json").replace(d / "rec" / f"{n:03d}.words.json")
+            # ekran kartı varsa büyük model (large-v3-turbo): Türkçe konuşmayı çok daha doğru anlar
+            transcript = " ".join(w["word"] for w in transcribe(clean, d / "rec", cfg))
+            (d / "rec" / "words_cfg_0.json").replace(d / "rec" / f"{n:03d}.words.json")
         except Exception as exc:  # noqa: BLE001
             L.warning("yazıya dökülemedi: %s", exc)
     turn = {"n": n, "question": prof.get("pending_question", ""), "file": clean.name, "speech_sec": round(sp, 1),
@@ -225,6 +229,154 @@ def add_answer(slug: str, data: bytes, ext: str = "webm") -> dict:
 
 _MODEL = None
 _LOCK = threading.Lock()
+
+# ----------------------------------------------------------------------------
+# Klon motoru (Chatterbox Multilingual, ekran kartı; ayrı Python ortamı)
+# ----------------------------------------------------------------------------
+CLONE_ENV = ROOT / "studio" / "cache" / "venv-tts"
+CLONE_PY = CLONE_ENV / ("Scripts/python.exe" if __import__("sys").platform.startswith("win") else "bin/python")
+WORKER = Path(__file__).with_name("tts_worker.py")
+_CLONE_OK: dict = {}
+
+
+def clone_available() -> bool:
+    """Klon motoru kurulu mu (torch CUDA + chatterbox)? Sonuç önbelleğe alınır."""
+    if "ok" not in _CLONE_OK:
+        ok = False
+        stamp = ROOT / "studio" / "cache" / "clone_ok.json"   # diskte önbellek: sunucu her açılışta motoru yüklemesin
+        key = str(CLONE_PY.stat().st_mtime) if CLONE_PY.exists() else ""
+        old = read_json(stamp, {}) or {}
+        if key and old.get("key") == key:
+            _CLONE_OK.update(ok=bool(old.get("ok")), gpu=bool(old.get("gpu")))
+            return _CLONE_OK["ok"]
+        if CLONE_PY.exists():
+            try:
+                r = subprocess.run([str(CLONE_PY), "-c", "import chatterbox.mtl_tts, torch; print(torch.cuda.is_available())"],
+                                   capture_output=True, text=True, timeout=180)
+                ok = r.returncode == 0
+                _CLONE_OK["gpu"] = r.stdout.strip() == "True"
+            except (OSError, subprocess.TimeoutExpired):
+                ok = False
+        _CLONE_OK["ok"] = ok
+        if key:
+            write_json(stamp, {"key": key, "ok": ok, "gpu": bool(_CLONE_OK.get("gpu"))})
+    return _CLONE_OK["ok"]
+
+
+def clone_status() -> dict:
+    ok = clone_available()
+    return {"available": ok, "gpu": bool(_CLONE_OK.get("gpu")), "installed": CLONE_PY.exists(),
+            "engine": "Chatterbox Multilingual (MIT) · ekran kartı" if ok and _CLONE_OK.get("gpu") else
+            "Chatterbox Multilingual (işlemci, yavaş)" if ok else None}
+
+
+def tune(slug: str, data: dict) -> dict:
+    """Klon ayarları: duygu 0.25-1.0 (exaggeration), benzerlik 0.2-0.8 (cfg_weight; düşük = daha sakin, ağır)."""
+    d = vdir(slug)
+    prof = read_json(d / "profile.json")
+    c = prof.get("clone") or {}
+    for k, lo, hi in (("exaggeration", 0.25, 1.0), ("cfg_weight", 0.2, 0.8), ("temperature", 0.5, 1.0)):
+        if data.get(k) is not None:
+            c[k] = round(max(lo, min(hi, float(data[k]))), 2)
+    prof["clone"] = c
+    write_json(d / "profile.json", prof)
+    return c
+
+
+def clone_reference(slug: str, force: bool = False, turn_file: str | None = None) -> Path:
+    """Kayıtlardan klon için en temiz ~10 sn'lik örneği seçer: sürekli konuşma, düşük gürültü, dengeli seviye.
+    turn_file verilirse yalnızca o kayıttan seçer (Sesim sayfasında "bu kaydı örnek al")."""
+    d = vdir(slug)
+    dest = d / "clone_ref.wav"
+    if dest.exists() and not force:
+        return dest
+    prof = read_json(d / "profile.json")
+    best = None
+    for t in prof.get("turns", []):
+        if turn_file and t["file"] != Path(str(turn_file)).name:
+            continue
+        f = d / "rec" / t["file"]
+        if not f.exists() or (t.get("speech_sec") or 0) < 6:
+            continue
+        a = load_audio(f, 16000, 1)
+        hop = 320
+        n = len(a) // hop
+        if n < 300:
+            continue
+        db = 20 * np.log10(np.sqrt((a[: n * hop].reshape(n, hop) ** 2).mean(axis=1) + 1e-12))
+        win = 500   # 10 sn
+        speech = (db > -38).astype(float)
+        cs = np.concatenate([[0], np.cumsum(speech)])
+        for st in range(0, max(1, n - win), 25):
+            ratio = (cs[min(n, st + win)] - cs[st]) / win
+            seg = db[st:st + win]
+            noise = float(np.percentile(seg, 10))
+            level_var = float(np.std(seg[seg > -38])) if (seg > -38).any() else 99.0
+            clip = float((np.abs(a[st * hop:(st + win) * hop]) > 0.98).mean())
+            score = ratio * 3 - max(0.0, noise + 60) * 0.03 - level_var * 0.05 - clip * 50
+            if best is None or score > best[0]:
+                best = (score, f, st * hop / 16000)
+    if not best:
+        raise StageError("klon için yeterince uzun, temiz bir kayıt yok (en az 6 sn kesintisiz konuşma)")
+    _, f, t0 = best
+    run(["ffmpeg", "-y", "-v", "error", "-ss", f"{t0:.2f}", "-t", "10.5", "-i", f, "-af",
+         "highpass=f=70,afftdn=nf=-30,loudnorm=I=-20:TP=-2:LRA=7", "-ar", "24000", "-ac", "1", dest])
+    prof["clone_ref"] = {"file": f.name, "start": round(t0, 2), "at": now()}
+    write_json(d / "profile.json", prof)
+    L.info("Klon örneği seçildi: %s @ %.1f sn", f.name, t0)
+    return dest
+
+
+def clone_batch(slug: str, items: list[tuple[str, Path]], check: bool = True, timeout: int = 1800) -> list[dict]:
+    """Metinleri kullanıcının sesiyle okur (tek seferde; model bir kez yüklenir). Her çıktı için meta (kelimeler)."""
+    ref = clone_reference(slug)
+    prof = read_json(vdir(slug) / "profile.json")
+    tune = prof.get("clone") or {}
+    jobf = vdir(slug) / "_clone_job.json"
+    write_json(jobf, {"ref": str(ref), "check": check, "exaggeration": tune.get("exaggeration", 0.5),
+                      "cfg_weight": tune.get("cfg_weight", 0.5), "temperature": tune.get("temperature", 0.8),
+                      "items": [{"text": t, "out": str(o)} for t, o in items]})
+    with _LOCK:
+        r = subprocess.run([str(CLONE_PY), str(WORKER), str(jobf)], capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", timeout=timeout)
+    if r.returncode != 0:
+        raise StageError("kendi sesinle seslendirme başarısız: " + (r.stderr or r.stdout)[-500:])
+    metas = [read_json(Path(o).with_suffix(".json")) or {} for _, o in items]
+    target = float(tune.get("rate") or prof.get("rate_syll_sec") or 0)
+    for (_, o), meta in zip(items, metas):
+        _match_rate(Path(o), meta, target)
+    return metas
+
+
+def _match_rate(wav: Path, meta: dict, target: float) -> None:
+    """Klon ses kullanıcıdan yavaş okuyorsa kullanıcının kendi konuşma hızına (hece/sn) hızlandırır (perde değişmez)."""
+    words = meta.get("words") or []
+    if not words or target <= 0:
+        return
+    dur = max(0.5, words[-1]["end"] - words[0]["start"])
+    rate = sum(syllables(w["text"]) for w in words) / dur
+    factor = max(1.0, min(1.22, (target * 0.92) / max(rate, 0.1)))   # %8 pay: okuma, sohbetten biraz yavaş olmalı
+    if factor < 1.03:
+        return
+    tmp = wav.with_suffix(".tempo.wav")
+    run(["ffmpeg", "-y", "-v", "error", "-i", wav, "-af", f"atempo={factor:.3f}", tmp])
+    tmp.replace(wav)
+    for w in words:
+        w["start"], w["end"] = round(w["start"] / factor, 3), round(w["end"] / factor, 3)
+    meta.update(words=words, tempo=round(factor, 3))
+    write_json(wav.with_suffix(".json"), meta)
+
+
+def asr_gpu(wav: Path, prompt: str = "") -> dict | None:
+    """Ekran kartıyla (large-v3-turbo) konuşma tanıma; klon ortamı yoksa None."""
+    if not clone_available():
+        return None
+    r = subprocess.run([str(CLONE_PY), str(WORKER), "--asr", str(wav), prompt[:200]], capture_output=True, text=True,
+                       encoding="utf-8", errors="replace", timeout=600)
+    if r.returncode != 0:
+        L.warning("GPU konuşma tanıma başarısız: %s", (r.stderr or "")[-300:])
+        return None
+    return json.loads(r.stdout.strip().splitlines()[-1])
 
 
 TORCH_PKGS = ["torch==2.7.1", "torchaudio==2.7.1"]
@@ -326,12 +478,17 @@ def build(slug: str, on_stage=None) -> dict:
         probe_text = "Merhaba arkadaşlar, bugün size çok ilginç bir konudan bahsedeceğim, sonuna kadar izleyin."
         bases = {}
         order = [BASE_VOICES[gender]] + [v for v in BASE_VOICES.values() if v != BASE_VOICES[gender]]
-        for v in order:  # her temel ses için hız/perde ayarı; çalışmayan ses (hizmet kesintisi) atlanır
+        for v in order:  # her temel ses için hız/perde ayarı; hizmet kesintisinde yeniden denenir
             mp3 = d / "base_probe.mp3"
-            try:
-                marks = _edge_synth(probe_text, v, "+0%", "+0Hz", mp3)
-            except Exception as exc:  # noqa: BLE001
-                L.warning("temel ses %s kullanılamadı: %s", v, exc)
+            marks = None
+            for attempt in range(3):  # yalnızca kadın sesi kalırsa erkek sese dönüşüm bozuk çıkıyordu
+                try:
+                    marks = _edge_synth(probe_text, v, "+0%", "+0Hz", mp3)
+                    break
+                except Exception as exc:  # noqa: BLE001
+                    L.warning("temel ses %s kullanılamadı (deneme %d): %s", v, attempt + 1, exc)
+                    __import__("time").sleep(2 + 3 * attempt)
+            if marks is None:
                 continue
             bf0 = pitch_hz(mp3)
             dur = (marks[-1]["end"] - marks[0]["start"]) if marks else 5.0
@@ -343,6 +500,9 @@ def build(slug: str, on_stage=None) -> dict:
         if not bases:
             raise StageError("temel Türkçe ses (edge-tts) kullanılamadı; internet bağlantısını kontrol edin")
 
+        if clone_available():
+            stage("klon örneği seçiliyor (en temiz 10 sn)")
+            clone_reference(slug, force=True)
         stage("ses rengi öğreniliyor (ilk seferde model indirilir; birkaç dakika sürebilir)")
         m = model()
         with torch.inference_mode():
@@ -356,7 +516,7 @@ def build(slug: str, on_stage=None) -> dict:
         stage("örnek okuma üretiliyor")
         sample = speak(slug, "Merhaba! Bu benim sesim, ama bu cümleyi ben okumadım. Reels Fabrikası beni dinleyip "
                              "sesimi öğrendi. Nasıl, benziyor mu?", d / "preview.wav")
-        prof.update(status="ready", preview=str(sample.relative_to(ROOT)),
+        prof.update(status="ready", preview=str(sample.relative_to(ROOT)), preview_engine="klon" if clone_available() else "knn",
                     sample=str((d / "rec" / prof["turns"][0]["file"]).relative_to(ROOT)))
         write_json(d / "profile.json", prof)
         return prof
@@ -379,7 +539,15 @@ def tts_raw(slug: str, text: str, mp3: Path) -> list[dict]:
     raise StageError(f"temel ses üretilemedi: {last}")
 
 
-def speak(slug: str, text: str, dest: Path) -> Path:
+def speak(slug: str, text: str, dest: Path, engine: str = "auto") -> Path:
+    """Metni kullanıcının sesiyle okur. engine: auto (klon varsa klon) | klon | knn"""
+    if engine in ("auto", "klon") and clone_available():
+        raw = dest.with_suffix(".clone.wav")
+        clone_batch(slug, [(text, raw)])
+        enhance(raw, dest, strength="hafif")
+        raw.unlink(missing_ok=True)
+        raw.with_suffix(".json").unlink(missing_ok=True)
+        return dest
     tmp = dest.with_suffix(".base.mp3")
     tts_raw(slug, text, tmp)
     out = convert(tmp, dest.with_suffix(".vc.wav"), slug)
@@ -415,7 +583,8 @@ def profiles() -> list[dict]:
     for f in sorted(VOICES.glob("*/profile.json")) if VOICES.exists() else []:
         p = read_json(f)
         out.append({k: p.get(k) for k in ("slug", "name", "status", "speech_sec", "f0", "base_voice", "rate_syll_sec",
-                                           "preview", "sample", "error", "built", "created")}
+                                           "preview", "sample", "error", "built", "created", "clone", "clone_ref",
+                                           "preview_engine")}
                    | {"turns": len(p.get("turns", [])), "active": p.get("slug") == act, "target": TARGET_SPEECH_SEC})
     return out
 

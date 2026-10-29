@@ -679,7 +679,7 @@ def _fetch(scene: dict, job_dir: Path, cfg: Config, providers: list[str], used: 
                        "uygun" if ok else "uygun değil", why)
                 if not ok:
                     continue
-            if any(_similar(meta["hash"], h) for h in used["hashes"]):
+            if name != "agent_media" and any(_similar(meta["hash"], h) for h in used["hashes"]):  # kullanıcı/ajan medyası asla atılmaz
                 L.info("%s: önceki sahneyle aynı görünen görsel atlandı", scene["id"])
                 continue
             used["sources"].add(src_id)

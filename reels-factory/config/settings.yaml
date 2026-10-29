@@ -240,6 +240,8 @@ llm:
 tts:
   # my_voice: uygulamadaki "Sesim" sayfasında öğrenilip etkinleştirilen kendi sesin (etkin değilse atlanır)
   provider_chain: [my_voice, edge, elevenlabs, piper]
+  # kendi sesin: auto = klon motoru (ekran kartı, doğrudan senin sesinle okur) kuruluysa o, yoksa kNN-VC dönüşümü
+  my_voice_engine: auto      # auto | klon | knn
   allow_noncommercial: false # true olursa yalnızca ticari olmayan lisanslı sesler (piper tr) de kullanılabilir
   edge:
     # Microsoft Edge "Sesli Oku" hizmeti; ücretsiz, anahtar gerektirmez, resmi bir API değildir.

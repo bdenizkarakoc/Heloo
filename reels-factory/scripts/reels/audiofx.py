@@ -7,8 +7,9 @@ Adımlar (her biri ölçüme göre uyarlanır, gereksizse atlanır):
      bölümlerinden öğrenilir; konuşma bölgeleri korunur, gürültü yalnızca belirlenen oranda bastırılır (yapay
      "robot" sesini önlemek için yumuşak maske ve zaman/frekansta yumuşatma). Gürültü yoksa dokunulmaz.
   4. Ton: 80 Hz altı kesilir, hafif çamur azaltma ve netlik (EQ), sibilans yumuşatma.
-  5. Seviye: speechnorm ile cümleler arası seviye dengelenir, yumuşak kompresör, sınırlayıcı ve iki geçişli
-     loudnorm (konuşma için -16 LUFS veya istenen hedef).
+  5. Seviye: yumuşak kompresör, sınırlayıcı ve iki geçişli loudnorm (konuşma için -16 LUFS veya istenen hedef).
+     Cümleler arası seviye farkı büyükse speechnorm da uygulanır ve yükselttiği aralık gürültüsü ikinci bir
+     gürültü azaltmayla bastırılır.
 
 Güç: hafif / orta / güçlü (gürültü bastırma oranı ve dengeleme miktarı).
 """
@@ -65,20 +66,25 @@ def analyze(x: np.ndarray, sr: int = SR) -> dict:
     floor = float(np.percentile(db, 10))
     speech = float(np.percentile(db, 90))
     clip = float((np.abs(x) > 0.985).mean())
-    # uğultu: 50/60 Hz ve harmoniklerinin komşu bantlara göre belirginliği
-    spec = np.abs(np.fft.rfft(x[: sr * 30] * np.hanning(min(len(x), sr * 30))))
-    freqs = np.fft.rfftfreq(min(len(x), sr * 30), 1 / sr)
+    # uğultu: 50/60 Hz ve harmoniklerinin komşu bantlara göre belirginliği. Yalnızca en sessiz çerçevelerde
+    # (konuşma aralarında) ölçülür; konuşmanın kendi harmonikleri (120-240 Hz) uğultu sanılıp kesilmesin.
+    q = x[: n * hop].reshape(n, hop)[db <= np.percentile(db, 20)].ravel()[: sr * 30]
+    if len(q) < sr * 2:
+        q = x[: sr * 30]
+    spec = np.abs(np.fft.rfft(q * np.hanning(len(q))))
+    freqs = np.fft.rfftfreq(len(q), 1 / sr)
     hum = None
     for base in (50, 60):
         ratios = []
-        for h in (1, 2, 3):
+        for h in (1, 2, 3, 4):
             f = base * h
             band = (freqs > f - 1.5) & (freqs < f + 1.5)
             near = ((freqs > f - 12) & (freqs < f - 4)) | ((freqs > f + 4) & (freqs < f + 12))
             if band.any() and near.any():
                 ratios.append(float(20 * np.log10(spec[band].max() / (np.median(spec[near]) + 1e-9) + 1e-9)))
         if ratios and max(ratios) > 15:
-            hum = {"base": base, "prominence_db": round(max(ratios), 1)}
+            hum = {"base": base, "prominence_db": round(max(ratios), 1),
+                   "harmonics": [h for h, r in zip((1, 2, 3, 4), ratios) if r > 10]}
             break
     return {"noise_floor_db": round(floor, 1), "speech_db": round(speech, 1), "snr_db": round(speech - floor, 1),
             "clipping": round(clip, 5), "hum": hum}
@@ -210,7 +216,7 @@ def enhance(src: Path, dest: Path, strength: str = "orta", target_lufs: float = 
     pre.append("adeclick=w=55:o=75")
     if info["hum"]:
         b = info["hum"]["base"]
-        pre += [f"bandreject=f={b * h}:width_type=q:w=30" for h in (1, 2, 3, 4)]
+        pre += [f"bandreject=f={b * h}:width_type=q:w=30" for h in info["hum"]["harmonics"]]
         steps.append(f"{b} Hz uğultu temizlendi")
     stage1 = work / "s1.wav"
     run(["ffmpeg", "-y", "-v", "error", "-i", raw, "-af", ",".join(pre), "-ar", str(sr), stage1])
@@ -222,22 +228,35 @@ def enhance(src: Path, dest: Path, strength: str = "orta", target_lufs: float = 
         steps.append(f"gürültü azaltma ({strength}, gürültü tabanı {info['noise_floor_db']} dB)")
     stage2 = write_wav(work / "s2.wav", x, sr)
 
-    # 3) ton + seviye dengeleme
+    # 3) ton + seviye dengeleme. speechnorm konuşma aralarını da yükseltip gürültü azaltmayı geri alır;
+    # yalnızca cümleler arası seviye farkı büyükse (LRA) kullanılır, ardından kalan gürültü yeniden bastırılır.
     tone = ["equalizer=f=250:t=q:w=1.2:g=-2", "equalizer=f=3500:t=q:w=1.4:g=2.5",
             "equalizer=f=9000:t=h:w=2000:g=1", "deesser=i=0.3:m=0.5:f=0.5"]
-    level = [f"speechnorm=e={cfg['expansion']}:r=0.0005:l=1:p=0.9",
-             f"acompressor=threshold=-20dB:ratio={cfg['comp_ratio']}:attack=10:release=150:makeup=1.5:knee=4",
-             "alimiter=limit=0.89:attack=3:release=60:level=false:latency=1"]
+    uneven = float(_loudness(stage2)["input_lra"]) > 9
+    level = ([f"speechnorm=e={min(cfg['expansion'], 2.0)}:r=0.0005:l=1:p=0.9"] if uneven else []) + \
+        [f"acompressor=threshold=-20dB:ratio={cfg['comp_ratio']}:attack=10:release=150:makeup=1.5:knee=4"]
+    limiter = "alimiter=limit=0.89:attack=3:release=60:level=false:latency=1"
     stage3 = work / "s3.wav"
-    run(["ffmpeg", "-y", "-v", "error", "-i", stage2, "-af", ",".join(tone + level), "-ar", str(sr), stage3])
-    steps.append("netlik EQ + seviye dengeleme")
+    if uneven:
+        lev = work / "s2b.wav"
+        run(["ffmpeg", "-y", "-v", "error", "-i", stage2, "-af", ",".join(tone + level), "-ar", str(sr), lev])
+        y = wiener_denoise(load_audio(lev, sr, 1), sr, cfg["reduce_db"] / 2, oversub=1.2)
+        write_wav(work / "s2c.wav", y, sr)
+        run(["ffmpeg", "-y", "-v", "error", "-i", work / "s2c.wav", "-af", limiter, "-ar", str(sr), stage3])
+        steps.append("netlik EQ + cümle seviyesi dengeleme")
+    else:
+        run(["ffmpeg", "-y", "-v", "error", "-i", stage2, "-af", ",".join(tone + level + [limiter]), "-ar", str(sr),
+             stage3])
+        steps.append("netlik EQ + seviye dengeleme")
 
-    # 4) iki geçişli loudness
+    # 4) loudness: ölçülen seviyeye göre sabit kazanç + tepe sınırlayıcı. loudnorm linear=true, tepe payı
+    # yetmeyince sessizce dinamik moda geçip konuşma aralarını (gürültüyü) yükseltiyordu.
     if normalize:
         m = _loudness(stage3)
-        flt = (f"loudnorm=I={target_lufs}:TP=-1.5:LRA=11:measured_I={m['input_i']}:measured_TP={m['input_tp']}:"
-               f"measured_LRA={m['input_lra']}:measured_thresh={m['input_thresh']}:offset={m['target_offset']}:"
-               "linear=true")
+        gain = target_lufs - float(m["input_i"])
+        flt = f"volume={gain:.2f}dB"
+        if float(m["input_tp"]) + gain > -1.5:
+            flt += f",alimiter=limit={10 ** (-1.5 / 20):.4f}:attack=2:release=50:level=false:latency=1"
         run(["ffmpeg", "-y", "-v", "error", "-i", stage3, "-af", flt, "-ar", str(sr), "-ac", str(channels), dest])
         steps.append(f"ses seviyesi {target_lufs} LUFS")
     else:

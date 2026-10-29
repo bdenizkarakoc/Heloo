@@ -31,7 +31,9 @@ def _uvx() -> str | None:
     found = shutil.which("uvx")
     if found:
         return found
-    for d in (Path(sys.executable).parent, Path(sys.executable).parent / "Scripts"):
+    import sysconfig
+    user_scripts = Path(sysconfig.get_path("scripts", f"{os.name}_user"))   # pip install --user (ör. AppData\Roaming)
+    for d in (Path(sys.executable).parent, Path(sys.executable).parent / "Scripts", user_scripts):
         for name in ("uvx.exe", "uvx"):
             if (d / name).is_file():
                 return str(d / name)

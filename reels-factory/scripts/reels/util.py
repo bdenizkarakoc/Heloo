@@ -145,7 +145,11 @@ def download(url: str, dest: Path, max_mb: float = 200, headers: dict | None = N
                         raise StageError(f"dosya çok büyük (> {max_mb} MB)")
                     fh.write(chunk)
     except requests.RequestException as exc:
+        tmp.unlink(missing_ok=True)
         raise TransientError(f"indirme hatası: {type(exc).__name__}") from exc
+    except BaseException:
+        tmp.unlink(missing_ok=True)   # yarım dosya bırakma
+        raise
     tmp.replace(dest)
     return dest
 

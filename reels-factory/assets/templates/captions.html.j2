@@ -47,7 +47,7 @@
             tl.to("#" + w.id, { backgroundColor: w.emph ? ACC2 : ACC, color: BG, scale: 1.04, duration: 0.06, ease: "power2.out" }, w.start);
             tl.to("#" + w.id, { backgroundColor: "rgba(0,0,0,0)", color: base, scale: 1, duration: 0.12, ease: "power2.out" }, back);
           } else {
-            tl.to("#" + w.id, { color: w.emph ? ACC2 : ACC, scale: w.emph ? 1.14 : (STYLE === "shadow" ? 1.04 : 1.08), duration: 0.08, ease: "power2.out" }, w.start);
+            tl.to("#" + w.id, { color: w.emph ? ACC2 : ACC, scale: Math.min(w.pop || 9, w.emph ? 1.14 : (STYLE === "shadow" ? 1.04 : 1.08)), duration: 0.08, ease: "power2.out" }, w.start);
             tl.to("#" + w.id, { color: base, scale: 1, duration: 0.16, ease: "power2.out" }, back);
           }
         });

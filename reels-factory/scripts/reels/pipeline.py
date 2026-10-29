@@ -93,6 +93,8 @@ def make_brief(job: Job, cfg: Config) -> dict:
             "note": "Kullanıcının kendi fotoğraf/videoları: HEPSİ videoda kullanılmalı. Dosyalara bak (Read), içeriğine "
                     "uygun sahneye ata: sahnenin visual'ına \"user\": \"<dosya adı>\" ekle. Senaryo bu medyayla uyumlu "
                     "olmalı. Atamadıkların sırayla boş fotoğraf sahnelerine yerleştirilir."}
+    if job.state.get("kurgu"):
+        brief["kurgu"] = job.state["kurgu"]
     if job.state.get("user_music"):
         brief["user_music"] = "Kullanıcı kendi müziğini yükledi; arka plan müziği o olacak (music alanını boş bırakabilirsin)."
     try:  # Graphify içerik haritası varsa: işlenmiş kavramlar (tekrar etme, bağlantılardan yeni konu)
@@ -214,12 +216,22 @@ def auto_script(job: Job, cfg: Config, on_line=None) -> dict:
     if provider == "manual":
         raise StageError("Otomatik senaryo için ANTHROPIC_API_KEY ya da kurulu Claude Code (`claude`) gerekir")
     brief = read_json(job.dir / "brief.json") or make_brief(job, cfg)
+    if provider == "anthropic" and llm.api_down() and llm.claude_cli():
+        provider = "claude_cli"  # kredi/erişim hatası yakın zamanda alındı: API'yi boşuna deneme
     with job.stage("script") as info:
         if provider == "anthropic":
-            script, research = llm.generate(brief, cfg, job.state)
-            write_json(job.dir / "research.json", research)
-            write_json(job.script_path, script)
-        else:
+            try:
+                script, research = llm.generate(brief, cfg, job.state)
+                write_json(job.dir / "research.json", research)
+                write_json(job.script_path, script)
+            except StageError as exc:
+                # kredi bitti / API erişilemiyor: bilgisayarda Claude Code varsa kullanıcının oturumuyla devam et
+                llm.mark_api_down(exc)
+                if not llm.claude_cli():
+                    raise
+                L.warning("Claude API kullanılamadı (%s); Claude Code ile devam ediliyor", str(exc)[:160])
+                provider = "claude_cli"
+        if provider != "anthropic":
             script = llm.generate_via_claude_cli(job.id, job.dir, job.state.get("topic_hint"), cfg, on_line,
                                                  text=job.state.get("user_text"), draw=job.state.get("draw", False))
         info.update({"provider": provider, "title": script.get("title"), "scenes": len(script["scenes"])})
@@ -252,6 +264,7 @@ def stage_voice(job: Job, script: dict, cfg: Config) -> dict:
     out = job.d("voice")
     metas = {}
     with job.stage("voice") as info:
+        tts.prepare_scenes(script["scenes"], out, cfg)
         for sc in script["scenes"]:
             metas[sc["id"]] = tts.synthesize_scene(sc, out, cfg)
         info["providers"] = sorted({m["provider"] for m in metas.values()})
@@ -341,7 +354,9 @@ def stage_music(job: Job, script: dict, tl: dict, cfg: Config) -> dict | None:
     subject = mcfg.get("subject") or next((sc["visual"].get("subject") for sc in script["scenes"]
                                             if sc["visual"].get("subject")), None)
     with job.stage("music") as info:
-        if job.state.get("user_music"):  # kullanıcının yüklediği müzik her zaman öncelikli
+        if job.state.get("no_music"):  # Video Kur: "müzik olmasın"
+            music = None
+        elif job.state.get("user_music"):  # kullanıcının yüklediği müzik her zaman öncelikli
             path = job.dir / job.state["user_music"]
             music = {"path": path, "provider": "user", "title": path.stem, "artist": "", "credit": "", "source": "",
                      "license": "kullanıcının kendi müziği", "license_checked": True,
@@ -355,7 +370,7 @@ def stage_music(job: Job, script: dict, tl: dict, cfg: Config) -> dict | None:
             music["path"] = str(music["path"])
         write_json(job.dir / "audio" / "music.json", music or {})
         info.update({k: music.get(k) for k in ("provider", "title", "license")} if music else {"provider": None})
-    if not music:
+    if not music and not job.state.get("no_music"):
         job.warn("arka plan müziği bulunamadı; müziksiz devam")
     return music
 
@@ -505,7 +520,25 @@ def recover_black_frames(job: Job, tl: dict, media: dict) -> bool:
 # Ana akış
 # ----------------------------------------------------------------------------
 
+def job_config(job: Job, cfg: Config) -> Config:
+    """Görevin kendi ayarları (Video Kur: ses seçimi, kişisel video kuralları) genel ayarların üstüne yazılır.
+    job.state["overrides"] = {"tts.provider_chain": [...], "script.require_sources": false, ...}"""
+    over = job.state.get("overrides") or {}
+    if not over:
+        return cfg
+    import copy
+    new = Config(copy.deepcopy(dict(cfg)))
+    for dotted, val in over.items():
+        node = new
+        parts = dotted.split(".")
+        for part in parts[:-1]:
+            node = node.setdefault(part, {})
+        node[parts[-1]] = val
+    return new
+
+
 def produce(job: Job, cfg: Config, from_stage: str | None = None, autofix: bool = True) -> dict:
+    cfg = job_config(job, cfg)
     handler = log.attach_job_log(job.id)
     try:
         if from_stage:

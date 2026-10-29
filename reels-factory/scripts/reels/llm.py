@@ -5,8 +5,10 @@ Claude Code oturumunda (llm.provider = claude_code) bu adımları ajan kendisi y
 """
 from __future__ import annotations
 
+import datetime as dt
 import json
 import re
+import time
 from pathlib import Path
 
 from . import log
@@ -99,6 +101,9 @@ def research(brief: dict, cfg: Config, state: dict) -> dict:
     if brief.get("user_text"):
         user = ("KULLANICI METNİ (videonun temeli; konusu bu metindir — iddialarını doğrula, yanlışları "
                 "caveats'e yaz):\n" + brief["user_text"] + "\n\n")
+    if brief.get("kurgu"):
+        user += "KULLANICININ KURGU İSTEĞİ (tempo, süre, geçiş, müzik, ekran yazıları; senaryoyu buna göre kur):\n" + \
+            str(brief["kurgu"]) + "\n\n"
     prompt = f"""Kategori: {brief['category_label']} ({brief['category']})
 Ton: {brief['tone']} | Hedef kitle: {brief['audience']}
 Konu ipucu: {brief.get('topic_hint') or 'yok — kategoriye uygun, merak uyandıran bir konu seç'}
@@ -227,6 +232,76 @@ def generate(brief: dict, cfg: Config, state: dict) -> tuple[dict, dict]:
 # Claude Code komut satırı (bilgisayarda kurulu ve girişli `claude`) ile senaryo
 # ----------------------------------------------------------------------------
 
+# Claude Code kullanım sınırı ("You've hit your session limit · resets 2pm") ve API kredi hatası: dolu olduğu
+# sürece boşuna çağrı yapılmaz; otomatik mod sıfırlanma saatine kadar bekler, elle istenen video yeniden denenir.
+_CLI_LIMIT_UNTIL = 0.0
+_API_DOWN_UNTIL = 0.0
+_LIMIT_RE = re.compile(r"hit your [\w ]*limit|usage limit reached|limit reached|out of (?:extra )?usage", re.I)
+_RESET_RE = re.compile(r"resets?\s+(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?", re.I)
+
+
+class ClaudeLimitError(StageError):
+    """Claude Code kullanım sınırı dolu (ve API kullanılamıyor)."""
+
+
+def _reset_time(text: str) -> float:
+    m = _RESET_RE.search(text or "")
+    if not m:
+        return time.time() + 3600
+    h, mi, ap = int(m.group(1)), int(m.group(2) or 0), (m.group(3) or "").lower()
+    if ap == "pm" and h < 12:
+        h += 12
+    elif ap == "am" and h == 12:
+        h = 0
+    cur = dt.datetime.now()
+    at = cur.replace(hour=h % 24, minute=mi, second=0, microsecond=0)
+    if at <= cur:
+        at += dt.timedelta(days=1)
+    return at.timestamp() + 60
+
+
+def cli_limited() -> float:
+    """Claude Code sınırı doluysa sıfırlanma zamanı (epoch), değilse 0."""
+    return _CLI_LIMIT_UNTIL if _CLI_LIMIT_UNTIL > time.time() else 0.0
+
+
+def limit_message(until: float | None = None) -> str:
+    until = until or cli_limited() or time.time() + 3600
+    return (f"Claude kullanım sınırın doldu (saat {dt.datetime.fromtimestamp(until):%H:%M}'de sıfırlanır) ve Claude API "
+            "kredisi de kullanılamıyor. Fabrika sınır sıfırlanınca kendiliğinden yeniden dener; beklemek istemezsen "
+            "console.anthropic.com'dan API kredisi yükleyebilirsin.")
+
+
+def check_cli_limit(text: str) -> None:
+    """Claude Code çıktısında sınır mesajı varsa sınırı kaydeder ve ClaudeLimitError fırlatır."""
+    global _CLI_LIMIT_UNTIL
+    if text and _LIMIT_RE.search(text):
+        _CLI_LIMIT_UNTIL = _reset_time(text)
+        L.warning("Claude Code kullanım sınırı doldu; %s'e kadar denenmeyecek",
+                  dt.datetime.fromtimestamp(_CLI_LIMIT_UNTIL).strftime("%H:%M"))
+        raise ClaudeLimitError(limit_message(_CLI_LIMIT_UNTIL))
+
+
+def mark_api_down(exc: Exception | str) -> None:
+    """Kredi/erişim hatasında API bir saat denenmez (doğrudan Claude Code)."""
+    global _API_DOWN_UNTIL
+    if re.search(r"credit|billing|authentication|permission|401|403", str(exc), re.I):
+        _API_DOWN_UNTIL = time.time() + 3600
+
+
+def api_down() -> bool:
+    return _API_DOWN_UNTIL > time.time()
+
+
+def cli_env() -> dict:
+    """Claude Code alt süreci için ortam: ANTHROPIC_API_KEY çıkarılır; böylece `claude` .env'deki (krediye bağlı)
+    API anahtarı yerine kullanıcının kendi Claude Code oturumunu kullanır."""
+    import os
+    env = dict(os.environ)
+    env.pop("ANTHROPIC_API_KEY", None)
+    return env
+
+
 def claude_cli() -> str | None:
     """`claude` komutu: PATH'te yoksa yerel kurulumun varsayılan yerine (~/.local/bin) bakılır —
     uygulama, kurulumdan önce başlamışsa PATH'i eskidir."""
@@ -265,6 +340,8 @@ SKILL.md'deki 2. (araştırma), 3. (senaryo) ve 4. (görseller) adımları uygul
 - brief.json'da `user_media` varsa: kullanıcının kendi fotoğraf/videoları — HEPSİNİ kullan. Read ile bak, içeriğine uygun
   sahnelere `"visual": {{"kind": "photo"|"video", "user": "<dosya>"}}` olarak ata; senaryo bu medyayla uyumlu olsun.
 - brief.json'daki `format` anlatım biçimine uy; `recent_titles_all` konularından farklı bir alt konu/açı seç (`variety_rule`).
+- brief.json'da `kurgu` varsa: kullanıcının kurgu/biçim isteğidir (tempo, süre, sahne sayısı, geçişler, müzik, ekran
+  yazıları, altyazı) — senaryoyu ve sahne ayarlarını buna göre kur; altyazı istemiyorsa her sahnede "captions": false.
 - brief.json'da `knowledge_map` varsa: işlenmiş kavramları tekrarlama; ayrıntı için knowledge/corpus/graphify-out/GRAPH_REPORT.md.
 - WebSearch/WebFetch ile güvenilir kaynaklardan araştır; her sayıyı doğrula.
 - projects/{job}/script.json dosyasını yaz ve `{py} scripts/factory.py validate {job}` hatasız olana kadar düzelt.
@@ -306,14 +383,18 @@ def generate_via_claude_cli(job_id: str, job_dir, topic: str | None, cfg: Config
     cmd = [exe, "-p", CLI_PROMPT.format(job=job_id, topic=topic or "yok — brief.json'a göre sen seç", py=py,
                                         extra=extra),
            "--permission-mode", "acceptEdits", "--allowedTools", *tools]
+    if cli_limited():
+        raise ClaudeLimitError(limit_message())
     timeout = int(cfg.get_path("llm.claude_cli.timeout_sec", 1800))
     L.info("Claude Code ile senaryo yazılıyor (en fazla %d dk)...", timeout // 60)
     proc = subprocess.Popen(cmd, cwd=str(ROOT), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                            stdin=subprocess.DEVNULL, text=True, encoding="utf-8", errors="replace")
+                            stdin=subprocess.DEVNULL, text=True, encoding="utf-8", errors="replace", env=cli_env())
+    tail: list[str] = []
     try:
         for line in proc.stdout:  # type: ignore[union-attr]
             line = line.rstrip()
             if line:
+                tail = (tail + [line])[-20:]
                 L.info("claude │ %s", line[:300])
                 if on_line:
                     on_line(line)
@@ -324,7 +405,8 @@ def generate_via_claude_cli(job_id: str, job_dir, topic: str | None, cfg: Config
     from .cancel import check as cancel_check
     cancel_check()  # "Durdur" ile sonlandırıldıysa
     if proc.returncode != 0:
-        raise StageError(f"Claude Code hata kodu {proc.returncode}")
+        check_cli_limit("\n".join(tail))
+        raise StageError(f"Claude Code hata kodu {proc.returncode}" + (f": {tail[-1][:200]}" if tail else ""))
     path = job_dir / "script.json"
     if not path.exists():
         raise StageError("Claude Code script.json yazmadı")

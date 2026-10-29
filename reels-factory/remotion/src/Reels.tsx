@@ -288,7 +288,8 @@ const Captions: React.FC<{ cap: NonNullable<ReelsProps["captions"]>; c: Colors; 
                 span = { color: mix(baseC, c.bg, p), transform: `scale(${1 + 0.04 * p})`, padding: "0 .14em", margin: "0 -.06em",
                   borderRadius: ".16em", background: p > 0.01 ? mix(c.bg, hot, p) : "transparent", textShadow: p > 0.5 ? undefined : "0 4px 18px rgba(0,0,0,.65)" };
               } else {
-                const big = w.emph ? 1.14 : style === "shadow" ? 1.04 : 1.08;
+                // compose.py'nin "pop" sınırı: uzun kelimede büyüme yandaki boşluğu yutmasın
+                const big = Math.min(j.pop ?? 9, w.emph ? 1.14 : style === "shadow" ? 1.04 : 1.08);
                 const p = track(t, 0, [{ at: j.start, dur: 0.08, to: 1, ease: "power2.out" }, { at: back, dur: 0.16, to: 0, ease: "power2.out" }]);
                 span = style === "shadow"
                   ? { color: mix(baseC, hot, p), transform: `scale(${1 + (big - 1) * p})`,

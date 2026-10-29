@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fotoğraflarım</title>
+<style>
+  :root { --bg:#0b0f1a; --card:#141b2d; --line:#253049; --ink:#eef2fb; --muted:#9aa6c2; --acc:#ffd23f; --acc2:#4fd1c5; --bad:#ff6b6b; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.45 system-ui, "Segoe UI", sans-serif; }
+  header { display: flex; align-items: center; gap: 14px; padding: 14px 22px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  header h1 { font-size: 19px; margin: 0; } header a { color: var(--acc2); text-decoration: none; font-weight: 600; }
+  main { max-width: 1100px; margin: 0 auto; padding: 18px 16px 40px; display: grid; grid-template-columns: 1fr 340px; gap: 18px; }
+  @media (max-width: 860px) { main { grid-template-columns: 1fr; } }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px; margin-bottom: 16px; }
+  .card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 10px; }
+  .drop { border: 2px dashed var(--line); border-radius: 14px; padding: 22px 14px; text-align: center; color: var(--muted); cursor: pointer; display: block; }
+  .drop.over, .drop:hover { border-color: var(--acc); color: var(--ink); background: #11182a; }
+  .drop b { display: block; font-size: 17px; color: var(--ink); margin-bottom: 3px; } .drop input { display: none; }
+  .bar { height: 5px; background: #0e1424; border-radius: 4px; overflow: hidden; margin-top: 8px; display: none; } .bar > div { height: 100%; width: 0; background: var(--acc); }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+  button { cursor: pointer; border: 0; border-radius: 10px; padding: 9px 13px; font: 600 14px system-ui, sans-serif; background: var(--acc); color: #111; }
+  button.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+  button:disabled { opacity: .45; cursor: default; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; margin-top: 12px; }
+  .ph { position: relative; aspect-ratio: 1; border-radius: 10px; overflow: hidden; cursor: pointer; border: 3px solid transparent; background: #0e1424; }
+  .ph img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .ph.on { border-color: var(--acc); } .ph .n { position: absolute; top: 5px; left: 5px; min-width: 24px; height: 24px; border-radius: 12px; background: var(--acc); color: #111; font: 700 13px/24px system-ui; text-align: center; display: none; }
+  .ph.on .n { display: block; }
+  textarea { width: 100%; padding: 9px 10px; border-radius: 10px; border: 1px solid var(--line); background: #0e1424; color: var(--ink); font: inherit; }
+  .mode { display: flex; gap: 6px; margin: 8px 0; } .mode label { flex: 1; border: 1px solid var(--line); border-radius: 10px; padding: 8px; cursor: pointer; font-size: 13px; }
+  .mode input { margin-right: 6px; } .mode label:has(input:checked) { border-color: var(--acc); background: #1a2136; }
+  .job { border-top: 1px solid var(--line); padding: 10px 0; font-size: 13px; } .job:first-child { border-top: 0; }
+  .job video { width: 100%; max-height: 380px; border-radius: 10px; margin-top: 6px; background: #000; }
+  .ok { color: var(--acc2); } .bad { color: var(--bad); }
+  .sticky { position: sticky; top: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🖼 Fotoğraflarım</h1>
+  <span class="muted" id="dir"></span>
+  <span style="flex:1"></span>
+  <a href="/">Kontrol paneli</a><a href="/kesim">✂ Kesim</a><a href="/studio">🎬 Stüdyo</a><a href="/publish">📤 Yayın</a>
+</header>
+<main>
+  <section>
+    <div class="card">
+      <label class="drop" id="drop">
+        <b>Fotoğraflarını buraya bırak</b>
+        ya da tıklayıp seç · iPhone HEIC dahil · hepsi Masaüstü\kesim\Fotoğraflarım klasöründe saklanır
+        <input type="file" id="files" multiple accept="image/*,.heic,.heif">
+      </label>
+      <div class="bar" id="bar"><div></div></div>
+      <div class="row">
+        <button class="ghost" id="open">📂 Klasörü aç</button>
+        <button class="ghost" id="all">Tümünü seç</button>
+        <button class="ghost" id="none">Seçimi temizle</button>
+        <button class="ghost" id="reload">Yenile</button>
+        <span class="muted" id="count"></span>
+      </div>
+      <div class="grid" id="grid"><span class="muted">Yükleniyor…</span></div>
+    </div>
+  </section>
+  <section>
+    <div class="card sticky">
+      <h2>Fotoğraflardan video</h2>
+      <div class="muted" id="pickInfo">Fotoğraflara tıklayarak sırayla seç; numara videodaki sırayı gösterir.</div>
+      <div class="mode">
+        <label><input type="radio" name="mode" value="montaj" checked>🎞 Müzikli montaj<br><span class="muted">geçişler, müzik, öğrenilen stil</span></label>
+        <label><input type="radio" name="mode" value="anlatim">🎙 Anlatımlı<br><span class="muted">seslendirme + altyazı</span></label>
+      </div>
+      <textarea id="istek" placeholder="Ne olsun? Ör: Kapadokya gezimiz, neşeli müzik, 30 sn  ·  / yaz → komutlar"></textarea>
+      <textarea id="ref" rows="1" style="margin-top:8px" placeholder="Şunun aynısı olsun (isteğe bağlı): Instagram / TikTok / YouTube bağlantısı"></textarea>
+      <div class="muted" style="margin-top:4px">Bağlantı verirsen montaj o videonun kesim zamanları, geçişleri, kamera hareketleri ve yazılarıyla birebir kurulur.</div>
+      <div class="row"><button id="make">Video üret</button></div>
+      <p class="muted">Bitince burada görünür ve Masaüstü\kesim\Hazır klasörüne konur. Yayına kendin gönderirsin.</p>
+    </div>
+    <div class="card">
+      <h2>Sonuçlar</h2>
+      <div id="jobs"><span class="muted">Henüz yok.</span></div>
+    </div>
+  </section>
+</main>
+<script src="/komut.js"></script>
+<script src="/komutlar.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const api = async (p, body) => (await fetch(p, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {})).json();
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+const picked = [];            // seçim sırası = videodaki sıra
+const cells = new Map();
+const tracked = [];           // {kind, id|since, title, box}
+
+function mark() {
+  for (const [n, c] of cells) {
+    const i = picked.indexOf(n);
+    c.classList.toggle("on", i >= 0);
+    c.querySelector(".n").textContent = i >= 0 ? String(i + 1) : "";
+  }
+  $("pickInfo").textContent = picked.length ? `${picked.length} fotoğraf seçili.` : "Fotoğraflara tıklayarak sırayla seç; numara videodaki sırayı gösterir.";
+}
+
+async function load() {
+  const r = await api("/api/photos");
+  if (r.error) { $("grid").textContent = "✖ " + r.error; return; }
+  $("dir").textContent = r.dir;
+  $("count").textContent = `${r.photos.length} fotoğraf`;
+  cells.clear();
+  const grid = $("grid");
+  grid.replaceChildren();
+  if (!r.photos.length) grid.append(el("span", "muted", "Henüz fotoğraf yok. Yukarıya bırak ya da “Klasörü aç” ile klasöre kopyala."));
+  for (const p of r.photos) {
+    const c = el("div", "ph");
+    c.title = p.name;
+    const img = el("img"); img.loading = "lazy"; img.alt = ""; img.src = "/photos/thumb/" + p.name.split("/").map(encodeURIComponent).join("/");
+    c.append(img, el("span", "n"));
+    c.onclick = () => { const i = picked.indexOf(p.name); if (i >= 0) picked.splice(i, 1); else picked.push(p.name); mark(); };
+    cells.set(p.name, c); grid.append(c);
+  }
+  for (let i = picked.length - 1; i >= 0; i--) if (!cells.has(picked[i])) picked.splice(i, 1);
+  mark();
+}
+
+function upload(file) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", "/api/studio/upload?name=" + encodeURIComponent(file.name));
+    xhr.upload.onprogress = (e) => { if (e.lengthComputable) $("bar").firstElementChild.style.width = (100 * e.loaded / e.total) + "%"; };
+    xhr.onload = () => { const r = JSON.parse(xhr.responseText || "{}"); r.error ? reject(new Error(r.error)) : resolve(r); };
+    xhr.onerror = () => reject(new Error("bağlantı hatası"));
+    xhr.send(file);
+  });
+}
+async function addFiles(list) {
+  const files = [...list].filter((f) => /^image\//.test(f.type) || /\.(heic|heif)$/i.test(f.name));
+  if (!files.length) return;
+  $("bar").style.display = "block"; const names = [];
+  try {
+    for (let i = 0; i < files.length; i++) { $("count").textContent = `Ekleniyor ${i + 1}/${files.length}: ${files[i].name}`; names.push((await upload(files[i])).file); }
+    await api("/api/photos/add", { files: names });
+  } catch (e) { $("count").textContent = "✖ " + e.message; }
+  $("bar").style.display = "none"; $("files").value = ""; load();
+}
+const drop = $("drop");
+$("files").onchange = () => addFiles($("files").files);
+["dragenter", "dragover"].forEach((ev) => document.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add("over"); }));
+["dragleave", "drop"].forEach((ev) => document.addEventListener(ev, (e) => { e.preventDefault(); if (ev === "drop" || !e.relatedTarget) drop.classList.remove("over"); }));
+document.addEventListener("drop", (e) => addFiles(e.dataTransfer.files));
+$("open").onclick = async () => { const r = await api("/api/photos/open", {}); $("count").textContent = r.error ? "✖ " + r.error : "Klasör açıldı: " + r.path; };
+$("all").onclick = () => { picked.splice(0, picked.length, ...cells.keys()); mark(); };
+$("none").onclick = () => { picked.length = 0; mark(); };
+$("reload").onclick = load;
+
+async function make(mode, text) {
+  mode = mode || document.querySelector("input[name=mode]:checked").value;
+  const istek = (typeof text === "string" ? text : $("istek").value).trim();
+  if (!picked.length) throw new Error("Önce fotoğraf seç (tıklayarak).");
+  if (mode === "anlatim" && !istek) throw new Error("Anlatımlı video için ne anlatılacağını yaz (ör. “Kapadokya gezimiz”).");
+  const since = Date.now() - 5000;
+  const r = await api("/api/photos/video", { photos: picked.slice(), mode, istek, ref: $("ref").value.trim() });
+  if (r.error) throw new Error(r.error);
+  if (typeof text !== "string") { $("istek").value = ""; $("istek").dispatchEvent(new Event("input")); }
+  const box = el("div", "job");
+  if ($("jobs").querySelector(".muted")) $("jobs").replaceChildren();
+  $("jobs").prepend(box);
+  tracked.push(r.mode === "montaj" ? { kind: "montaj", id: r.project, box, title: `Müzikli montaj · ${r.count} fotoğraf` }
+    : { kind: "anlatim", since, box, title: `Anlatımlı video · ${r.count} fotoğraf` });
+  poll();
+  return r.mode === "montaj" ? "Montaj başladı." : "Anlatımlı video sıraya alındı (senaryo, ses, altyazı).";
+}
+
+function show(t, state, text, video) {
+  const head = el("b", null, t.title);
+  const msg = el("div", state === "done" ? "ok" : state === "failed" ? "bad" : "muted", text);
+  t.box.replaceChildren(head, msg);
+  if (video) {
+    const v = el("video"); v.controls = true; v.preload = "metadata"; v.src = "/" + video;
+    const a = el("a", null, "İndir"); a.href = "/" + video; a.download = ""; a.style.color = "var(--acc2)";
+    const pub = el("button", "ghost", "Yayın kuyruğuna ekle");
+    pub.onclick = async () => { const r = await api("/api/publish/queue", { video }); pub.textContent = r.error ? "✖ " + r.error : "Kuyruğa eklendi (📤 Yayın)"; pub.disabled = !r.error; };
+    const row = el("div", "row"); row.append(a, pub);
+    t.box.append(v, row);
+  }
+}
+
+async function poll() {
+  const open = tracked.filter((t) => !t.end);
+  if (!open.length) return;
+  const [ks, jobs] = await Promise.all([open.some((t) => t.kind === "montaj") ? api("/api/kesim") : null,
+    open.some((t) => t.kind === "anlatim") ? api("/api/jobs") : null]);
+  for (const t of open) {
+    if (t.kind === "montaj") {
+      const p = (ks.projects || []).find((x) => x.id === t.id);
+      if (!p) { show(t, "", "sırada…"); continue; }
+      if (p.status === "failed") { t.end = 1; show(t, "failed", "Hata: " + (p.error || "bilinmiyor").slice(0, 300)); continue; }
+      const out = (p.clips || []).find((c) => c.output);
+      if (p.status === "done") { t.end = 1; show(t, "done", "Hazır · Masaüstü\\kesim\\Hazır", out && out.output); } else show(t, "", p.stage || "çalışıyor…");
+    } else {
+      const j = jobs.find((x) => Date.parse(x.created || 0) >= t.since);
+      if (!j) { show(t, "", "sırada…"); continue; }
+      const st = Object.entries(j.stages || {}), cur = st.find(([, v]) => v !== "done");
+      if (j.status === "failed") { t.end = 1; show(t, "failed", "Hata: " + Object.values(j.errors || {}).join(" ").slice(0, 300)); continue; }
+      if (j.status === "done" && j.outputs && j.outputs.video) { t.end = 1; show(t, "done", `Hazır: ${j.title || j.id}`, j.outputs.video); continue; }
+      show(t, "", `${j.title || "hazırlanıyor"} · ${cur ? cur[0] : ""} (${st.filter(([, v]) => v === "done").length}/${st.length})`);
+    }
+  }
+}
+setInterval(poll, 4000);
+
+const komut = FabrikaKomut.attach($("istek"), fabrikaKomutlari({ kesim: true, foto: (m, a) => make(m, a) }),
+  { onEnter: () => make().then((m) => komut.say(m), (e) => komut.say(e.message, true)) });
+$("make").onclick = () => make().then((m) => komut.say(m), (e) => komut.say(e.message, true));
+
+FabrikaKomut.grow($("ref"));
+const qs = new URLSearchParams(location.search);
+if (qs.get("istek")) { $("istek").value = qs.get("istek"); $("istek").dispatchEvent(new Event("input")); }
+if (qs.get("mode") === "anlatim") document.querySelector("input[value=anlatim]").checked = true;
+load();
+</script>
+</body>
+</html>

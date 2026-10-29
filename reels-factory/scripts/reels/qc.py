@@ -98,7 +98,12 @@ def silence_gaps(path: Path, cfg: Config, total: float) -> dict:
 
 
 def loudness_check(path: Path, cfg: Config) -> dict:
-    m = loudness(path)
+    try:
+        m = loudness(path)
+        if float(m["input_i"]) < -70:
+            raise ValueError
+    except Exception:  # noqa: BLE001 — ses akışı yok ya da tamamen sessiz (müziksiz montaj)
+        return _check("ses_seviyesi", True, "sessiz video (müzik/konuşma yok)", severity="warn")
     target = cfg.get_path("audio.target_lufs", -14)
     tol = cfg.get_path("qc.loudness_tolerance", 1.5)
     tp_max = cfg.get_path("audio.true_peak", -1.5) + 0.5
@@ -126,7 +131,8 @@ def asr_checks(path: Path, script: dict, words_abs: list[dict], cfg: Config, wor
     wav = work / "qc_audio.wav"
     run(["ffmpeg", "-y", "-v", "error", "-i", path, "-ac", "1", "-ar", "16000", wav])
     try:
-        model = WhisperModel(cfg.get_path("qc.asr_model", "small"), device="cpu", compute_type="int8")
+        from .studio import whisper_model   # önbellekli; kart varsa kartta
+        model, _gpu = whisper_model(cfg)
         from .util import load_audio
         segs, _ = model.transcribe(load_audio(wav, 16000, 1), language="tr", word_timestamps=True,
                                    beam_size=5, vad_filter=True)

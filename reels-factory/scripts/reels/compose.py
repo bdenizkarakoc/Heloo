@@ -157,7 +157,20 @@ class SceneBuilder:
         max_bottom = max_bottom or self.content_bottom
         size, lines = None, None
         for zone_w in (W - 2 * self.mx, W - 2 * self.rmx):
-            size, lines = self.m.fit(disp, zone_w, sizes, max_lines, weight, ls)
+            try:
+                size, lines = self.m.fit(disp, zone_w, sizes, max_lines, weight, ls)
+            except TextFitError:
+                # sığmayan yazı videoyu durdurmasın: önce bir satır daha, sonra biraz daha küçük punto dene
+                hi, lo = sizes
+                for extra, low in ((1, lo), (1, int(lo * 0.8)), (2, int(lo * 0.7))):
+                    try:
+                        size, lines = self.m.fit(disp, zone_w, (hi, max(24, low)), max_lines + extra, weight, ls)
+                        L.info("%s: yazı sığmadı, %d satır / %dpx ile yerleştirildi", bid, len(lines), size)
+                        break
+                    except TextFitError:
+                        continue
+                else:
+                    raise
             bottom = y + size * (len(lines) - 1) * line_gap + size
             if bottom <= self.rail_top or zone_w == W - 2 * self.rmx:
                 break
@@ -365,15 +378,28 @@ class SceneBuilder:
             cues = ons.get("cues") or []
             x, w = self.rmx, W - 2 * self.rmx
             label_size, val_size, bar_h = 48, 56, 60
+
+            def _disp(it):
+                v = float(it["value"])
+                return it.get("display") or (fmt_number(v, int(it.get("decimals", 0 if v == int(v) else 1))) + it.get("suffix", ""))
+
+            def _fits(size):
+                return all(self.m.width(tr_upper(it["label"]), size, 800) + self.m.width(_disp(it), val_size, 900) + 40 <= w
+                           for it in its)
+            while label_size > 30 and not _fits(label_size):  # uzun etiket: durmak yerine bütün etiketleri birlikte küçült
+                label_size -= 2
             last_t = t0
             for i, it in enumerate(its):
                 v = float(it["value"])
                 dec = int(it.get("decimals", 0 if v == int(v) else 1))
                 suffix = it.get("suffix", "")
-                display = it.get("display") or (fmt_number(v, dec) + suffix)
+                display = _disp(it)
                 label = tr_upper(it["label"])
-                lw = self.m.width(label, label_size, 800) + self.m.width(display, val_size, 900) + 40
-                if lw > w:
+                while self.m.width(label, label_size, 800) + self.m.width(display, val_size, 900) + 40 > w and " " in label:
+                    label = label.rsplit(" ", 1)[0].rstrip(",:;") + "…"   # en küçük boyutta da sığmazsa son kelimeleri kısalt
+                    if label.count(" ") == 0:
+                        break
+                if self.m.width(label, label_size, 800) + self.m.width(display, val_size, 900) + 40 > w:
                     raise TextFitError(f"{sid}: karşılaştırma etiketi çok uzun: {it['label']}")
                 cue_t = (find_cue(words, cues[i] if i < len(cues) else None, vl, last_t - vl - 0.01)
                          or find_cue(words, display.split()[0], vl, last_t + 0.05)
@@ -503,14 +529,20 @@ def layout_captions(groups: list[dict], m: Measurer, cfg: Config) -> tuple[list[
         n = 0
         out_lines = []
         jw = []
+        # konuşulan kelime büyür (pop); uzun kelimede büyüme yandaki boşluğu yutmasın ("415TERAVATSAAT")
+        gap = m.width("x x", size, 900, 0.01, CAPTION_WS) - 2 * m.width("x", size, 900, 0.01, CAPTION_WS)
         for li, line in enumerate(lines):
             ly = round(top + li * lh)
             ws = []
             for _ in line:
                 w = g["words"][n]
                 wid = f"{g['id']}w{n}"
+                pop = 1.14 if w["emph"] else 1.08
+                if len(line) > 1:
+                    ww = max(1.0, m.width(w["text"], size, 900, 0.01, CAPTION_WS))
+                    pop = round(max(1.02, min(pop, 1 + 0.7 * gap / ww)), 3)
                 ws.append({"id": wid, "text": w["text"], "emph": w["emph"]})
-                jw.append({"id": wid, "start": w["start"], "end": w["end"], "emph": w["emph"]})
+                jw.append({"id": wid, "start": w["start"], "end": w["end"], "emph": w["emph"], "pop": pop})
                 n += 1
             out_lines.append({"y": ly, "words": ws})
             lw = m.width(" ".join(line), size, 900, 0.01, CAPTION_WS)

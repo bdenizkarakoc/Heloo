@@ -397,6 +397,13 @@ def loudnorm_two_pass(src: Path, dest: Path, cfg: Config) -> Path:
     TP = float(cfg.get_path("audio.true_peak", -1.5))
     LRA = float(cfg.get_path("audio.lra", 11))
     m = loudness(src)
+    try:
+        silent = float(m["input_i"]) < -70
+    except (TypeError, ValueError):   # "-inf": tamamen sessiz ses (ör. müziksiz fotoğraf montajı)
+        silent = True
+    if silent:
+        run(["ffmpeg", "-y", "-v", "error", "-i", src, "-ar", str(SR), "-ac", "2", dest])
+        return dest
     flt = (f"loudnorm=I={I}:TP={TP}:LRA={LRA}:measured_I={m['input_i']}:measured_TP={m['input_tp']}:"
            f"measured_LRA={m['input_lra']}:measured_thresh={m['input_thresh']}:"
            f"offset={m['target_offset']}:linear=true")

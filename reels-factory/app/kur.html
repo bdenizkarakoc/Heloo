@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Video Kur</title>
+<style>
+  :root { --bg:#0b0f1a; --card:#141b2d; --line:#253049; --ink:#eef2fb; --muted:#9aa6c2; --acc:#ffd23f; --acc2:#4fd1c5; --bad:#ff6b6b; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.45 system-ui, "Segoe UI", sans-serif; }
+  header { display: flex; align-items: center; gap: 14px; padding: 14px 22px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  header h1 { font-size: 19px; margin: 0; } header a { color: var(--acc2); text-decoration: none; font-weight: 600; }
+  main { max-width: 1100px; margin: 0 auto; padding: 18px 16px 60px; display: grid; grid-template-columns: 1fr 360px; gap: 18px; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; margin-bottom: 16px; }
+  .card h2 { font-size: 15px; margin: 0 0 4px; display: flex; gap: 8px; align-items: center; }
+  .card h2 .n { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--acc); color: #111; font-size: 13px; }
+  .lead { color: var(--muted); font-size: 13px; margin: 0 0 10px; }
+  textarea, input[type=text], select { width: 100%; padding: 9px 10px; border-radius: 10px; border: 1px solid var(--line); background: #0e1424; color: var(--ink); font: inherit; }
+  button { cursor: pointer; border: 0; border-radius: 10px; padding: 9px 13px; font: 600 14px system-ui, sans-serif; background: var(--acc); color: #111; }
+  button.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+  button:disabled { opacity: .45; cursor: default; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .opts { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+  .opt { border: 1px solid var(--line); border-radius: 10px; padding: 9px; cursor: pointer; font-size: 13px; display: block; }
+  .opt input { margin-right: 6px; } .opt:has(input:checked) { border-color: var(--acc); background: #1a2136; }
+  .opt small { display: block; color: var(--muted); margin-top: 2px; } .opt.off { opacity: .45; pointer-events: none; }
+  .drop { border: 2px dashed var(--line); border-radius: 12px; padding: 16px; text-align: center; color: var(--muted); cursor: pointer; display: block; }
+  .drop.over, .drop:hover { border-color: var(--acc); color: var(--ink); } .drop input { display: none; }
+  .media { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; margin-top: 10px; }
+  .mi { position: relative; aspect-ratio: 9/16; border-radius: 9px; overflow: hidden; background: #0e1424; border: 1px solid var(--line); }
+  .mi img, .mi video { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .mi .tag { position: absolute; left: 4px; top: 4px; background: var(--acc); color: #111; border-radius: 9px; font: 700 11px/18px system-ui; padding: 0 6px; }
+  .mi .ctl { position: absolute; bottom: 3px; left: 3px; right: 3px; display: flex; gap: 3px; justify-content: space-between; }
+  .mi .ctl button { padding: 2px 6px; font-size: 12px; background: rgba(0,0,0,.65); color: #fff; }
+  .mi .nm { position: absolute; bottom: 26px; left: 4px; right: 4px; font-size: 10px; color: #fff; text-shadow: 0 1px 2px #000; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .rec { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
+  .rec button.on { background: var(--bad); color: #fff; animation: p 1s infinite; } @keyframes p { 50% { opacity: .6; } }
+  .sw { display: flex; gap: 10px; align-items: center; font-size: 14px; } .sw input { transform: scale(1.3); }
+  .sticky { position: sticky; top: 12px; }
+  .sum div { display: flex; justify-content: space-between; gap: 10px; padding: 5px 0; border-bottom: 1px dashed var(--line); font-size: 13px; }
+  .sum div span:first-child { color: var(--muted); } .sum div span:last-child { text-align: right; }
+  .err { color: var(--bad); font-size: 13px; margin-top: 8px; white-space: pre-line; }
+  .pg { border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-top: 12px; background: #0e1424; }
+  .pg-top { display: flex; justify-content: space-between; } .pg-pct { font: 700 22px system-ui; color: var(--acc); }
+  .pg-bar { height: 10px; border-radius: 6px; background: #1d2740; overflow: hidden; margin: 8px 0; } .pg-bar > div { height: 100%; background: var(--acc); transition: width .6s; }
+  .pg.done .pg-bar > div { background: var(--acc2); } .pg.bad .pg-bar > div { background: var(--bad); }
+  .pg-steps { font-size: 12.5px; color: var(--muted); line-height: 1.7; } .pg-steps .done { color: var(--acc2); } .pg-steps .running { color: var(--acc); font-weight: 600; } .pg-steps .failed { color: var(--bad); }
+  .pg video { width: 100%; max-height: 420px; border-radius: 10px; margin-top: 8px; background: #000; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(70px, 1fr)); gap: 4px; max-height: 260px; overflow: auto; margin-top: 8px; }
+  .grid .ph { aspect-ratio: 1; border-radius: 6px; overflow: hidden; cursor: pointer; border: 2px solid transparent; }
+  .grid .ph img { width: 100%; height: 100%; object-fit: cover; } .grid .ph.on { border-color: var(--acc); }
+</style>
+</head>
+<body>
+<header>
+  <h1>🧩 Video Kur</h1>
+  <span class="muted">Görselleri, senaryoyu, sesi ve kurguyu ayrı ayrı ver; fabrika birleştirsin.</span>
+  <span style="flex:1"></span>
+  <a href="/">Kontrol paneli</a><a href="/photos">🖼 Fotoğraflarım</a><a href="/voice">🎙 Sesim</a><a href="/kesim">✂ Kesim</a>
+</header>
+<main>
+<section>
+  <div class="card">
+    <h2><span class="n">1</span> Görseller</h2>
+    <p class="lead">Fotoğraf ve videolarını ekle. Sıra = videodaki sıra (◀ ▶ ile değiştir). Müzik dosyası eklersen arka plan müziği olur.</p>
+    <label class="drop" id="drop">Fotoğraf / video / müzik bırak ya da tıkla<input type="file" id="files" multiple accept="image/*,video/*,audio/*,.heic,.heif"></label>
+    <div class="row"><button class="ghost" id="btnPick">🖼 Fotoğraflarım'dan seç</button><span class="muted" id="upMsg"></span></div>
+    <div id="pickBox" hidden><div class="grid" id="pickGrid"></div><div class="row"><button class="ghost" id="pickDone">Seçilenleri ekle</button></div></div>
+    <div class="media" id="media"></div>
+  </div>
+
+  <div class="card">
+    <h2><span class="n">2</span> Senaryo (söylenecek metin)</h2>
+    <p class="lead">Videoda ne söylenecekse yaz. Kutu yazdıkça aşağı doğru uzar.</p>
+    <textarea id="senaryo" rows="3" placeholder="Ör: Geçen hafta Kapadokya'ya gittik. Sabah beşte balonların havalanışını izledik…"></textarea>
+    <div class="muted" id="wc"></div>
+    <div class="opts" style="margin-top:8px">
+      <label class="opt"><input type="radio" name="mod" value="aynen" checked>Aynen oku<small>Metnim kelimesi kelimesine okunsun</small></label>
+      <label class="opt"><input type="radio" name="mod" value="duzenle">Düzenle ve doğrula<small>Claude araştırsın, Reels'e uygun yazsın</small></label>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2><span class="n">3</span> Ses</h2>
+    <p class="lead">Metni kim okusun?</p>
+    <div class="opts" id="sesOpts">
+      <label class="opt" id="optBenim"><input type="radio" name="ses" value="benim">🎙 Benim sesim<small id="benimNote">Sesim'de öğrenilen sesin</small></label>
+      <label class="opt"><input type="radio" name="ses" value="kadin">Hazır kadın sesi<small>Emel</small></label>
+      <label class="opt"><input type="radio" name="ses" value="erkek">Hazır erkek sesi<small>Ahmet</small></label>
+      <label class="opt"><input type="radio" name="ses" value="kayit">Kendi kaydım<small>Kendin oku; konuşman yazıya dökülür</small></label>
+      <label class="opt"><input type="radio" name="ses" value="yok">Seslendirme yok<small>Müzikli montaj</small></label>
+    </div>
+    <div id="recBox" class="rec" hidden>
+      <button id="btnRec">🎤 Kaydet</button>
+      <label class="ghost" style="border:1px solid var(--line);border-radius:10px;padding:8px 12px;cursor:pointer">Ses dosyası yükle<input type="file" id="recFile" accept="audio/*,video/*" hidden></label>
+      <span class="muted" id="recMsg">Senaryoyu sesli oku; bitince tekrar bas.</span>
+      <audio id="recAudio" controls hidden style="width:100%"></audio>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2><span class="n">4</span> Altyazı</h2>
+    <label class="sw"><input type="checkbox" id="altyazi" checked> Altyazı olsun (konuşulan kelime vurgulu)</label>
+  </div>
+
+  <div class="card">
+    <h2><span class="n">5</span> Kurgu</h2>
+    <p class="lead">Nasıl bir kurgu istiyorsun? Tempo, müzik, geçişler, süre… Kendi cümlelerinle yaz.</p>
+    <textarea id="kurgu" rows="2" placeholder="Ör: enerjik olsun, hızlı geçişler, neşeli akustik müzik, sıcak renkler"></textarea>
+    <div class="opts" style="margin-top:8px">
+      <label class="opt"><input type="radio" name="muzik" value="otomatik" checked>Müzik: otomatik<small>İsteğine göre ücretsiz müzik bulunur</small></label>
+      <label class="opt"><input type="radio" name="muzik" value="yok">Müzik olmasın</label>
+    </div>
+    <label class="muted" style="display:block;margin-top:10px">Şunun aynısı olsun (isteğe bağlı) — bağlantı</label>
+    <textarea id="ref" rows="1" placeholder="Instagram / TikTok / YouTube bağlantısı"></textarea>
+    <div class="muted">Seslendirmesiz montajda referansın kesim zamanları, geçişleri, hareketleri ve yazıları birebir uygulanır.</div>
+    <label class="muted" style="display:block;margin-top:10px">Başlık (isteğe bağlı — ilk karede görünür)</label>
+    <input type="text" id="baslik" placeholder="Ör: Kapadokya'da Bir Sabah">
+  </div>
+</section>
+
+<section>
+  <div class="card sticky">
+    <h2>Özet</h2>
+    <div class="sum" id="sum"></div>
+    <div class="row"><button id="btnGo" style="width:100%;padding:12px">▶ Videoyu kur</button></div>
+    <div class="err" id="err"></div>
+    <div id="jobs"></div>
+  </div>
+</section>
+</main>
+<script src="/komut.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const api = async (p, body) => (await fetch(p, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {})).json();
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+const items = [];   // {kind:'upload'|'photo', name, label, mtype, url}
+let kayit = null;
+
+FabrikaKomut.grow($("senaryo")); FabrikaKomut.grow($("kurgu")); FabrikaKomut.grow($("ref"));
+
+function drawMedia() {
+  const box = $("media"); box.replaceChildren();
+  items.forEach((it, i) => {
+    const c = el("div", "mi");
+    if (it.mtype === "video") { const v = el("video"); v.src = it.url; v.muted = true; v.preload = "metadata"; c.append(v); }
+    else if (it.mtype === "audio") { c.append(el("div", "muted", "🎵")); c.style.display = "grid"; c.style.placeItems = "center"; }
+    else { const im = el("img"); im.src = it.url; im.alt = ""; c.append(im); }
+    c.append(el("span", "tag", it.mtype === "audio" ? "müzik" : String(i + 1)), el("span", "nm", it.label));
+    const ctl = el("div", "ctl");
+    const b = (t, f) => { const x = el("button", null, t); x.type = "button"; x.onclick = f; return x; };
+    ctl.append(b("◀", () => { if (i) { [items[i - 1], items[i]] = [items[i], items[i - 1]]; drawMedia(); } }),
+      b("✕", () => { items.splice(i, 1); drawMedia(); }),
+      b("▶", () => { if (i < items.length - 1) { [items[i + 1], items[i]] = [items[i], items[i + 1]]; drawMedia(); } }));
+    c.append(ctl); box.append(c);
+  });
+  summary();
+}
+
+async function uploadFile(file) {
+  const r = await (await fetch("/api/studio/upload?name=" + encodeURIComponent(file.name), { method: "PUT", body: file })).json();
+  if (r.error) throw new Error(r.error);
+  return r;
+}
+async function addFiles(list) {
+  for (const f of [...list]) {
+    $("upMsg").textContent = "Yükleniyor: " + f.name;
+    try {
+      const r = await uploadFile(f);
+      items.push({ kind: "upload", name: r.file, label: f.name, mtype: r.kind === "image" ? "image" : r.kind, url: URL.createObjectURL(f) });
+      drawMedia();
+    } catch (e) { $("upMsg").textContent = "✖ " + f.name + ": " + e.message; return; }
+  }
+  $("upMsg").textContent = "";
+}
+const drop = $("drop");
+$("files").onchange = () => { addFiles($("files").files); $("files").value = ""; };
+["dragenter", "dragover"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add("over"); }));
+["dragleave", "drop"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove("over"); }));
+drop.addEventListener("drop", (e) => addFiles(e.dataTransfer.files));
+
+// Fotoğraflarım'dan seçme
+const picked = [];
+$("btnPick").onclick = async () => {
+  $("pickBox").hidden = !$("pickBox").hidden;
+  if ($("pickBox").hidden) return;
+  const r = await api("/api/photos");
+  const g = $("pickGrid"); g.replaceChildren();
+  if (!r.photos || !r.photos.length) { g.append(el("span", "muted", "Fotoğraflarım boş.")); return; }
+  for (const p of r.photos) {
+    const c = el("div", "ph"); const im = el("img"); im.loading = "lazy"; im.src = "/photos/thumb/" + p.name.split("/").map(encodeURIComponent).join("/");
+    c.append(im); c.title = p.name;
+    c.onclick = () => { const i = picked.indexOf(p.name); if (i >= 0) picked.splice(i, 1); else picked.push(p.name); c.classList.toggle("on", i < 0); };
+    g.append(c);
+  }
+};
+$("pickDone").onclick = () => {
+  for (const n of picked) items.push({ kind: "photo", name: n, label: n, mtype: "image", url: "/photos/thumb/" + n.split("/").map(encodeURIComponent).join("/") });
+  picked.length = 0; $("pickBox").hidden = true; drawMedia();
+};
+
+// Ses seçimi + kendi kaydı
+const ses = () => (document.querySelector("input[name=ses]:checked") || {}).value;
+document.querySelectorAll("input[name=ses]").forEach((r) => r.addEventListener("change", () => { $("recBox").hidden = ses() !== "kayit"; summary(); }));
+let rec = null, chunks = [];
+$("btnRec").onclick = async () => {
+  if (rec) { rec.stop(); return; }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+    chunks = []; rec = new MediaRecorder(stream);
+    rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+    rec.onstop = async () => {
+      stream.getTracks().forEach((t) => t.stop()); rec = null; $("btnRec").classList.remove("on"); $("btnRec").textContent = "🎤 Yeniden kaydet";
+      const blob = new Blob(chunks, { type: chunks[0] ? chunks[0].type : "audio/webm" });
+      $("recAudio").src = URL.createObjectURL(blob); $("recAudio").hidden = false;
+      $("recMsg").textContent = "Kayıt yükleniyor…";
+      try { kayit = (await uploadFile(new File([blob], "kaydim.webm", { type: blob.type }))).file; $("recMsg").textContent = "✓ Kayıt hazır."; }
+      catch (e) { $("recMsg").textContent = "✖ " + e.message; }
+      summary();
+    };
+    rec.start(); $("btnRec").classList.add("on"); $("btnRec").textContent = "■ Bitir";
+  } catch (e) { $("recMsg").textContent = "Mikrofon açılamadı: " + e.message; }
+};
+$("recFile").onchange = async () => {
+  const f = $("recFile").files[0]; if (!f) return;
+  $("recMsg").textContent = "Yükleniyor…";
+  try { kayit = (await uploadFile(f)).file; $("recMsg").textContent = "✓ " + f.name; $("recAudio").src = URL.createObjectURL(f); $("recAudio").hidden = false; }
+  catch (e) { $("recMsg").textContent = "✖ " + e.message; }
+  summary();
+};
+
+// Sesim durumu: hazırsa "Benim sesim" varsayılan
+(async () => {
+  const r = await api("/api/voice/profiles");
+  const ready = (r.profiles || []).filter((p) => p.status === "ready");
+  if (ready.length) {
+    $("benimNote").textContent = (r.clone && r.clone.available ? "Yeni motor · " : "") + ready[0].name;
+    document.querySelector("input[value=benim]").checked = true;
+  } else {
+    $("optBenim").classList.add("off"); $("benimNote").textContent = "Önce Sesim'de sesini öğret";
+    document.querySelector("input[value=erkek]").checked = true;
+  }
+  summary();
+})();
+
+function summary() {
+  const words = $("senaryo").value.trim().split(/\s+/).filter(Boolean).length;
+  $("wc").textContent = words ? `${words} kelime · yaklaşık ${Math.round(words / 2.3)} sn` : "";
+  const SES = { benim: "Benim sesim", kadin: "Hazır kadın", erkek: "Hazır erkek", kayit: kayit ? "Kendi kaydım ✓" : "Kendi kaydım (kayıt yok!)", yok: "Yok (müzikli montaj)" };
+  const vis = items.filter((x) => x.mtype !== "audio").length, mus = items.some((x) => x.mtype === "audio");
+  const rows = [["Görseller", vis ? `${vis} adet` : "yok (hareketli grafik)"], ["Senaryo", words ? `${words} kelime · ${document.querySelector("input[name=mod]:checked").value === "aynen" ? "aynen" : "düzenlenecek"}` : (ses() === "kayit" ? "kaydından çıkarılacak" : "boş")],
+    ["Ses", SES[ses()] || "—"], ["Altyazı", $("altyazi").checked ? "var" : "yok"],
+    ["Müzik", mus ? "kendi müziğin" : document.querySelector("input[name=muzik]:checked").value], ["Kurgu", $("kurgu").value.trim().slice(0, 40) || "otomatik"]];
+  $("sum").replaceChildren(...rows.map(([a, b]) => { const d = el("div"); d.append(el("span", null, a), el("span", null, b)); return d; }));
+}
+["senaryo", "kurgu", "baslik"].forEach((id) => $(id).addEventListener("input", summary));
+document.querySelectorAll("input[name=mod], input[name=muzik], #altyazi").forEach((x) => x.addEventListener("change", summary));
+
+// Kur + ilerleme
+const tracked = [];
+$("btnGo").onclick = async () => {
+  $("err").textContent = "";
+  const body = { media: items.filter((x) => x.kind === "upload").map((x) => x.name), photos: items.filter((x) => x.kind === "photo").map((x) => x.name),
+    senaryo: $("senaryo").value, senaryo_mod: document.querySelector("input[name=mod]:checked").value, ses: ses(), kayit,
+    altyazi: $("altyazi").checked, kurgu: $("kurgu").value, muzik: document.querySelector("input[name=muzik]:checked").value, baslik: $("baslik").value, ref: $("ref").value.trim() };
+  if (body.ref && body.ses !== "yok" && !confirm("Birebir şablon seslendirmesiz montajda uygulanır. Seslendirmeyi kapatıp şablonla devam edilsin mi? (İptal: bağlantı yok sayılır)")) body.ref = "";
+  else if (body.ref) body.ses = "yok";
+  if (body.ses === "kayit" && !kayit) { $("err").textContent = "Kendi kaydını seçtin ama kayıt yok: 🎤 Kaydet'e bas ya da ses dosyası yükle."; return; }
+  $("btnGo").disabled = true;
+  const r = await api("/api/compose", body);
+  $("btnGo").disabled = false;
+  if (r.error) { $("err").textContent = r.error; return; }
+  const box = el("div", "pg"); $("jobs").prepend(box);
+  tracked.push({ ...r, since: Date.now() - 5000, box, title: body.baslik || body.senaryo.slice(0, 40) || "Video Kur" });
+  poll();
+};
+const ICON = { done: "✓", skipped: "✓", running: "▶", failed: "✖", pending: "○" };
+function show(t, pg, state, video, text) {
+  t.box.className = "pg" + (state === "done" ? " done" : state === "failed" ? " bad" : "");
+  const top = el("div", "pg-top"); top.append(el("b", null, t.title), el("span", "pg-pct", "%" + (pg.pct || 0)));
+  const bar = el("div", "pg-bar"); const f = el("div"); f.style.width = Math.max(2, pg.pct || 0) + "%"; bar.append(f);
+  const msg = el("div", "muted", text || pg.current || "");
+  const steps = el("div", "pg-steps");
+  for (const s of pg.steps || []) { const sp = el("span", s.status, `${ICON[s.status] || "○"} ${s.name}   `); steps.append(sp); }
+  t.box.replaceChildren(top, bar, msg, steps);
+  if (video) { const v = el("video"); v.controls = true; v.src = "/" + video; t.box.append(v); }
+}
+async function poll() {
+  const open = tracked.filter((t) => !t.end); if (!open.length) return;
+  const [prog, jobs, ks] = await Promise.all([api("/api/progress"), api("/api/jobs"), api("/api/kesim")]);
+  for (const t of open) {
+    if (t.mode === "montaj") {
+      const p = (ks.projects || []).find((x) => x.id === t.project);
+      if (!p) { show(t, { pct: 1 }, "", null, "sırada…"); continue; }
+      const out = (p.clips || []).find((c) => c.output);
+      if (p.status === "done") t.end = 1;
+      if (p.status === "failed") t.end = 1;
+      show(t, p.progress || {}, p.status, p.status === "done" && out ? out.output : null, p.status === "failed" ? "Hata: " + (p.error || "") : p.stage);
+      continue;
+    }
+    const q = (prog.queued || []).find((x) => x.id === t.task);
+    if (q) { show(t, { pct: 0 }, "", null, `sırada — başlamadı (${q.position}. sırada)`); continue; }
+    const j = jobs.find((x) => Date.parse(x.created || 0) >= t.since);
+    if (!j) { show(t, { pct: 1 }, "", null, "hazırlanıyor (ses kaydı yazıya dökülüyor / senaryo kuruluyor)…"); continue; }
+    if (j.status === "done" || j.status === "failed") t.end = 1;
+    const err = Object.values(j.errors || {}).join(" ");
+    show(t, j.progress || {}, j.status, j.status === "done" && j.outputs ? j.outputs.video : null,
+      j.status === "failed" ? "Hata: " + err.slice(0, 300) : j.status === "done" ? "Hazır · Masaüstü\\kesim\\Hazır klasörüne de kondu" : null);
+  }
+}
+setInterval(poll, 3000);
+summary();
+</script>
+</body>
+</html>

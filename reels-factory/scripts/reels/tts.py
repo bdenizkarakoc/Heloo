@@ -4,6 +4,8 @@ Sağlayıcı zinciri settings.yaml → tts.provider_chain ile belirlenir:
   edge        : Microsoft Edge "Sesli Oku" nöral sesleri (anahtarsız; kelime sınırlarını verir)
   elevenlabs  : ELEVENLABS_API_KEY gerekir; karakter hizalaması verir
   piper       : çevrimdışı; Türkçe sesi CC BY-NC-SA (ticari olmayan) — yalnızca allow_noncommercial: true iken
+  my_voice    : kullanıcının kendi sesi (Sesim). Klon motoru kuruluysa (ekran kartı, Chatterbox) bütün sahneler
+                prepare_scenes ile tek seferde okunur; yoksa edge + kNN-VC dönüşümü.
 
 Her sahne için: voice/<sahne>.wav (48 kHz mono) + voice/<sahne>.json (kelime zamanları).
 """
@@ -147,12 +149,48 @@ def synth_piper(text: str, out_dir: Path, sid: str, cfg: Config) -> tuple[Path, 
     return wav_path, None, f"piper:{name}"
 
 
+def _clone_path(out_dir: Path, sid: str, text: str) -> Path:
+    import hashlib
+    return out_dir / f"{sid}.{hashlib.sha1(text.encode()).hexdigest()[:10]}.clone.wav"
+
+
+def _my_voice_engine(cfg: Config) -> str:
+    return str(cfg.get_path("tts.my_voice_engine", "auto"))
+
+
+def prepare_scenes(scenes: list[dict], out_dir: Path, cfg: Config) -> None:
+    """Kendi sesin klon motoruyla bütün sahneleri tek seferde okur (model bir kez yüklenir)."""
+    from . import voice
+    chain = cfg.get_path("tts.provider_chain", ["edge"])
+    if not chain or chain[0] != "my_voice" or _my_voice_engine(cfg) == "knn":
+        return
+    slug = voice.active()
+    if not slug or not voice.clone_available():
+        return
+    todo = [(sc["narration"], _clone_path(out_dir, sc["id"], sc["narration"])) for sc in scenes]
+    todo = [(t, o) for t, o in todo if not o.exists()]
+    if not todo:
+        return
+    L.info("Kendi sesinle seslendirme (klon, ekran kartı): %d sahne", len(todo))
+    try:
+        voice.clone_batch(slug, todo)
+    except StageError as exc:   # klon çalışmazsa sahneler tek tek kNN-VC ile okunur
+        L.warning("klon seslendirme başarısız, eski yönteme geçiliyor: %s", exc)
+
+
 def synth_my_voice(text: str, out_dir: Path, sid: str, cfg: Config) -> tuple[Path, list[dict], str]:
     """Kullanıcının kendi sesi (uygulamadaki 'Sesim' sayfasında öğrenilen ve etkinleştirilen profil)."""
     from . import voice
+    from .util import read_json
     slug = voice.active()
     if not slug:
         raise StageError("kişisel ses etkin değil")
+    cp = _clone_path(out_dir, sid, text)
+    if cp.exists():   # prepare_scenes klonla okudu: kelime zamanları Whisper'dan
+        meta = read_json(cp.with_suffix(".json"), {}) or {}
+        return cp, meta.get("words") or None, f"my_voice:{slug}:klon"
+    if _my_voice_engine(cfg) == "klon":
+        raise StageError("klon motoru bu sahneyi okuyamadı")
     mp3 = out_dir / f"{sid}.base.mp3"
     marks = voice.tts_raw(slug, text, mp3)
     wav = voice.convert(mp3, out_dir / f"{sid}.myvoice.wav", slug)  # aynı süre: kelime zamanları geçerli kalır
@@ -284,5 +322,7 @@ def synthesize_scene(scene: dict, out_dir: Path, cfg: Config) -> dict:
         write_json(out_dir / f"{sid}.json", meta)
         if raw_path != wav:
             raw_path.unlink(missing_ok=True)
+            if raw_path.name.endswith(".clone.wav"):
+                raw_path.with_suffix(".json").unlink(missing_ok=True)
         return meta
     raise StageError(f"Sahne {sid} için hiçbir TTS sağlayıcısı çalışmadı: " + " | ".join(errors))
