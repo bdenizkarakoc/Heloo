@@ -170,7 +170,10 @@ def _music_openverse(cfg: Config, queries: list[str], work: Path, used: set[str]
         except (StageError, TransientError) as exc:
             L.warning("Openverse müzik araması başarısız (%s): %s", q, exc)
             continue
-        for r in data.get("results", []):
+        results = data.get("results", [])
+        if not strict:  # serbest modda da izinli lisanslı parçalar önce denenir
+            results = sorted(results, key=lambda r: r.get("license") not in allowed.split(","))
+        for r in results:
             title = (r.get("title") or "").lower()
             if r.get("url") in used or any(w in title for w in reject):
                 continue
@@ -190,7 +193,7 @@ def _music_openverse(cfg: Config, queries: list[str], work: Path, used: set[str]
                     "license": f"CC {r.get('license', '').upper()} {r.get('license_version', '')}".strip(),
                     "credit": r.get("attribution") or f"\"{r.get('title')}\" — {r.get('creator')}",
                     "source": r.get("foreign_landing_url") or r.get("url"), "url": r.get("url"),
-                    "license_checked": strict}
+                    "license_checked": strict or r.get("license") in allowed.split(",")}
     return None
 
 

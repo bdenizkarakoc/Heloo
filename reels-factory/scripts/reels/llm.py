@@ -177,8 +177,9 @@ def hook_guide(limit: int = 21) -> str:
         return "- Soru, şaşırtıcı sayı, karşıtlık, sır, hata uyarısı"
 
 
-def improve_hook(script: dict, research_data: dict, cfg: Config, state: dict) -> dict:
-    """Kanca zayıfsa 5 alternatif yazdırır, Türkçe uyarlanmış kanca puanıyla en iyisini seçer (API modu)."""
+def improve_hook(script: dict, research_data: dict, cfg: Config, state: dict, ask=None) -> dict:
+    """Kanca zayıfsa 5 alternatif yazdırır, Türkçe uyarlanmış kanca puanıyla en iyisini seçer.
+    ask: istem → metin (varsayılan Claude API; Claude Code modunda `_cli_ask`)."""
     from .yt_tools import hook_score
     scenes = script.get("scenes") or []
     if not scenes:
@@ -193,8 +194,9 @@ def improve_hook(script: dict, research_data: dict, cfg: Config, state: dict) ->
               f"Kalıplar:\n{hook_guide()}\n\nFarklı kalıplarla 5 alternatif kanca yaz (Türkçe, 7-20 kelime, "
               "uydurma bilgi yok, sonraki sahneye doğal bağlansın). Yalnızca JSON: {\"hooks\": [\"...\"]}")
     try:
-        alts = extract_json(_call(cfg, state, prompt, web=False)).get("hooks") or []
-    except StageError as exc:
+        reply = ask(prompt) if ask else _call(cfg, state, prompt, web=False)
+        alts = extract_json(reply).get("hooks") or []
+    except (StageError, ValueError) as exc:
         L.warning("kanca iyileştirilemedi: %s", exc)
         return script
     best = max((hook_score(h) for h in alts if isinstance(h, str) and h.strip()), key=lambda r: r["verdict"],
@@ -414,4 +416,26 @@ def generate_via_claude_cli(job_id: str, job_dir, topic: str | None, cfg: Config
     probs = errors_only(validate(script, cfg))
     if probs:
         raise StageError("Claude Code'un senaryosu doğrulanamadı: " + "; ".join(probs))
+    first = (script.get("scenes") or [{}])[0].get("narration")
+    known = {"facts": script.get("facts", []), "sources": script.get("sources", []),
+             "scenes": [sc.get("narration") for sc in script.get("scenes", [])]}
+    script = improve_hook(script, known, cfg, {}, ask=lambda pr: _cli_ask(exe, pr, timeout=300))
+    if script["scenes"][0].get("narration") != first:
+        path.write_text(json.dumps(script, ensure_ascii=False, indent=2), encoding="utf-8")
     return script
+
+
+def _cli_ask(exe: str, prompt: str, timeout: int = 300) -> str:
+    """Araçsız tek soru (Claude Code oturumu): yalnızca yanıt metni."""
+    import subprocess
+    if cli_limited():
+        raise StageError(limit_message())
+    try:
+        p = subprocess.run([exe, "-p", prompt], cwd=str(ROOT), capture_output=True, text=True, encoding="utf-8",
+                           errors="replace", timeout=timeout, stdin=subprocess.DEVNULL, env=cli_env())
+    except subprocess.TimeoutExpired as exc:
+        raise StageError("Claude Code zaman aşımı") from exc
+    if p.returncode != 0:
+        check_cli_limit(p.stdout + p.stderr)
+        raise StageError(f"Claude Code hata kodu {p.returncode}")
+    return p.stdout

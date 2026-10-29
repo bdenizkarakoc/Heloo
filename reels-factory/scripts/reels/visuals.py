@@ -423,6 +423,20 @@ OFFTOPIC = re.compile(r"\b(viewing|visitors?|students?|people|crowd|team|briefin
                       r"engineers?|technicians?|celebrat\w*)\b", re.I)
 
 
+_OPEN_LICENSE = re.compile(r"\b(cc0|pdm|public domain|kamu malı|pexels license|pixabay content license|"
+                           r"cc[ -]by(?![ -](sa|nc|nd))(?:[ -]\d|\b))|^\s*by\b(?![ -](sa|nc|nd))", re.I)
+
+
+def license_ok(c: dict) -> bool:
+    """Lisansı kaynağında açıkça izinli mi (CC0/kamu malı/CC BY, Pexels/Pixabay lisansı; NC/ND/SA hariç)?"""
+    lic = str(c.get("license") or "")
+    if re.search(r"\b(nc|nd|sa)\b", lic.replace("-", " "), re.I):
+        return False
+    if c.get("provider") == "nasa" and THIRD_PARTY.search(f"{c.get('credit', '')} {c.get('title', '')}"):
+        return False
+    return bool(_OPEN_LICENSE.search(lic))
+
+
 def broader_queries(query: str, subject: str | None = None, limit: int = 4) -> list[str]:
     """Sonuç vermeyen sorgu için giderek genelleşen sorgular: ilk 3 ve ilk 2 kelime,
     ardından kişi/varlık adı ve sorgunun en uzun kelimesi."""
@@ -644,6 +658,8 @@ def _fetch(scene: dict, job_dir: Path, cfg: Config, providers: list[str], used: 
             continue
         if name in SEARCH_PROVIDERS:
             cands = rank(cands, scene["visual"].get("query", ""))
+            if license_mode(cfg) == "any":  # serbest modda da lisansı açık olanlar önce denenir
+                cands = sorted(cands, key=lambda c: not license_ok(c))
         if pick_index is not None and name == order[0] and 0 <= pick_index < len(cands):
             cands = [cands[pick_index]] + [c for i, c in enumerate(cands) if i != pick_index]
         for idx, c in enumerate(cands[: cfg.get_path("visuals.candidates_per_scene", 6) * 2]):
@@ -706,7 +722,7 @@ def _fetch(scene: dict, job_dir: Path, cfg: Config, providers: list[str], used: 
             meta.update({k: c.get(k, "") for k in ("provider", "title", "license", "credit", "source", "verified")})
             # Kendi ürettiğimiz (ajan çizimi / AI üretimi) içerikler lisans riski taşımaz
             own = name in ("agent_media", "ai_image", "ai_video") and c.get("license") != "agent-supplied"
-            meta["license_checked"] = license_mode(cfg) == "strict" or own
+            meta["license_checked"] = license_mode(cfg) == "strict" or own or license_ok(c)
             meta["candidate_index"] = idx
             meta["fit"] = choose_fit(meta, scene)
             meta.pop("hash", None)

@@ -46,7 +46,10 @@ TR_VAGUE = {"inanılmaz", "harika", "muhteşem", "çılgın", "büyük", "dev", 
 # Türkçede 2. kişi çoğunlukla ektedir: biliyor-muydunuz, yapıyor-san, ev-iniz-de
 TR_YOU = (r"\b(sen|sana|seni|senin|siz|size|sizi|sizin|sence|sizce)\w*|"
           r"\b\w+(sınız|siniz|sunuz|sünüz|dınız|diniz|dunuz|dünüz|tınız|tiniz|tunuz|tünüz|ysan|ysen|san|sen)\b|"
-          r"\b\w{2,}(ınız|iniz|unuz|ünüz)\w*")
+          r"\b\w{2,}(ınız|iniz|unuz|ünüz)\w*|"
+          # soru ve emir: biliyor muydun, duydun mu, tahmin et, bak, düşün, hayal et
+          r"\b(mı|mi|mu|mü)(ydın|ydin|ydun|ydün|sın|sin|sun|sün)\b|\b\w+(dın|din|dun|dün|tın|tin|tun|tün)\s+(mu|mı|mi|mü)\b|"
+          r"\b(tahmin et|hayal et|düşün|bak|dinle|izle|dikkat et)\b")
 TR_STAKE = (r"\b(kaybet\w*|kaybed\w*|kayıp\w*|kaçır\w*|hata\w*|yanlış\w*|dikkat\w*|asla|ölüm\w*|öl\w*|tehlike\w*|bedel\w*|"
             r"pahalı\w*|önce|dur\w*|boşa|risk\w*|yasak\w*|sürgün\w*)\b")
 TR_CURIOSITY = (r"\b(neden|niye|nasıl|ne|hangi|kimse|aslında|ama|meğer|gerçek\w*|bilmiyor\w*|bilmediğin\w*|"
