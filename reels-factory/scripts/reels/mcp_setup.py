@@ -124,6 +124,10 @@ def register() -> dict:
             continue
         subprocess.run([exe, "mcp", "remove", "-s", "user", name], capture_output=True, timeout=60,  # noqa: S603
                        stdin=subprocess.DEVNULL)
+        # Aynı ad bu klasörlerde "local" kapsamda da kayıtlıysa Claude Code "Conflicting scopes" uyarısı verir
+        for cwd in (REPO, ROOT):
+            subprocess.run([exe, "mcp", "remove", "-s", "local", name], capture_output=True,  # noqa: S603
+                           timeout=60, stdin=subprocess.DEVNULL, cwd=str(cwd))
         p = subprocess.run([exe, "mcp", "add-json", "-s", "user", name, json.dumps(conf)],  # noqa: S603
                            capture_output=True, encoding="utf-8", errors="replace", timeout=60,
                            stdin=subprocess.DEVNULL)
