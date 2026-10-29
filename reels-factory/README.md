@@ -209,7 +209,7 @@ Sistemde kullanıldığı yerler:
 
 ## Bilgi haritası (Graphify)
 
-[Graphify](https://github.com/Graphify-Labs/graphify) (Apache-2.0/MIT, `pip install graphifyy`):
+[Graphify](https://github.com/Graphify-Labs/graphify) (Apache-2.0, `pip install "graphifyy[mcp]"`):
 - **İçerik haritası** (panel → 🧠 Harita): üretilen videolar (anlatım, doğrulanmış bilgiler, kaynaklar), Reel notları
   ve video geçmişi bir bilgi grafiğine dönüşür (Claude Code veya Claude API ile; ayrı anahtar gerekmez).
   Etkileşimli `graph.html`, konu toplulukları, en bağlantılı kavramlar ve "Haritaya sor". Yeni video konusu

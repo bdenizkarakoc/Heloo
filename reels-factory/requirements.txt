@@ -21,4 +21,4 @@ anthropic>=0.40
 # İsteğe bağlı (kendi sesinle seslendirme, kNN-VC): uygulamadaki "Sesim" sayfası "Ses motorunu kur" ile kurar
 # pip install torch==2.7.1 torchaudio==2.7.1 --index-url https://download.pytorch.org/whl/cpu
 
-# İsteğe bağlı (bilgi haritası: içerik + kod grafiği; Graphify, MIT): pip install "graphifyy[mcp]>=0.9.95"
+# İsteğe bağlı (bilgi haritası: içerik + kod grafiği; Graphify, Apache-2.0): pip install "graphifyy[mcp]>=0.9.95"
