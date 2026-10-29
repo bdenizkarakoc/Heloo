@@ -425,6 +425,23 @@ class Factory:
 
 FACTORY: Factory | None = None
 _caps_cache: dict = {}
+def code_stamp() -> float:
+    """Sunucu kodunun diskteki en yeni değişiklik zamanı: git pull sonrası eski sunucu çalışıyorsa sayfalar bunu görür."""
+    files = [ROOT / "app" / "server.py", *(ROOT / "scripts" / "reels").rglob("*.py")]
+    return max((f.stat().st_mtime for f in files if f.is_file()), default=0.0)
+
+
+CODE_STAMP = code_stamp()
+
+
+def restart_server() -> None:
+    """Aynı ayarlarla (pencere açmadan) yeni sunucu başlatır ve bu süreci bitirir; yenisi portun boşalmasını bekler."""
+    argv = [str(Path(__file__).resolve()), *(a for a in sys.argv[1:] if a != "--open")]
+    subprocess.Popen([sys.executable, *argv], cwd=str(ROOT), env={**os.environ, "RF_RESTART": "1"})  # noqa: S603
+    time.sleep(0.3)
+    os._exit(0)
+
+
 KESIM_API = 4  # Kesim'in beklediği uç sürümü (4: Fotoğraflarım + araç komutları); Kesim daha eski bir fabrika görürse (boşta ise) yeniden başlatır
 KESIM_RESULTS: dict = {}  # Kesim'in yan işleri (altyazı, AI planı, ses) -> durum/sonuç
 
@@ -595,6 +612,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._file(voice.say(text))
             except Exception as exc:  # noqa: BLE001
                 return self._json({"error": str(exc)}, 502)
+        if path == "/api/version":  # sayfalar: diskteki kod çalışan sunucudan yeniyse "yeniden başlat" uyarısı
+            return self._json({"stale": code_stamp() > CODE_STAMP + 1})
         if path == "/favicon.ico":  # tarayıcının kendiliğinden istediği simge: konsolda 404 hatası olmasın
             self.send_response(204)
             self.end_headers()
@@ -777,6 +796,13 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"answer": knowledge.query(str(data.get("q", ""))[:300])})
             except Exception as exc:  # noqa: BLE001
                 return self._json({"error": str(exc)}, 400)
+        if path == "/api/restart":  # git pull sonrası yeni kodla yeniden başla (iş yoksa)
+            if FACTORY.current or FACTORY.pending:
+                return self._json({"error": "şu an bir iş yapılıyor; bitince yeniden başlatın"}, 409)
+            L.info("Uygulama yeni kodla yeniden başlatılıyor")
+            self._json({"ok": True})
+            threading.Thread(target=restart_server, daemon=True).start()
+            return None
         if path == "/api/shutdown":  # paneldeki "Kapat": arka plandaki bütün işler durur
             L.info("Uygulama kullanıcı isteğiyle kapatılıyor")
             self._json({"ok": True})
@@ -1176,6 +1202,11 @@ def main() -> int:
     args = ap.parse_args()
     url = f"http://127.0.0.1:{args.port}/{args.page}"
     as_app = args.page == "kesim"
+    if os.environ.pop("RF_RESTART", ""):  # /api/restart: eski süreç kapanıp portu bırakana kadar bekle
+        for _ in range(60):
+            if not port_in_use(args.port):
+                break
+            time.sleep(0.25)
     if port_in_use(args.port):  # zaten çalışıyor: yalnızca paneli aç
         print(f"Uygulama zaten çalışıyor: {url}")
         if args.open:

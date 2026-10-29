@@ -120,7 +120,11 @@
 <script>
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-const api = async (p, body) => (await fetch(p, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {})).json();
+const api = async (p, body) => {
+  const r = await fetch(p, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {});
+  try { return await r.json(); }
+  catch { return { error: r.status === 404 ? "Fabrika eski sürümle çalışıyor: uygulamayı kapatıp yeniden açın" : `sunucu hatası (HTTP ${r.status})` }; }
+};
 let slug = null, stream = null, rec = null, chunks = [], running = false, analyser = null, rafId = null, readySlug = null;
 
 $("consent").onchange = () => ($("btnStart").disabled = !$("consent").checked);
@@ -370,6 +374,30 @@ $("btnWipe").onclick = async () => {
 };
 loadProfiles(); loadStyles(); refreshLog();
 setInterval(loadProfiles, 5000); setInterval(loadStyles, 6000); setInterval(refreshLog, 3000);
+</script>
+<script>/* git pull sonrası eski sunucu çalışıyorsa uyar: yeni düğmeler sessizce çalışmaz */
+(() => {
+  const bar = (msg, label, act) => {
+    let b = document.getElementById("surumBar");
+    if (!b) { b = document.createElement("div"); b.id = "surumBar"; b.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:9999;padding:10px 16px;background:#7a2e0e;color:#fff;font:14px system-ui;display:flex;gap:12px;align-items:center;flex-wrap:wrap"; document.body.prepend(b); }
+    b.textContent = msg;
+    if (label) { const k = document.createElement("button"); k.textContent = label; k.style.cssText = "padding:6px 12px;border-radius:8px;border:0;cursor:pointer"; k.onclick = act; b.append(k); }
+  };
+  const wait = async () => { for (let i = 0; i < 60; i++) { await new Promise((r) => setTimeout(r, 1000)); try { const r = await fetch("/api/version"); if (r.ok && !(await r.json()).stale) return location.reload(); } catch { /* yeniden başlıyor */ } } bar("Fabrika yeniden başlamadı; masaüstü kısayolundan açın."); };
+  const check = async () => {
+    let r; try { r = await fetch("/api/version", { cache: "no-store" }); } catch { return; }
+    if (r.status === 404) return bar("Fabrika eski sürümle çalışıyor (git pull sonrası yeniden başlatılmamış); yeni düğmeler çalışmaz.", "Fabrikayı kapat", async () => {
+      await fetch("/api/shutdown", { method: "POST", body: "{}" }).catch(() => {});
+      bar("Kapatıldı. Şimdi masaüstündeki Reels Fabrikası kısayoluyla yeniden açın.");
+    });
+    if (r.ok && (await r.json()).stale) bar("Fabrika güncellendi; yeni sürümün çalışması için yeniden başlatılmalı.", "Yeniden başlat", async () => {
+      const x = await (await fetch("/api/restart", { method: "POST", body: "{}" })).json().catch(() => ({}));
+      if (x.error) return bar(x.error);
+      bar("Yeniden başlatılıyor…"); wait();
+    });
+  };
+  check(); setInterval(check, 120000);
+})();
 </script>
 </body>
 </html>
