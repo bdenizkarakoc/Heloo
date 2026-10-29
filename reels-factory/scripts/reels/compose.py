@@ -311,6 +311,12 @@ class SceneBuilder:
             shade = {"top": 0.6, "bottom": 0.78, "all": 0.5}
         elif layout == "fact":
             shade = {"top": 0.6, "bottom": 0.8, "all": 0.42}
+        luma = (media or {}).get("luma") if bg["type"] != "graphic" else None
+        if luma:  # açık renkli fotoğrafta (beyaz bina, gökyüzü) beyaz yazı kaybolmasın
+            if luma["top"] > 0.5:
+                shade["top"] = max(shade["top"], round(min(0.9, 0.55 + luma["top"] * 0.45), 2))
+            if luma["mid"] > 0.5:
+                shade["all"] = max(shade["all"], round(min(0.4, (luma["mid"] - 0.5) * 0.8 + 0.12), 2))
 
         # ---------------- yerleşimler ----------------
         if layout == "hook":
@@ -327,7 +333,9 @@ class SceneBuilder:
             if b["hl_ids"]:
                 sfx.append({"name": "pop", "time": abs0 + 0.35, "gain_db": -6})
             blocks.append(b)
-            shade = {"top": 0.62, "bottom": 0.72, "all": 0.12} if has_media else shade
+            if has_media:
+                shade = {"top": max(shade["top"], 0.62), "bottom": max(shade["bottom"], 0.72),
+                         "all": max(shade["all"], 0.12)}
 
         elif layout == "photo":
             y = 280
@@ -340,7 +348,7 @@ class SceneBuilder:
                                highlight=highlight, mode="blur", t=t0 + 0.2, stagger=0.06)
                 blocks.append(b)
                 y = b["bottom"] + 50
-                shade["top"] = 0.72
+                shade["top"] = max(shade["top"], 0.72)
             if has_media and bg["fit"] == "card":
                 top = max(y + 10, 420)
                 avail = self.content_bottom - top
@@ -366,8 +374,11 @@ class SceneBuilder:
                                "x1": (W + self.m.width(final, nsize)) / 2, "y0": num_y, "y1": num_y + nsize})
             cue_t = (find_cue(words, ons.get("cue"), vl) or find_cue(words, fmt_number(value, dec), vl)
                      or find_cue(words, str(int(value)), vl) or vl + 0.4)
-            count = 1.2 if abs(value) >= 10 else 0.8
-            st = max(t0 + 0.35, cue_t + 0.15 - count)  # sayaç, sayı söylenirken hedefe ulaşır
+            # sayaç, sayı söylenirken hedefe ulaşır; sayı cümlenin sonundaysa ekran boş kalmasın diye
+            # sayım erken başlar ve uzar (en çok 4 sn; power2.out ile hızlı yükselip yavaşça oturur)
+            base = 1.2 if abs(value) >= 10 else 0.8
+            count = max(base, min(4.0, cue_t + 0.15 - (t0 + 0.35)))
+            st = max(t0 + 0.35, cue_t + 0.15 - count)
             unit_y = num_y + nsize * 0.98 + 34
             u = self.block(f"{sid}-u", ons["unit"], unit_y, (72, 44), 2, 900, 0.04, highlight=set(),
                            mode="rise", t=st + count * 0.5, stagger=0.06)
@@ -604,6 +615,19 @@ def grain_texture(dest: Path, size: int = 256) -> Path:
     return dest
 
 
+def region_luma(path: Path) -> dict | None:
+    """Görselin başlık (üst) ve altyazı (orta) bölgelerinin parlaklığı 0-1: açık zeminde yazı okunmaz,
+    gölge koyulaştırılır. Dikey 9:16'ya ortadan kırpılmış gibi ölçülür."""
+    try:
+        from PIL import Image, ImageOps
+        im = ImageOps.fit(Image.open(path).convert("L"), (108, 192))
+    except (OSError, ValueError):
+        return None
+    import numpy as np
+    a = np.asarray(im, dtype=np.float32) / 255
+    return {"top": round(float(a[25:80].mean()), 3), "mid": round(float(a[105:145].mean()), 3)}
+
+
 def build_project(job_dir: Path, script: dict, timeline: dict, voice: dict[str, dict],
                   media: dict[str, dict | None], groups: list[dict], category: dict,
                   cfg: Config) -> dict:
@@ -630,6 +654,8 @@ def build_project(job_dir: Path, script: dict, timeline: dict, voice: dict[str, 
             src = job_dir / "visuals" / meta[key]
             if src.exists():
                 shutil.copy(src, comp / "assets" / "media" / meta[key])
+        probe = meta.get("file") if meta.get("kind") == "photo" else meta.get("bg")
+        meta["luma"] = region_luma(job_dir / "visuals" / probe) if probe else None
 
     m = Measurer(font)
     env = _env()

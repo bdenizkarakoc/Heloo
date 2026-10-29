@@ -295,6 +295,37 @@ def stage_captions(job: Job, script: dict, metas: dict, cfg: Config) -> tuple[di
     return tl, words, groups
 
 
+_FOUND_MEDIA = {"agent_media", "url", "ai_image", "ai_video"}  # kullanıcı/ajan/üretim: denetlenmez
+
+
+def _find_visual(sc: dict, job: Job, cfg: Config, providers: list[str], used: dict, budget, seconds: float,
+                 vet_all: bool = False) -> dict | None:
+    """Sahne görseli: önce sahnenin sorgusu, bulunamazsa genelleşen sorgular (grafik arka plan son çare).
+    Genel sorguyla gelen — ve vet_all ise (tarih gibi dönemin önemli olduğu kategoriler) her — arama görseli
+    Claude'a sahnenin metniyle denetletilir; uygun değilse sıradaki aday denenir."""
+    vis = sc["visual"]
+    tries = [(None, vis)]
+    if vis["kind"] in ("photo", "video") and not vis.get("pick"):
+        tries += [(q, {k: v for k, v in vis.items() if k != "subject"} | {"query": q})
+                  for q in visuals.broader_queries(vis.get("query", ""), vis.get("subject"))]
+    for q, v in tries:
+        for _ in range(3 if (vet_all or q) else 1):  # reddedilen kaynak `used`a girer, sıradaki aday gelir
+            meta = visuals.fetch_scene_visual({**sc, "visual": v}, job.dir, cfg, providers, used, budget, seconds)
+            if not meta:
+                break
+            if not ((q or vet_all) and meta.get("provider", "").split(":")[0] not in _FOUND_MEDIA):
+                return meta
+            ok, why = visuals.vet_image(job.dir / "visuals" / meta["file"], sc.get("narration", ""),
+                                        meta.get("title", ""), cfg)
+            L.info("%s: %s → '%s': %s (%s)", sc["id"], f"genel sorgu '{q}'" if q else "görsel",
+                   meta.get("title", "")[:50], "uygun" if ok else "uygun değil", why)
+            if ok:
+                if q:
+                    meta["query_used"] = q
+                return meta
+    return None
+
+
 def stage_visuals(job: Job, script: dict, tl: dict, cfg: Config) -> dict:
     from .util import http
     http(cfg.get_path("visuals.user_agent"))
@@ -315,18 +346,8 @@ def stage_visuals(job: Job, script: dict, tl: dict, cfg: Config) -> dict:
                 meta["fit"] = visuals.choose_fit(meta, sc)
                 meta["reused_from"] = ref
             else:
-                meta = visuals.fetch_scene_visual(sc, job.dir, cfg, providers, used, budget,
-                                                  rows[sc["id"]]["duration"])
-                if meta is None and sc["visual"]["kind"] in ("photo", "video") and not sc["visual"].get("pick"):
-                    # çok özel sorgu hiçbir şey bulamadıysa daha genel sorgularla bir daha (grafik arka plan son çare)
-                    for q in visuals.broader_queries(sc["visual"].get("query", ""), sc["visual"].get("subject")):
-                        trial = {**sc, "visual": {k: v for k, v in sc["visual"].items() if k != "subject"} | {"query": q}}
-                        meta = visuals.fetch_scene_visual(trial, job.dir, cfg, providers, used, budget,
-                                                          rows[sc["id"]]["duration"])
-                        if meta:
-                            L.info("%s: görsel genel sorguyla bulundu: %s", sc["id"], q)
-                            meta["query_used"] = q
-                            break
+                meta = _find_visual(sc, job, cfg, providers, used, budget, rows[sc["id"]]["duration"],
+                                    vet_all=bool(cat.get("vet_images")))
             media[sc["id"]] = meta
             if meta is None and sc["visual"]["kind"] in ("photo", "video"):
                 job.warn(f"{sc['id']}: uygun görsel bulunamadı → hareketli grafik arka plan kullanıldı")

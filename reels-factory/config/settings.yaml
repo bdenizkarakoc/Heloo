@@ -163,7 +163,8 @@ categories:
     weight: 2
     tone: "hikâye anlatan, merak uyandıran, kaynaklara sadık"
     audience: "genel izleyici"
-    visual_providers: [agent_media, wikipedia, openverse, pexels, pixabay, ai_image]
+    visual_providers: [agent_media, wikipedia, commons, openverse, pexels, pixabay, ai_image]
+    vet_images: true         # her arama görseli Claude'a sahne metniyle denetletilir (dönem/kişi/yer yanlışı olmasın)
     music_queries: ["cinematic documentary", "cinematic ambient"]
     seed_topics:
       - "Göbeklitepe'nin yaşı ve önemi"
@@ -174,7 +175,7 @@ categories:
     weight: 1
     tone: "saygılı, hikâye anlatan, belgelere dayalı; magazin ve spekülasyon yok"
     audience: "genel izleyici, müzikseverler"
-    visual_providers: [agent_media, wikipedia, openverse, pexels, pixabay, ai_image]
+    visual_providers: [agent_media, wikipedia, commons, openverse, pexels, pixabay, ai_image]
     music_queries: ["rock instrumental", "psychedelic rock instrumental", "cinematic"]
     seed_topics:
       - "Cem Karaca ve Anadolu rock"

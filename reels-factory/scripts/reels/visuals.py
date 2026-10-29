@@ -281,6 +281,43 @@ def _wikipedia(scene: dict, job_dir: Path, cfg: Config, budget: Budget) -> list[
     return out
 
 
+def _commons(scene: dict, job_dir: Path, cfg: Config, budget: Budget) -> list[dict]:
+    """Wikimedia Commons dosya araması: tarih/kültür konularında kamu malı arşiv fotoğrafları (lisans her dosyanın
+    kendi sayfasından okunur)."""
+    q = scene["visual"].get("query")
+    if not q:
+        return []
+    strict = license_mode(cfg) == "strict"
+    words = q.split()
+    pages: list[dict] = []
+    for n in sorted({len(words), min(len(words), 4), min(len(words), 3)}, reverse=True):  # arama bütün kelimeleri arar
+        data = retry(3, 2.0)(http_json)("GET", "https://commons.wikimedia.org/w/api.php", params={
+            "format": "json", "formatversion": 2, "action": "query", "generator": "search",
+            "gsrsearch": " ".join(words[:n]) + " filetype:bitmap", "gsrnamespace": 6, "gsrlimit": 20,
+            "prop": "imageinfo", "iiprop": "url|size|mime|extmetadata", "iiurlwidth": 1600})
+        pages = sorted(data.get("query", {}).get("pages", []) or [], key=lambda p: p.get("index", 0))
+        if pages:
+            break
+    out: list[dict] = []
+    for page in pages:
+        info = (page.get("imageinfo") or [{}])[0]
+        name = page.get("title", "").split(":", 1)[-1]
+        if not info or info.get("mime") not in ("image/jpeg", "image/png") or SKIP_FILES.search(name):
+            continue
+        meta = info.get("extmetadata") or {}
+        lic = re.sub("<[^>]+>", "", (meta.get("LicenseShortName") or {}).get("value", "")).strip()
+        if strict and not FREE_LICENSE.search(lic):
+            continue
+        desc = re.sub("<[^>]+>", " ", (meta.get("ImageDescription") or {}).get("value", ""))
+        artist = re.sub("<[^>]+>", "", (meta.get("Artist") or {}).get("value", "")).strip()
+        out.append({"url": info.get("thumburl") or info.get("url"), "w": info.get("thumbwidth") or info.get("width"),
+                    "h": info.get("thumbheight") or info.get("height"), "provider": "commons", "kind": "photo",
+                    "title": name.rsplit(".", 1)[0].replace("_", " "), "file": name, "desc": desc[:300],
+                    "license": lic or "lisans bilgisi yok", "credit": artist,
+                    "source": info.get("descriptionurl") or info.get("url")})
+    return [c for c in out if relevance(c, q) >= 2.0]  # arama motoru gevşek eşleşir: başlıkta sorgu kelimesi olsun
+
+
 def _pexels(scene: dict, job_dir: Path, cfg: Config, budget: Budget) -> list[dict]:
     key = secret("PEXELS_API_KEY")
     q = scene["visual"].get("query")
@@ -415,7 +452,7 @@ def _replicate_run(model: str, inputs: dict, cfg: Config, timeout: int = 300) ->
     return out[0] if isinstance(out, list) else out
 
 
-SEARCH_PROVIDERS = {"nasa", "nasa_video", "openverse", "pexels", "pixabay", "wikipedia"}
+SEARCH_PROVIDERS = {"nasa", "nasa_video", "openverse", "pexels", "pixabay", "wikipedia", "commons"}
 VIDEO_PROVIDERS = ["pexels", "pixabay", "nasa_video", "ai_video"]  # gerçek klip önce; AI video yalnızca yedek
 # Konudan çok "etkinlik/insan" fotoğrafı olduğunu düşündüren kelimeler (otomatik seçimde geri plana itilir)
 OFFTOPIC = re.compile(r"\b(viewing|visitors?|students?|people|crowd|team|briefing|conference|press|award|"
@@ -476,7 +513,14 @@ def rank(cands: list[dict], query: str) -> list[dict]:
             sc -= 4.0
         if c.get("w") and c.get("h") and min(c["w"], c["h"]) >= 1400:
             sc += 0.5
+        if want_year:  # tarih sorgusu: başlığındaki yıl çok farklı olan (ör. 1923 için 2015) görsel geriye
+            years = [int(y) for y in re.findall(r"\b(1[5-9]\d\d|20\d\d)\b", title)]
+            if years:
+                sc += 2.0 if min(abs(y - want_year) for y in years) <= 10 else -6.0
         return (-sc, i)
+
+    qy = re.findall(r"\b(1[5-9]\d\d|20\d\d)\b", query or "")
+    want_year = int(qy[0]) if qy else None
 
     return [c for _, c in sorted(enumerate(cands), key=score)]
 
@@ -509,7 +553,7 @@ def search_candidates(scene: dict, job_dir: Path, cfg: Config, providers: list[s
 PROVIDERS = {
     "agent_media": _agent_media, "url": _url, "ai_video": _ai_video, "ai_image": _ai_image,
     "nasa": _nasa, "nasa_video": _nasa_video, "pexels": _pexels, "pixabay": _pixabay, "openverse": _openverse,
-    "wikipedia": _wikipedia,
+    "wikipedia": _wikipedia, "commons": _commons,
 }
 
 
@@ -603,6 +647,27 @@ def vet_clip(clip: Path, query: str, cfg: Config) -> tuple[bool, str]:
                  clip.with_name(f"{clip.stem}_vet.json"), timeout=300)
     for f in frames:
         f.unlink(missing_ok=True)
+    if not res:
+        return False, "denetim yanıtı alınamadı"
+    return bool(res.get("ok")), str(res.get("reason", ""))
+
+
+def vet_image(img: Path, narration: str, title: str, cfg: Config) -> tuple[bool, str]:
+    """Genel sorguyla bulunan görseli sahnenin anlattığıyla karşılaştırır (Claude görsel denetimi): ilgisiz kişi/yer,
+    farklı dönem (tarihî anlatıda günümüz fotoğrafı) veya yanıltıcı içerik kullanılmaz. Claude yoksa kullanılmaz."""
+    from .studio import ai_mode, ask_ai
+    if ai_mode(cfg) == "none":
+        return False, "Claude yok: genel sorgu görseli denetlenemedi"
+    thumb = img.with_name(f"{img.stem}_vet.jpg")
+    run(["ffmpeg", "-y", "-v", "error", "-i", img, "-frames:v", "1", "-vf", "scale=-2:480", thumb])
+    res = ask_ai(cfg, f"Kısa bir belgesel videoda bu görsel, şu seslendirme okunurken ekranda olacak: \"{narration}\" "
+                      f"(görselin kaynak başlığı: \"{title}\"). Görsel bu cümleye uygun mu? Uygun DEĞİL sayılır: "
+                      "cümlede anlatılmayan belirli bir kişi ön plandaysa, anlatılan dönemle çelişiyorsa (tarihî bir olayı "
+                      "anlatırken günümüzden bir fotoğraf, modern resmi ziyaret vb.), başka bir ülke/yer/olay gösteriyorsa "
+                      "ya da izleyiciyi yanıltacaksa. Genel ve dönemle çelişmeyen atmosfer görselleri (bayrak, manzara, "
+                      'eski bina) uygundur. Yalnızca JSON: {"ok": true/false, "reason": "kısa Türkçe"}', [thumb],
+                 img.with_name(f"{img.stem}_vet.json"), timeout=300)
+    thumb.unlink(missing_ok=True)
     if not res:
         return False, "denetim yanıtı alınamadı"
     return bool(res.get("ok")), str(res.get("reason", ""))
