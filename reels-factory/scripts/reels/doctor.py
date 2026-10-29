@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import importlib.util
 import shutil
+from pathlib import Path
 
 from .config import Config, ROOT, secret
 from .util import run
@@ -57,8 +58,17 @@ def check(cfg: Config, network: bool = True) -> list[dict]:
                         "isteğe bağlı"))
     if network:
         from .util import http
-        for name, url in [("edge-tts uç noktası", "https://speech.platform.bing.com/"),
-                          ("Openverse API", "https://api.openverse.org/v1/images/?q=test&page_size=1"),
+        # edge-tts: uç noktaya ulaşmak yetmez; her ses için gerçekten kısa bir seslendirme denenir
+        import tempfile
+        from .tts import _edge_synth
+        for voice in cfg.get_path("tts.edge.voices", ["tr-TR-EmelNeural"]):
+            try:
+                with tempfile.TemporaryDirectory() as td:
+                    _edge_synth("Merhaba.", voice, "+0%", "+0Hz", Path(td) / "t.mp3")
+                rows.append(_ok(f"edge-tts {voice}", True, "seslendirme çalışıyor", "isteğe bağlı"))
+            except Exception as exc:  # noqa: BLE001
+                rows.append(_ok(f"edge-tts {voice}", False, str(exc)[:80] + " (sıradaki ses denenir)", "isteğe bağlı"))
+        for name, url in [("Openverse API", "https://api.openverse.org/v1/images/?q=test&page_size=1"),
                           ("NASA görsel API", "https://images-api.nasa.gov/search?q=moon&page_size=1")]:
             try:
                 r = http().get(url, timeout=15)

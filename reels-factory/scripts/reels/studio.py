@@ -25,8 +25,9 @@ from PIL import Image, ImageDraw, ImageFont
 
 from . import log, qc
 from .config import ROOT, Config, load_config
-from .llm import _client, available, claude_cli, extract_json, resolve_provider
+from .llm import _client, available, claude_cli, cli_env, extract_json, resolve_provider
 from .studio_render import DEFAULT_STYLE, full_style, render_clip, write_srt
+from .studio_render import merge as merge_style
 from .util import StageError, ffprobe, load_audio, read_json, run, slugify, write_json
 
 L = log.get("studio")
@@ -134,32 +135,50 @@ def ai_mode(cfg: Config) -> str:
     return p if p in ("anthropic", "claude_cli") else "none"
 
 
+def _ask_cli(prompt: str, images: list[Path], out_file: Path, timeout: int) -> dict | None:
+    from . import llm
+    exe = claude_cli()
+    if not exe or llm.cli_limited():
+        return None
+    rel = [str(p.relative_to(ROOT)) for p in images]
+    full = (prompt + ("\n\nÖnce şu görüntüleri Read aracıyla aç ve incele:\n" + "\n".join(f"- {r}" for r in rel)
+                      if rel else "")
+            + f"\n\nSonucu YALNIZCA geçerli JSON olarak `{out_file.relative_to(ROOT)}` dosyasına Write ile yaz."
+              " Başka dosyaya dokunma, komut çalıştırma.")
+    out_file.unlink(missing_ok=True)
+    try:
+        proc = subprocess.run([exe, "-p", full, "--permission-mode", "acceptEdits", "--allowedTools", "Read",
+                               "Write"], cwd=ROOT, capture_output=True, encoding="utf-8", errors="replace",
+                              timeout=timeout, stdin=subprocess.DEVNULL, env=cli_env())
+    except subprocess.TimeoutExpired:
+        L.warning("Claude Code zaman aşımı")
+        return None
+    if proc.returncode != 0:
+        try:
+            llm.check_cli_limit((proc.stdout or "") + (proc.stderr or ""))
+        except llm.ClaudeLimitError as exc:
+            L.warning("%s", exc)
+            return None
+    if out_file.exists():
+        try:
+            return json.loads(out_file.read_text(encoding="utf-8"))
+        except ValueError:
+            pass
+    try:
+        return extract_json(proc.stdout or "")
+    except StageError:
+        L.warning("Claude Code geçerli JSON üretmedi: %s", (proc.stdout or proc.stderr or "")[-300:])
+        return None
+
+
+_API_DOWN_UNTIL = 0.0   # kredi/erişim hatasından sonra API bir süre denenmez (doğrudan Claude Code)
+
+
 def ask_ai(cfg: Config, prompt: str, images: list[Path], out_file: Path, timeout: int = 900) -> dict | None:
+    global _API_DOWN_UNTIL
     mode = ai_mode(cfg)
-    if mode == "claude_cli":
-        exe = claude_cli()
-        rel = [str(p.relative_to(ROOT)) for p in images]
-        full = (prompt + "\n\nÖnce şu görüntüleri Read aracıyla aç ve incele:\n" + "\n".join(f"- {r}" for r in rel)
-                + f"\n\nSonucu YALNIZCA geçerli JSON olarak `{out_file.relative_to(ROOT)}` dosyasına Write ile yaz."
-                  " Başka dosyaya dokunma, komut çalıştırma.")
-        out_file.unlink(missing_ok=True)
-        try:
-            proc = subprocess.run([exe, "-p", full, "--permission-mode", "acceptEdits", "--allowedTools", "Read",
-                                   "Write"], cwd=ROOT, capture_output=True, encoding="utf-8", errors="replace",
-                                  timeout=timeout, stdin=subprocess.DEVNULL)
-        except subprocess.TimeoutExpired:
-            L.warning("Claude Code zaman aşımı")
-            return None
-        if out_file.exists():
-            try:
-                return json.loads(out_file.read_text(encoding="utf-8"))
-            except ValueError:
-                pass
-        try:
-            return extract_json(proc.stdout or "")
-        except StageError:
-            L.warning("Claude Code geçerli JSON üretmedi: %s", (proc.stdout or proc.stderr or "")[-300:])
-            return None
+    if mode == "claude_cli" or (mode == "anthropic" and time.time() < _API_DOWN_UNTIL and claude_cli()):
+        return _ask_cli(prompt, images, out_file, timeout)
     if mode == "anthropic" and available():
         content = []
         for p in images:
@@ -173,8 +192,13 @@ def ask_ai(cfg: Config, prompt: str, images: list[Path], out_file: Path, timeout
             write_json(out_file, data)
             return data
         except Exception as exc:  # noqa: BLE001
-            L.warning("Claude API hatası: %s", exc)
-            return None
+            # kredi bitti / ağ hatası: bilgisayarda Claude Code kuruluysa onunla dene (abonelikle çalışır)
+            L.warning("Claude API hatası: %s%s", exc, " — Claude Code ile deneniyor" if claude_cli() else "")
+            if re.search(r"credit|billing|authentication|permission", str(exc), re.I):
+                _API_DOWN_UNTIL = time.time() + 3600
+                from . import llm
+                llm.mark_api_down(exc)
+            return _ask_cli(prompt, images, out_file, timeout) if claude_cli() else None
     return None
 
 
@@ -365,6 +389,39 @@ def audio_metrics(src: Path, words: list[dict], limit: float) -> dict:
             "words_per_sec": round(wps, 2)}
 
 
+_WHISPER: dict = {}
+
+
+def whisper_model(cfg: Config, model: str | None = None):
+    """faster-whisper modeli (süreç boyunca önbellekte). NVIDIA kart ve CUDA kütüphaneleri (cuBLAS/cuDNN) varsa
+    kartta daha büyük ve doğru model (qc.asr_model_gpu), yoksa işlemcide qc.asr_model. Döner: (model, gpu_mu)."""
+    from faster_whisper import WhisperModel
+    if "gpu" not in _WHISPER:
+        _WHISPER["gpu"] = False
+        if cfg.get_path("qc.asr_gpu", True):
+            # CUDA kitaplıkları (cuBLAS/cuDNN) ana ortamda yoksa klon ses ortamındaki PyTorch'unkiler kullanılır
+            import os
+            lib = ROOT / "studio" / "cache" / "venv-tts" / "Lib" / "site-packages" / "torch" / "lib"
+            if (lib / "cublas64_12.dll").exists() and str(lib) not in os.environ.get("PATH", ""):
+                os.environ["PATH"] = str(lib) + os.pathsep + os.environ.get("PATH", "")
+                os.add_dll_directory(str(lib))
+            try:
+                import ctranslate2
+                if ctranslate2.get_cuda_device_count() > 0:
+                    probe = WhisperModel("tiny", device="cuda", compute_type="float16")
+                    noise = (np.random.default_rng(0).standard_normal(16000) * 0.01).astype(np.float32)
+                    list(probe.transcribe(noise, language="tr")[0])   # üreteç tüketilmeli: cublas/cudnn burada yüklenir
+                    _WHISPER["gpu"] = True
+            except Exception as exc:  # noqa: BLE001 — cublas/cudnn yoksa işlemciye düşülür
+                L.info("Konuşma tanıma işlemcide (kart kullanılamadı: %s)", str(exc)[:120])
+    gpu = _WHISPER["gpu"]
+    name = model or (cfg.get_path("qc.asr_model_gpu", "large-v3-turbo") if gpu else cfg.get_path("qc.asr_model", "small"))
+    key = (name, gpu)
+    if key not in _WHISPER:
+        _WHISPER[key] = WhisperModel(name, device="cuda" if gpu else "cpu", compute_type="float16" if gpu else "int8")
+    return _WHISPER[key], gpu
+
+
 def transcribe(src: Path, work: Path, cfg: Config, model: str | None = None, limit: float | None = None) -> list[dict]:
     """faster-whisper ile kelime zamanlı döküm (önbellekli)."""
     cache = work / f"words_{model or 'cfg'}_{int(limit or 0)}.json"
@@ -382,9 +439,9 @@ def transcribe(src: Path, work: Path, cfg: Config, model: str | None = None, lim
     proc = run(cmd + [wav], check=False)
     if proc.returncode != 0 or not wav.exists():
         return []
-    m = WhisperModel(model or cfg.get_path("qc.asr_model", "small"), device="cpu", compute_type="int8")
+    m, gpu = whisper_model(cfg, model)
     audio = load_audio(wav, 16000, 1)  # dizi olarak ver: PyAV sürüm uyumsuzluğundan bağımsız
-    segs, _ = m.transcribe(audio, language="tr", word_timestamps=True, vad_filter=True, beam_size=1)
+    segs, _ = m.transcribe(audio, language="tr", word_timestamps=True, vad_filter=True, beam_size=5 if gpu else 1)
     words = []
     for s in segs:
         for w in s.words or []:
@@ -552,11 +609,12 @@ def run_analyze(pid: str) -> dict:
             style = full_style(res["style"])
             name, summary = res.get("name_suggestion"), res.get("summary_tr")
             effects = [str(e) for e in res.get("effects", [])][:12]
-            proj["analysis_by"] = "claude" if ai_mode(cfg) == "claude_cli" else "claude_api"
+            proj["analysis_by"] = "claude" if ai_mode(cfg) == "claude_cli" or time.time() < _API_DOWN_UNTIL else "claude_api"
         else:
             proj["analysis_by"] = "kurallar"
+            from . import llm
             proj["notes"].append("Claude kullanılamadı; stil yalnızca ölçümlerden çıkarıldı "
-                                 "(altyazı görünümü varsayılan).")
+                                 "(altyazı görünümü varsayılan)." + (" " + llm.limit_message() if llm.cli_limited() else ""))
             effects = describe(draft, metrics)
         proj.update(status="done", stage="tamamlandı", metrics=metrics, style=full_style(style),
                     name_suggestion=name or suggest_name(proj["source_name"]),
@@ -754,6 +812,43 @@ def output_sheet(video: Path, dest: Path, total: float) -> Path:
     return qc.contact_sheet(video, dest, every, total, FONT)
 
 
+def run_template(proj: dict, files: list[Path], ref: dict, o: dict, cfg: Config) -> dict:
+    """Birebir şablon: referansın kesim zamanları, geçişleri, kamera hareketleri, yazıları ve temposu aynen."""
+    from . import template
+    pid, work = proj["id"], PROJECTS / proj["id"]
+    set_stage(proj, "referans video inceleniyor (birebir şablon: kesimler, geçişler, yazılar)")
+    rsrc = UPLOADS / Path(ref["file"]).name if ref.get("file") else download_url(ref["url"])
+    tpl = template.analyze(rsrc, work / "sablon", cfg)
+    proj["notes"].append("Birebir şablon: " + template.describe(tpl) + (f" · {tpl['summary']}" if tpl.get("summary") else ""))
+    visuals = [f for f in files if media_info(f)["kind"] in ("image", "video")]
+    music = next((f for f in files if media_info(f)["kind"] == "audio"), None)
+    if len(visuals) < len(tpl["shots"]):
+        proj["notes"].append(f"Referansta {len(tpl['shots'])} çekim var, sen {len(visuals)} görsel verdin: görseller sırayla "
+                             "tekrar kullanıldı (daha çok görsel verirsen birebir eşleşir).")
+    elif len(visuals) > len(tpl["shots"]):
+        proj["notes"].append(f"Referansta {len(tpl['shots'])} çekim var: ilk {len(tpl['shots'])} görsel kullanıldı.")
+    set_stage(proj, f"klip 1/1 düzenleniyor (şablon: {len(tpl['shots'])} çekim)")
+    out_dir = OUT / pid
+    out_dir.mkdir(parents=True, exist_ok=True)
+    dest = out_dir / "01-birebir.mp4"
+    res = template.render(tpl, visuals, dest, work / "sablon_render",
+                          {"istek": o.get("istek") or "", "text_mode": o.get("text_mode"),
+                           "music": music if music else (False if o.get("music") is False else None)})
+    thumb = dest.with_suffix(".jpg")
+    grab(dest, min(1.0, res["duration"] / 2), thumb, 1920)
+    if res.get("music"):
+        proj["notes"].append("Müzik: " + res["music"] + " (referansın kendi müziği telif nedeniyle kullanılmaz; aynı tempoda lisanslı müzik)")
+    checks = [qc.decode_check(dest), qc.black_frames(dest, cfg), qc.loudness_check(dest, cfg)]
+    proj["clips"] = [{"start": 0.0, "end": res["duration"], "title": "birebir", "why": "referans şablonu", "status": "done",
+                      "output": str(dest.relative_to(ROOT)), "thumbnail": str(thumb.relative_to(ROOT)),
+                      "duration": res["duration"], "music": res.get("music"), "template": template.describe(tpl),
+                      "qc": [{"name": c["name"], "ok": c["ok"], "detail": c["detail"]} for c in checks]}]
+    proj.update(status="done", stage="tamamlandı", style_used="birebir şablon",
+                template={k: tpl.get(k) for k in ("duration", "sheet", "summary", "mood")})
+    save_project(proj)
+    return proj
+
+
 def run_edit(pid: str) -> dict:
     cfg = load_config()
     proj = load_project(pid)
@@ -764,6 +859,13 @@ def run_edit(pid: str) -> dict:
     handler = log.attach_job_log(pid)
     try:
         files = [UPLOADS / Path(f).name for f in (o.get("files") or []) if (UPLOADS / Path(f).name).is_file()]
+        ref = o.get("reference") or {}
+        if (ref.get("url") or ref.get("file")) and (o.get("ref_mode") or "birebir") == "birebir" and files:
+            try:
+                return run_template(proj, files, ref, o, cfg)
+            except Exception as exc:  # noqa: BLE001 — şablon çıkarılamazsa tarz moduyla devam
+                L.warning("birebir şablon uygulanamadı: %s", exc)
+                proj["notes"].append(f"Birebir şablon uygulanamadı ({str(exc)[:160]}); yalnızca tarzı alındı.")
         if len(files) > 1 or (files and files[0].suffix.lower() in IMAGE_EXT):
             set_stage(proj, f"{len(files)} dosya birleştiriliyor (videolar + fotoğraflar)")
             comb = combine_sources(files, UPLOADS / f"{pid}-montaj.mp4")
@@ -776,6 +878,24 @@ def run_edit(pid: str) -> dict:
         proj["source_duration"] = round(info["duration"], 1)
         style_slug = o.get("style") or "fabrika"
         style = full_style(get_style(style_slug))
+        ref = o.get("reference") or {}
+        if ref.get("url") or ref.get("file"):  # sihirbaz: “şuna benzet”
+            set_stage(proj, "referans video inceleniyor (stil öğreniliyor)")
+            try:
+                rsrc = UPLOADS / Path(ref["file"]).name if ref.get("file") else None
+                rp = new_project("analyze", rsrc if rsrc and rsrc.is_file() else None, {}, url=ref.get("url"))
+                ra = run_analyze(rp["id"])
+                style = full_style(ra["style"])
+                style_slug = ""
+                proj["notes"].append(f"Stil referanstan öğrenildi ({ra.get('analysis_by')}): {ra.get('summary')}")
+            except Exception as exc:  # noqa: BLE001 — referans indirilemezse montaj yine yapılır
+                proj["notes"].append(f"Referans incelenemedi, kayıtlı stil kullanıldı: {str(exc)[:200]}")
+        if o.get("style_overrides"):  # sihirbaz cevapları (tarz, renk, tempo, altyazı, müzik)
+            style = full_style(merge_style(style, o["style_overrides"]))
+        if o.get("sfx"):
+            style["sfx"] = {**style.get("sfx", {}), **o["sfx"], "enabled": True}
+        if o.get("brief_notes"):
+            proj["notes"].append("İstek: " + "; ".join(o["brief_notes"]))
         if o.get("captions") is False:
             style["captions"]["enabled"] = False
         if o.get("frame"):
@@ -823,6 +943,8 @@ def run_edit(pid: str) -> dict:
                 if not new:
                     break
                 style = new
+                if o.get("sfx"):   # iyileştirilen stil sihirbazın geçiş sesi isteğini taşımaz
+                    style["sfx"] = {**style.get("sfx", {}), **o["sfx"], "enabled": True}
                 set_stage(proj, f"klip 1 iyileştirilmiş stille yeniden üretiliyor (tur {rnd})")
                 res = render_clip(src, (clip["start"], clip["end"]), words, clip["title"], style, cw, dest, cfg,
                                   aspect=aspect, music=o.get("music"), enhance_voice=o.get("enhance", True))
@@ -841,6 +963,8 @@ def run_edit(pid: str) -> dict:
             checks = [qc.decode_check(dest), qc.black_frames(dest, cfg), qc.loudness_check(dest, cfg)]
             shutil.copy(shot, out_dir / f"{name}_sheet.jpg")
             extra = youtube_extras(res["srt"], dest, res["duration"])
+            if res.get("sfx") and ci == 1:
+                proj["notes"].append(f"Geçiş sesi: {res['sfx']['credit']} ({res['sfx']['count']} yerde)")
             clip.update(status="done", output=str(dest.relative_to(ROOT)), thumbnail=str(thumb.relative_to(ROOT)),
                         srt=str(dest.with_suffix(".srt").relative_to(ROOT)),
                         sheet=str((out_dir / f"{name}_sheet.jpg").relative_to(ROOT)),

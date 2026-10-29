@@ -244,14 +244,23 @@ _register_kesim()
 
 
 @mcp.tool()
-def kesim_montaj(dosyalar: list[str], mod: str = "auto") -> dict:
+def kesim_montaj(dosyalar: list[str], mod: str = "auto", istek: str = "", referans: str = "",
+                 secenekler: dict | None = None) -> dict:
     """Videoları/fotoğrafları Kesim'de tek adımda montajlar: birleştirme, boşluk kesme, 9:16, kelime vurgulu
     altyazı, renk, zoom, ses iyileştirme, müzik; fabrikanın öğrendiği en güncel stil ve kendini geliştirme turu
     kullanılır. Sonuç Masaüstü\\kesim\\Hazır klasörüne konur. mod: auto / full (tamamı) / clips (en iyi anlar).
+    İsteğe bağlı: istek = kullanıcının kendi cümleleri ("enerjik, lo-fi müzik, geçişlerde vınlama, 30 sn");
+    referans = "şunun gibi yap" bağlantısı (Instagram/TikTok/YouTube) ya da referans video dosyası;
+    secenekler = {"tarz","sure","altyazi","muzik","efekt","renk","tempo"} (değerler: /api/kesim/brief).
     İş kuyruğa eklenir; durumu kesim_durum ile izle."""
     if mod in ("full", "clips", "auto"):
         _api("POST", "/api/kesim/settings", {"mode": mod})
-    return _api("POST", "/api/kesim/edit", {"files": [_upload(f) for f in dosyalar]})
+    brief = {k: v for k, v in (secenekler or {}).items() if isinstance(v, str) and v}
+    if istek:
+        brief["serbest"] = istek
+    if referans:
+        brief["reference"] = {"url": referans} if referans.startswith(("http://", "https://")) else {"file": _upload(referans)}
+    return _api("POST", "/api/kesim/edit", {"files": [_upload(f) for f in dosyalar], "brief": brief or None})
 
 
 @mcp.tool()

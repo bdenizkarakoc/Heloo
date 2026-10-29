@@ -18,6 +18,9 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+for _s in (sys.stdout, sys.stderr):  # Windows konsolu (cp1254) ✔/✖ işaretlerinde çökmesin
+    if hasattr(_s, "reconfigure"):
+        _s.reconfigure(encoding="utf-8", errors="replace")
 
 from reels import doctor, log, pipeline  # noqa: E402
 from reels.config import ROOT, load_config  # noqa: E402
@@ -194,13 +197,52 @@ def cmd_kesim(args, cfg) -> int:
     from reels import kesim
     if args.mode:
         kesim.save_settings({"mode": args.mode})
-    proj = kesim.montage([Path(f).expanduser().resolve() for f in args.files])
+    answers = {"serbest": args.istek or ""}
+    if args.ref:  # bağlantı (Instagram/TikTok/YouTube) ya da referans video dosyası
+        answers["reference"] = {"file": str(Path(args.ref).expanduser().resolve())} if Path(args.ref).expanduser().is_file() \
+            else {"url": args.ref}
+    for k in ("tarz", "sure", "altyazi", "muzik", "efekt", "renk", "tempo"):
+        if getattr(args, k):
+            answers[k] = getattr(args, k)
+    proj = kesim.montage([Path(f).expanduser().resolve() for f in args.files],
+                         answers=answers if any(answers.values()) else None)
     for c in proj.get("clips", []):
         print(f"✔ {c.get('output')}  ({c.get('duration', 0):.1f} sn)")
     for d in proj.get("delivered", []):
         print(f"  Hazır: {d}")
     for n in proj.get("notes", []):
         print(f"  · {n}")
+    return 0 if proj.get("status") == "done" else 1
+
+
+def cmd_foto(args, cfg) -> int:
+    """Fotoğraflarım (Masaüstü/kesim/Fotoğraflarım) kutusundaki fotoğraflardan video."""
+    from reels import photos
+    items = photos.list_photos()
+    if args.list or not (args.names or args.son):
+        print(f"Klasör: {photos.photo_dir()}  ({len(items)} fotoğraf, en yeni önce)")
+        for it in items[:60]:
+            print(f"  {it['name']}")
+        return 0
+    names = list(args.names) or [it["name"] for it in items[:args.son]][::-1]   # --son N: en yeni N, çekim sırasıyla
+    if args.anlat:  # seslendirmeli video fabrika hattında üretilir: çalışan uygulamanın kuyruğuna ekle
+        import json
+        import urllib.request
+        req = urllib.request.Request("http://127.0.0.1:8765/api/photos/video", method="POST",
+                                     data=json.dumps({"photos": names, "mode": "anlatim", "istek": args.anlat}).encode(),
+                                     headers={"Content-Type": "application/json"})
+        try:
+            r = json.loads(urllib.request.urlopen(req, timeout=30).read())
+        except OSError as exc:
+            raise StageError(f"uygulama kapalı (python app/server.py): {exc}") from exc
+        print(r.get("error") or f"✔ Anlatımlı video kuyruğa eklendi ({r['count']} fotoğraf); bitince Masaüstü\\kesim\\Hazır")
+        return 1 if r.get("error") else 0
+    from reels import kesim
+    proj = kesim.montage(photos.to_uploads(names), answers={"serbest": args.istek} if args.istek else None)
+    for c in proj.get("clips", []):
+        print(f"✔ {c.get('output')}  ({c.get('duration', 0):.1f} sn)")
+    for d in proj.get("delivered", []):
+        print(f"  Hazır: {d}")
     return 0 if proj.get("status") == "done" else 1
 
 
@@ -260,6 +302,17 @@ def main() -> int:
     p = sub.add_parser("kesim", help="Kesim: dosyaları tek adımda montajla (öğrenilen stil, ses, altyazı, müzik)")
     p.add_argument("files", nargs="+")
     p.add_argument("--mode", choices=["auto", "full", "clips"])
+    p.add_argument("--ref", help="şuna benzet: Instagram/TikTok/YouTube bağlantısı veya referans video dosyası")
+    p.add_argument("--istek", help='serbest istek, ör. "enerjik, lo-fi müzik, geçişlerde vınlama, 30 sn"')
+    from reels.brief import QUESTIONS
+    for key, label, choices in QUESTIONS:
+        p.add_argument(f"--{key}", choices=[v for v, _ in choices], help=label)
+    p = sub.add_parser("foto", help="Fotoğraflarım kutusundaki fotoğraflardan video (montaj ya da --anlat)")
+    p.add_argument("names", nargs="*", help="fotoğraf adları (Fotoğraflarım klasörüne göre); boşsa listeler")
+    p.add_argument("--son", type=int, default=0, help="en yeni N fotoğrafı kullan")
+    p.add_argument("--istek", help='montaj isteği, ör. "neşeli müzik, 30 sn"')
+    p.add_argument("--anlat", help="seslendirmeli, altyazılı video: ne anlatılacağı (uygulama açık olmalı)")
+    p.add_argument("--list", action="store_true")
     p = sub.add_parser("mcp", help="MCP sunucularını Claude Code'a kaydet (reels-fabrikasi, playwright, github...)")
     p.add_argument("--list", action="store_true", help="yalnızca listele, kaydetme")
     p = sub.add_parser("status", help="görev durumları")
@@ -270,7 +323,8 @@ def main() -> int:
     cfg = load_config()
     handlers = {"doctor": cmd_doctor, "new": cmd_new, "validate": cmd_validate, "produce": cmd_produce,
                 "run": cmd_run, "status": cmd_status, "candidates": cmd_candidates, "selftest": cmd_selftest,
-                "hook": cmd_hook, "title": cmd_title, "chapters": cmd_chapters, "mcp": cmd_mcp, "kesim": cmd_kesim}
+                "hook": cmd_hook, "title": cmd_title, "chapters": cmd_chapters, "mcp": cmd_mcp, "kesim": cmd_kesim,
+                "foto": cmd_foto}
     try:
         return handlers[args.cmd](args, cfg)
     except (StageError, FileNotFoundError) as exc:

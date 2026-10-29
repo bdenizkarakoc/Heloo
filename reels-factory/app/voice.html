@@ -34,6 +34,10 @@
   .prof { border-top: 1px solid var(--line); padding: 12px 0; } .prof:first-child { border-top: 0; padding-top: 0; }
   audio { width: 100%; height: 36px; margin-top: 6px; }
   pre { background: #070a12; border: 1px solid var(--line); border-radius: 10px; padding: 10px; max-height: 160px; overflow: auto; font-size: 12px; white-space: pre-wrap; }
+  .tune { margin-top: 10px; display: grid; gap: 6px; } .tune label { display: grid; gap: 2px; font-size: 13px; color: var(--muted); }
+  .tune input[type=range] { width: 100%; }
+  .eng { padding: 8px 10px; border-radius: 10px; background: #133a36; color: #4fd1c5; font-size: 13px; margin-bottom: 8px; }
+  .eng.off { background: #3b331a; color: #ffd23f; }
 </style>
 </head>
 <body>
@@ -82,7 +86,15 @@
     <div class="card">
       <h2>Benim sesimle okut</h2>
       <textarea id="tryText" rows="3">Merhaba arkadaşlar! Bugün size çok ilginç bir şey anlatacağım, sonuna kadar izleyin.</textarea>
-      <div style="margin-top:8px"><button id="btnTry" disabled>Oku</button> <span id="tryState" class="muted"></span></div>
+      <div class="tune" id="tuneBox">
+        <label>Duygu / enerji <span id="exV"></span><input type="range" id="ex" min="0.25" max="1" step="0.05" value="0.5"></label>
+        <label>Sakinlik ↔ canlılık <span id="cfV"></span><input type="range" id="cf" min="0.2" max="0.8" step="0.05" value="0.5"></label>
+        <div class="muted">Duygu yükseldikçe daha heyecanlı okur. Sakinlik düşükse daha ağır ve tok, yüksekse daha hızlı ve canlı.</div>
+      </div>
+      <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <button id="btnTry" disabled>Yeni motorla oku (önerilen)</button>
+        <button class="ghost" id="btnTryOld" disabled>Eski motorla oku (karşılaştır)</button>
+        <span id="tryState" class="muted"></span></div>
       <audio id="tryAudio" controls style="display:none"></audio>
     </div>
     <div class="card"><h2>İşlem kaydı</h2><pre id="log">—</pre></div>
@@ -197,8 +209,12 @@ $("btnBuild").onclick = async () => {
 
 async function loadProfiles() {
   const r = await api("/api/voice/profiles");
-  $("engine").innerHTML = r.engine ? (r.models ? "" : "Ses modeli ilk kullanımda indirilecek (~1.3 GB).")
-    : `Ses motoru kurulu değil (PyTorch, ~250 MB). <button class="ghost" onclick="setupEngine()">Ses motorunu kur</button>`;
+  const c = r.clone || {};
+  $("engine").innerHTML = c.available
+    ? `<div class="eng">✓ Yeni ses motoru: ${esc(c.engine)}. Metni doğrudan senin sesinle okur, her cümleyi dinleyip yanlış okunanı yeniden üretir.</div>`
+    : `<div class="eng off">Yeni ses motoru kurulu değil — eski yöntem (dönüştürme) kullanılıyor.</div>` +
+      (r.engine ? "" : `Ses motoru kurulu değil (PyTorch, ~250 MB). <button class="ghost" onclick="setupEngine()">Ses motorunu kur</button>`);
+  $("btnTryOld").style.display = c.available ? "" : "none";
   readySlug = null;
   $("profiles").innerHTML = r.profiles.length ? r.profiles.map((p) => {
     if (p.status === "ready" && (!readySlug || p.active)) readySlug = p.slug;
@@ -207,15 +223,30 @@ async function loadProfiles() {
       <div class="muted">${Math.round(p.speech_sec || 0)} sn konuşma · ${p.turns} cevap${p.f0 ? ` · ses perdesi ${Math.round(p.f0)} Hz` : ""}</div>
       ${p.error ? `<div class="err">${esc(p.error)}</div>` : ""}
       ${p.sample ? `<div class="muted" style="margin-top:6px">Senin kaydın (iyileştirilmiş):</div><audio controls preload="none" src="/${esc(p.sample)}"></audio>` : ""}
-      ${p.preview ? `<div class="muted">Senin sesinle üretilen:</div><audio controls preload="none" src="/${esc(p.preview)}"></audio>` : ""}
+      ${p.preview ? `<div class="muted">Senin sesinle üretilen (${p.preview_engine === "klon" ? "yeni motor" : "eski motor"}):</div><audio controls preload="none" src="/${esc(p.preview)}"></audio>` : ""}
+      ${p.clone_ref ? `<div class="muted">Yeni motorun örnek aldığı 10 sn (kayıt ${esc(p.clone_ref.file)}):</div><audio controls preload="none" src="/studio/voices/${esc(p.slug)}/clone_ref.wav?v=${esc(p.clone_ref.at)}"></audio>
+        <div><button class="ghost" onclick="reref('${esc(p.slug)}')">Başka örnek seç</button></div>` : ""}
       <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
         ${p.status === "ready" ? (p.active ? `<button class="ghost" onclick="activate('')">Videolarda kullanma</button>` : `<button onclick="activate('${esc(p.slug)}')">Videolarda bu sesi kullan</button>`) : ""}
         ${p.status !== "building" ? `<button class="ghost" onclick="resume('${esc(p.slug)}', '${esc(p.name)}')">Sohbete devam et</button>` : ""}
         ${p.status !== "building" && p.speech_sec >= 60 ? `<button class="ghost" onclick="rebuild('${esc(p.slug)}')">${p.status === "ready" ? "Yeniden öğren" : "Sesimi öğren"}</button>` : ""}
       </div></div>`;
   }).join("") : "Henüz profil yok.";
-  $("btnTry").disabled = !readySlug;
+  $("btnTry").disabled = $("btnTryOld").disabled = !readySlug;
+  const rp = r.profiles.find((x) => x.slug === readySlug);
+  if (rp && rp.clone && !tuneInit) { $("ex").value = rp.clone.exaggeration ?? 0.5; $("cf").value = rp.clone.cfg_weight ?? 0.5; }
+  tuneInit = true; showTune();
 }
+let tuneInit = false;
+const showTune = () => { $("exV").textContent = (+$("ex").value).toFixed(2); $("cfV").textContent = (+$("cf").value).toFixed(2); };
+["ex", "cf"].forEach((id) => $(id).addEventListener("change", async () => {
+  showTune(); if (readySlug) await api("/api/voice/tune", { slug: readySlug, exaggeration: +$("ex").value, cfg_weight: +$("cf").value });
+}));
+["ex", "cf"].forEach((id) => $(id).addEventListener("input", showTune));
+window.reref = async (slug) => {
+  const r = await api("/api/voice/reref", { slug });
+  $("tryState").textContent = r.error ? r.error : "Yeni örnek seçildi."; loadProfiles();
+};
 
 async function refreshLog() {
   const s = await api("/api/status");
@@ -227,14 +258,18 @@ window.setupEngine = async () => { await api("/api/voice/setup", {}); $("engine"
 window.activate = async (s) => { await api("/api/voice/activate", { slug: s }); loadProfiles(); };
 window.rebuild = async (s) => { await api("/api/voice/build", { slug: s }); loadProfiles(); };
 window.resume = (s, name) => { $("vname").value = name; $("setupCard").scrollIntoView(); $("consent").focus(); };
-$("btnTry").onclick = async () => {
-  $("btnTry").disabled = true; $("tryState").textContent = "üretiliyor… (ilk seferde model yüklenir)";
-  const r = await api("/api/voice/speak", { slug: readySlug, text: $("tryText").value });
-  $("btnTry").disabled = false;
+async function tryRead(engine) {
+  $("btnTry").disabled = $("btnTryOld").disabled = true;
+  $("tryState").textContent = "üretiliyor… (yeni motor ilk seferde ~20 sn model yükler)";
+  const r = await api("/api/voice/speak", { slug: readySlug, text: $("tryText").value, engine });
+  $("btnTry").disabled = $("btnTryOld").disabled = false;
   if (r.error) { $("tryState").innerHTML = `<span class="err">${esc(r.error)}</span>`; return; }
   $("tryState").textContent = ""; $("tryAudio").style.display = "block";
   $("tryAudio").src = "/" + r.audio + "?t=" + Date.now(); $("tryAudio").play();
-};
+  $("tryState").textContent = r.engine === "klon" ? "Yeni motor" : "Eski motor";
+}
+$("btnTry").onclick = () => tryRead("klon");
+$("btnTryOld").onclick = () => tryRead("knn");
 loadProfiles(); refreshLog();
 setInterval(loadProfiles, 5000); setInterval(refreshLog, 3000);
 </script>

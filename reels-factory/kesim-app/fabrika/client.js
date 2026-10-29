@@ -18,7 +18,7 @@ function loadConfig() {
   return { root, python: cfg.python || (process.platform === "win32" ? "pythonw" : "python3"), port: Number(cfg.port) || 8765 };
 }
 
-const API = 2;   // bu Kesim sürümünün beklediği fabrika uçları (server.py KESIM_API)
+const API = 4;   // bu Kesim sürümünün beklediği fabrika uçları (server.py KESIM_API)
 
 class Factory {
   constructor(cfg = loadConfig()) { this.cfg = cfg; this.starting = null; this.checked = false; }

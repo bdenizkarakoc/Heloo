@@ -276,12 +276,19 @@ def edit_options(files: list[str], total_sec: float) -> dict:
             "enhance": True, "improve_rounds": 1, "kesim": True}
 
 
-def start(files: list[Path], enqueue) -> dict:
-    """Yüklenmiş dosyalarla (studio/uploads) montaj işini kuyruğa ekler."""
-    from . import studio
+def start(files: list[Path], enqueue, answers: dict | None = None) -> dict:
+    """Yüklenmiş dosyalarla (studio/uploads) montaj işini kuyruğa ekler. answers: montaj sihirbazının
+    (isteğe bağlı) cevapları — referans bağlantı/video, tarz, süre, müzik, geçiş sesi... (reels.brief)."""
+    from . import brief, studio
     names = [f.name for f in files]
     total = sum(studio.media_info(f).get("duration") or 3.5 for f in files)
-    proj = studio.new_project("edit", files[0], edit_options(names, total))
+    opts = edit_options(names, total)
+    if answers:
+        extra = brief.build(answers)
+        if extra.get("music") is not None:
+            opts["music"] = extra.pop("music")
+        opts.update(extra)
+    proj = studio.new_project("edit", files[0], opts)
     enqueue("studio_edit", project=proj["id"], topic=f"Kesim: {len(files)} dosya")
     L.info("Kesim montajı başladı: %s (%d dosya, stil: %s)", proj["id"], len(files), proj["options"]["style"])
     return proj
@@ -354,8 +361,8 @@ def tick(enqueue) -> None:
                 enqueue("kesim_learn", video=rec["file"], topic=f"Kesim stilini öğren: {Path(rec['file']).name}")
 
 
-def montage(paths: list[Path], on_stage=None) -> dict:
-    """Komut satırı / Claude için eşzamanlı montaj: dosyaları alır, sonucu döndürür."""
+def montage(paths: list[Path], on_stage=None, answers: dict | None = None) -> dict:
+    """Komut satırı / Claude için eşzamanlı montaj: dosyaları alır, sonucu döndürür. answers: reels.brief cevapları."""
     from . import studio
     studio.UPLOADS.mkdir(parents=True, exist_ok=True)
     ups = []
@@ -366,7 +373,12 @@ def montage(paths: list[Path], on_stage=None) -> dict:
         shutil.copy2(p, dest)
         ups.append(dest)
     holder = {}
-    proj = start(ups, lambda kind, **kw: holder.update(kw))
+    ref = (answers or {}).get("reference") or {}
+    if ref.get("file") and Path(ref["file"]).is_file():   # referans video yolu → yüklemeler klasörüne kopya
+        rdest = studio.UPLOADS / studio.safe_upload_name(Path(ref["file"]).name)
+        shutil.copy2(ref["file"], rdest)
+        answers = {**answers, "reference": {"file": rdest.name}}
+    proj = start(ups, lambda kind, **kw: holder.update(kw), answers)
     proj = studio.run_edit(holder["project"])
     proj["delivered"] = deliver(proj)
     return proj

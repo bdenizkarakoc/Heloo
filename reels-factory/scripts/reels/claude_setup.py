@@ -12,7 +12,7 @@ import sys
 
 from . import log
 from .config import ROOT
-from .llm import claude_cli
+from .llm import claude_cli, cli_env
 
 L = log.get("claude")
 WIN = sys.platform.startswith("win")
@@ -21,7 +21,7 @@ NEW_CONSOLE = getattr(subprocess, "CREATE_NEW_CONSOLE", 0)
 
 def _run(args: list[str], timeout: float) -> subprocess.CompletedProcess:
     return subprocess.run(args, cwd=ROOT, capture_output=True, encoding="utf-8", errors="replace",
-                          timeout=timeout, stdin=subprocess.DEVNULL)
+                          timeout=timeout, stdin=subprocess.DEVNULL, env=cli_env())  # kullanıcının oturumu
 
 
 def status() -> dict:
@@ -54,7 +54,7 @@ def open_console(action: str) -> dict:
         if not exe:
             return {"ok": False, "manual": "Önce Claude Code'u kurun"}
         args = ["powershell", "-NoProfile", "-NoExit", "-Command", f"& '{exe}'"]
-    subprocess.Popen(args, cwd=ROOT, creationflags=NEW_CONSOLE)
+    subprocess.Popen(args, cwd=ROOT, creationflags=NEW_CONSOLE, env=cli_env())
     L.info("Claude Code penceresi açıldı (%s)", action)
     return {"ok": True}
 

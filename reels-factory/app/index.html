@@ -17,7 +17,7 @@
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin-bottom: 18px; }
   .card h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 12px; }
   label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
-  input, select { width: 100%; padding: 9px 10px; border-radius: 9px; border: 1px solid var(--line); background: #0e1424; color: var(--ink); font: inherit; }
+  input, select, textarea { width: 100%; padding: 9px 10px; border-radius: 9px; border: 1px solid var(--line); background: #0e1424; color: var(--ink); font: inherit; }
   button { cursor: pointer; border: 0; border-radius: 10px; padding: 10px 14px; font: 600 14px system-ui, sans-serif; background: var(--acc); color: #111; }
   button.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); }
   button:disabled { opacity: .45; cursor: default; }
@@ -39,6 +39,18 @@
   .switch { display: flex; align-items: center; gap: 10px; } .switch input { width: auto; transform: scale(1.3); }
   .cats { display: flex; flex-wrap: wrap; gap: 6px; } .cats label { display: flex; gap: 5px; align-items: center; margin: 0; color: var(--ink); font-size: 13px; background:#0e1424; border:1px solid var(--line); padding:4px 8px; border-radius:8px; }
   .cats input { width: auto; }
+  .pg { border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-bottom: 10px; background: #0e1424; }
+  .pg-top { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+  .pg-top b { font-size: 15px; } .pg-pct { font: 700 22px system-ui; color: var(--acc); }
+  .pg-bar { height: 10px; border-radius: 6px; background: #1d2740; overflow: hidden; margin: 8px 0 6px; }
+  .pg-bar > div { height: 100%; background: linear-gradient(90deg, var(--acc), #ffb13f); transition: width .6s; }
+  .pg.done .pg-bar > div { background: var(--acc2); } .pg.failed .pg-bar > div { background: var(--bad); }
+  .pg-steps { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 3px 10px; margin-top: 8px; font-size: 13px; }
+  .pg-steps span { color: var(--muted); } .pg-steps .done { color: var(--acc2); } .pg-steps .running { color: var(--acc); font-weight: 600; }
+  .pg-steps .failed { color: var(--bad); font-weight: 600; }
+  .pg-q { display: flex; gap: 8px; align-items: center; padding: 6px 0; border-top: 1px dashed var(--line); font-size: 13px; }
+  .pg-q:first-child { border-top: 0; }
+  details.logbox summary { cursor: pointer; color: var(--muted); font-size: 13px; margin-top: 8px; }
 </style>
 </head>
 <body>
@@ -47,6 +59,9 @@
   <h1>Reels Fabrikası</h1>
   <span id="statusText" class="muted">bağlanıyor…</span>
   <span style="flex:1"></span>
+  <a href="/kur" style="color:var(--acc);text-decoration:none;font-weight:700">🧩 Video Kur</a>
+  <a href="/photos" style="color:var(--acc2);text-decoration:none;font-weight:600">🖼 Fotoğraflarım</a>
+  <a href="/kesim" style="color:var(--acc2);text-decoration:none;font-weight:600">✂ Kesim</a>
   <a href="/studio" style="color:var(--acc2);text-decoration:none;font-weight:600">🎬 Stüdyo</a>
   <a href="/voice" style="color:var(--acc2);text-decoration:none;font-weight:600">🎙️ Sesim</a>
   <a href="/publish" style="color:var(--acc2);text-decoration:none;font-weight:600">📤 Yayın</a>
@@ -56,22 +71,37 @@
 </header>
 <main>
   <section>
+    <div class="card" style="border-color:var(--acc)">
+      <h2>🤖 Asistan — söyle, yapsın</h2>
+      <div id="assistBox"></div>
+    </div>
+
     <div class="card">
       <h2>Yeni video</h2>
-      <label>Konu (boş bırakırsan sistem seçer)</label>
-      <input id="topic" placeholder="ör. Cem Karaca, Venüs'te bir gün…">
+      <label>Konu (boş bırakırsan sistem seçer) · / yaz → komutlar</label>
+      <textarea id="topic" rows="1" placeholder="ör. Cem Karaca, Venüs'te bir gün…  ·  /foto, /kesim, /ref, /kanca…"></textarea>
       <div class="row">
         <div><label>Kategori</label><select id="category"><option value="">Otomatik</option></select></div>
         <div style="max-width:90px"><label>Adet</label><input id="count" type="number" min="1" max="10" value="1"></div>
       </div>
       <label>Metnimden video (isteğe bağlı) — metin incelenir, doğrulanır, senaryoya çevrilir</label>
-      <textarea id="text" rows="4" style="width:100%;padding:9px 10px;border-radius:9px;border:1px solid var(--line);background:#0e1424;color:var(--ink);font:inherit" placeholder="Kendi metnini buraya yaz…"></textarea>
+      <textarea id="text" rows="3" placeholder="Kendi metnini buraya yaz…"></textarea>
       <div class="switch" style="margin-top:8px"><input type="checkbox" id="draw"><span>Görselleri kendisi çizsin (özgün illüstrasyon)</span></div>
-      <label>Kendi fotoğraf / video / müziğim (isteğe bağlı) — hepsi videoda kullanılır</label>
+      <label>Kendi fotoğraf / video / müziğim (isteğe bağlı) — hepsi videoda kullanılır · fotoğraf kutun: <a href="/photos" style="color:var(--acc2)">🖼 Fotoğraflarım</a></label>
       <input type="file" id="media" multiple accept="image/*,video/*,audio/*,.heic,.heif">
       <div id="mediaList" class="muted" style="margin-top:4px"></div>
       <div style="margin-top:14px"><button id="btnNew">Üret</button></div>
       <p class="muted" id="providerNote"></p>
+    </div>
+
+    <div class="card" id="voiceCard" style="border-color:#4fd1c5">
+      <h2>🎙 Sesim — videolarda senin sesin</h2>
+      <div id="voiceState" class="muted">denetleniyor…</div>
+      <audio id="voiceSample" controls preload="none" style="width:100%;margin-top:8px;display:none"></audio>
+      <div class="row" style="margin-top:10px;flex-wrap:wrap">
+        <button id="btnVoiceToggle" style="display:none"></button>
+        <a href="/voice" style="flex:0 0 auto"><button class="ghost">Sesim sayfası</button></a>
+      </div>
     </div>
 
     <div class="card">
@@ -118,7 +148,8 @@
       <h2>Şu an</h2>
       <div id="current" class="muted">Boşta.</div>
       <div id="queue" class="muted"></div>
-      <pre id="log"></pre>
+      <div id="recent"></div>
+      <details class="logbox"><summary>Ayrıntılı kayıt (log)</summary><pre id="log"></pre></details>
     </div>
     <div class="card">
       <div class="row" style="margin-bottom:10px"><h2 style="margin:0">Buluttan gelenler</h2>
@@ -136,6 +167,8 @@
     </div>
   </section>
 </main>
+<script src="/komut.js"></script>
+<script src="/komutlar.js"></script>
 <script>
 const $ = (id) => document.getElementById(id);
 const api = async (p, body) => {
@@ -155,6 +188,7 @@ async function refreshStatus() {
   $("providerNote").innerHTML = s.provider === "manual"
     ? "<span style='color:var(--bad)'>Otomatik senaryo için Claude API anahtarı (.env) veya kurulu ve giriş yapılmış Claude Code gerekir.</span>"
     : "Senaryo: " + PROV_TR[s.provider];
+  if (s.claude_limit) $("providerNote").innerHTML += `<br><span class="warn">⏳ ${esc(s.claude_limit)}</span>`;
   $("btnNew").disabled = s.provider === "manual";
   $("caps").innerHTML = Object.entries(s.capabilities).map(([k, v]) => `<div><b>${esc(k)}</b>: ${esc(v)}</div>`).join("");
   $("licenseNote").textContent = `Lisans modu — görsel: ${s.license.visuals}, müzik: ${s.license.music}` +
@@ -176,11 +210,8 @@ async function refreshStatus() {
   $("autoBadge").className = "pill" + (a.enabled ? " done" : "");
   $("nextRun").textContent = a.enabled && a.next_run ? "Sonraki üretim: " + new Date(a.next_run).toLocaleString("tr-TR") : "";
   const c = s.current;
-  $("current").innerHTML = c
-    ? `<span class="pill running">çalışıyor</span> ${esc(c.kind === "new" ? (c.topic || "yeni konu") : "yeniden üretim")} · ${esc(c.job || "görev hazırlanıyor")} · başladı ${new Date(c.started).toLocaleTimeString("tr-TR")}`
-    : "Boşta.";
-  $("queue").textContent = s.pending.length ? `Sırada: ${s.pending.length} görev` : "";
   logJob = c && c.job ? c.job : logJob;
+  refreshProgress();
   const cl = s.cloud || {}, last = cl.last;
   $("cloudNote").innerHTML = cl.running ? "kontrol ediliyor…"
     : !last ? "" : last.ok
@@ -238,10 +269,59 @@ async function refreshJobs() {
           ${j.status !== "producing" ? `<button class="ghost" onclick="reproduce('${esc(j.id)}')">yeniden üret</button>` : ""}
         </div>
       </div>
-      <div class="stages">${Object.entries(j.stages).map(([k, v]) => `<span class="st ${esc(v)}">${esc(STAGE_TR[k] || k)}</span>`).join("")}</div>
+      <div class="pg-bar" style="height:6px;margin:6px 0 4px"><div style="width:${Math.max(2, (j.progress || {}).pct || 0)}%;${j.status === "done" ? "background:var(--acc2)" : j.status === "failed" ? "background:var(--bad)" : ""}"></div></div>
+      <div class="stages"><span class="muted" style="font-size:12px;margin-right:4px">%${(j.progress || {}).pct ?? 0}</span>${Object.entries(j.stages).map(([k, v]) => `<span class="st ${esc(v)}">${ICON[v] || "○"} ${esc(STAGE_TR[k] || k)}</span>`).join("")}</div>
       ${Object.entries(j.errors).map(([k, v]) => `<div class="err">✖ ${esc(STAGE_TR[k] || k)}: ${esc(String(v).slice(0, 300))}</div>`).join("")}
       ${j.warnings.map((w) => `<div class="warn">! ${esc(w)}</div>`).join("")}
     </div>`).join("") : "Henüz görev yok.";
+}
+
+// İlerleme: yüzde, kalan süre, adımlar (✓ bitti · ▶ şu an · ○ bekliyor); sıradakiler "başlamadı"
+const ICON = { done: "✓", skipped: "✓", running: "▶", failed: "✖", pending: "○" };
+const fmtSec = (n) => n == null ? "" : n < 60 ? `${n} sn` : `${Math.floor(n / 60)} dk ${n % 60 ? (n % 60) + " sn" : ""}`;
+function pgCard(it, cls) {
+  const steps = (it.steps || []).map((x) => `<span class="${esc(x.status)}">${ICON[x.status] || "○"} ${esc(x.name)}${
+    x.status === "running" && x.pct != null ? ` · %${x.pct}` : x.sec ? ` · ${esc(fmtSec(x.sec))}` : ""}</span>`).join("");
+  return `<div class="pg ${cls || ""}">
+    <div class="pg-top"><div><b>${esc(it.title || it.kind)}</b> <span class="pill ${cls === "done" ? "done" : cls === "failed" ? "failed" : "running"}">${esc(it.state)}</span>
+      <div class="muted">${esc(it.kind)} · ${esc(it.current || "")}${it.eta ? " · kalan ~" + esc(fmtSec(it.eta)) : ""}</div></div>
+      <span class="pg-pct">%${it.pct ?? 0}</span></div>
+    <div class="pg-bar"><div style="width:${Math.max(2, it.pct || 0)}%"></div></div>
+    <div class="pg-steps">${steps}</div></div>`;
+}
+async function refreshProgress() {
+  let p; try { p = await api("/api/progress"); } catch { return; }
+  $("current").innerHTML = p.running ? pgCard(p.running, "") : '<span class="muted">Boşta — şu an çalışan iş yok.</span>';
+  $("queue").innerHTML = p.queued.length ? `<div class="muted" style="margin:6px 0 2px">Sırada (henüz başlamadı):</div>` + p.queued.map((q) =>
+    `<div class="pg-q"><span class="pill">${q.position}. sırada</span><span>${esc(q.kind)}${q.title ? " · " + esc(q.title) : ""}</span></div>`).join("") : "";
+  $("recent").innerHTML = p.recent.length ? `<div class="muted" style="margin:10px 0 4px">Son biten işler:</div>` +
+    p.recent.slice(0, 3).map((r) => pgCard(r, r.state === "bitti" ? "done" : "failed")).join("") : "";
+}
+
+// Sesim kartı: videolar kimin sesiyle okunuyor (senin sesin / hazır ses), tek tıkla aç-kapa
+let voiceInfo = null;
+async function refreshVoice() {
+  let r; try { r = await api("/api/voice/profiles"); } catch { return; }
+  voiceInfo = r;
+  const ready = r.profiles.filter((p) => p.status === "ready");
+  const act = r.profiles.find((p) => p.active);
+  const c = r.clone || {};
+  const btn = $("btnVoiceToggle");
+  if (act) {
+    $("voiceState").innerHTML = `<span class="pill done">açık</span> Videolar <b>senin sesinle</b> okunuyor (${esc(act.name)}) · ` +
+      (c.available ? "yeni motor: " + esc(c.engine) : "eski motor (dönüştürme)");
+    btn.textContent = "Hazır sese dön"; btn.className = "ghost"; btn.style.display = "";
+    btn.onclick = async () => { await api("/api/voice/activate", { slug: "" }); refreshVoice(); };
+  } else if (ready.length) {
+    $("voiceState").innerHTML = `<span class="pill">kapalı</span> Videolar hazır sesle (Emel/Ahmet) okunuyor. Sesin hazır: ${esc(ready[0].name)}`;
+    btn.textContent = "Videolarda benim sesimi kullan"; btn.className = ""; btn.style.display = "";
+    btn.onclick = async () => { await api("/api/voice/activate", { slug: ready[0].slug }); refreshVoice(); };
+  } else {
+    $("voiceState").innerHTML = "Sesin henüz öğretilmedi. <b>Sesim</b> sayfasında 5 dakikalık sohbetle öğret; sonra bütün videolar senin sesinle okunur.";
+    btn.style.display = "none";
+  }
+  const smp = act || ready[0];
+  if (smp && smp.preview) { $("voiceSample").style.display = "block"; $("voiceSample").title = "Senin sesinle üretilmiş örnek"; if (!$("voiceSample").src) $("voiceSample").src = "/" + smp.preview.split("\\").join("/"); }
 }
 
 async function refreshLog() {
@@ -287,7 +367,7 @@ $("media").onchange = async () => {
 $("btnNew").onclick = async () => {
   await api("/api/new", { topic: $("topic").value, category: $("category").value, count: +$("count").value || 1,
                           text: $("text").value, draw: $("draw").checked, media: mediaFiles.map((m) => m.file) });
-  $("topic").value = ""; $("text").value = ""; mediaFiles = []; $("mediaList").textContent = ""; refreshStatus();
+  $("topic").value = ""; $("text").value = ""; ["topic", "text"].forEach((id) => $(id).dispatchEvent(new Event("input"))); mediaFiles = []; $("mediaList").textContent = ""; refreshStatus();
 };
 $("btnClaudeInstall").onclick = async () => {
   const r = await api("/api/claude/install", {});
@@ -311,7 +391,18 @@ $("btnAuto").onclick = async () => {
 };
 refreshStatus(); refreshJobs(); refreshCloud(); refreshClaude();
 setInterval(refreshClaude, 60000);
+refreshVoice(); setInterval(refreshVoice, 20000);
 setInterval(refreshStatus, 3000); setInterval(refreshJobs, 8000); setInterval(refreshLog, 2500);
+</script>
+<script>
+FabrikaKomut.attach($("topic"), fabrikaKomutlari(), { onEnter: () => $("btnNew").click() });
+FabrikaKomut.grow($("text"));
+const KOMUTLAR = fabrikaKomutlari();
+FabrikaKomut.assistant($("assistBox"), KOMUTLAR, {
+  post: async (p, b) => (await fetch(p, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b) })).json(),
+  upload: async (blob, name) => { const r = await (await fetch("/api/studio/upload?name=" + encodeURIComponent(name), { method: "PUT", body: blob })).json(); if (r.error) throw new Error(r.error); return r.file; },
+  context: () => $("current").innerText.slice(0, 300),
+});
 </script>
 </body>
 </html>

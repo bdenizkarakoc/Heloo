@@ -38,6 +38,7 @@ DEFAULT_STYLE: dict = {
     "progress": {"enabled": True, "color": "#FFD23F", "height": 10, "position": "bottom"},
     "flash": {"enabled": True},
     "music": {"enabled": False, "gain_db": -18, "mood": "upbeat"},
+    "sfx": {"enabled": False, "query": "whoosh", "gain_db": -9, "min_gap": 2.5},   # kesimlerde geçiş sesi (kütüphane)
 }
 
 
@@ -364,6 +365,12 @@ def render_clip(src: Path, window: tuple[float, float], words: list[dict], title
     else:
         run(["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-t", f"{total:.3f}", "-i",
              "anullsrc=r=48000:cl=stereo", voice.name], cwd=work)
+    sfx_info = None
+    if style["sfx"].get("enabled"):
+        try:
+            voice, sfx_info = _add_sfx(voice, style["sfx"], out_pieces, total, work)
+        except Exception as exc:  # noqa: BLE001 — efekt bulunamazsa video efektsiz üretilir
+            L.warning("geçiş sesi eklenemedi: %s", exc)
     mix_src = voice
     use_music = style["music"]["enabled"] if music is None else music
     music_info = None
@@ -392,4 +399,40 @@ def render_clip(src: Path, window: tuple[float, float], words: list[dict], title
          "-crf", "20", "-pix_fmt", "yuv420p", "-r", str(fps), "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
          "-t", f"{total:.3f}", "-movflags", "+faststart", str(dest.resolve())], cwd=work, timeout=None)
     return {"duration": round(total, 2), "pieces": len(pieces), "cut_seconds": round(end - start - total, 1),
-            "srt": srt, "size": [W, H], "music": (music_info or {}).get("title")}
+            "srt": srt, "size": [W, H], "music": (music_info or {}).get("title"), "sfx": sfx_info}
+
+
+_SFX_CACHE: dict[str, dict] = {}
+
+
+def _add_sfx(voice: Path, cfg_sfx: dict, pieces: list, total: float, work: Path) -> tuple[Path, dict | None]:
+    """Kütüphaneden (Openverse, CC0/CC BY) kısa bir geçiş sesi bulur ve kesim noktalarına yerleştirir."""
+    from . import library
+    q = str(cfg_sfx.get("query") or "whoosh")[:60]
+    item = _SFX_CACHE.get(q)
+    if not item:
+        res = [r for r in library.search("sfx", q)["results"] if (r.get("duration") or 9) <= 3.5]
+        res.sort(key=lambda r: (not r["license"].startswith(("CC0", "Kamu")), r.get("duration") or 9))
+        if not res:
+            return voice, None
+        item = {**library.fetch(res[0]["id"]), "query": q}
+        _SFX_CACHE[q] = item
+    gap = float(cfg_sfx.get("min_gap", 2.5))
+    times, last = [], -gap
+    for a, _b in pieces[1:]:
+        if a - last >= gap and a < total - 0.5:
+            times.append(max(0.0, a - 0.12))   # efekt kesimden hemen önce başlar
+            last = a
+    if not times:
+        times = [0.05]
+    times = times[:40]
+    n = len(times)
+    gain = float(cfg_sfx.get("gain_db", -9))
+    parts = [f"[1:a]aformat=sample_rates=48000:channel_layouts=stereo,volume={gain}dB,asplit={n}" +
+             "".join(f"[s{i}]" for i in range(n))]
+    parts += [f"[s{i}]adelay={int(t * 1000)}|{int(t * 1000)}[d{i}]" for i, t in enumerate(times)]
+    parts.append("[0:a]" + "".join(f"[d{i}]" for i in range(n)) + f"amix=inputs={n + 1}:duration=first:normalize=0[o]")
+    out = work / "voice_sfx.wav"
+    run(["ffmpeg", "-y", "-v", "error", "-i", voice.name, "-i", str((ROOT / item["output"]).resolve()),
+         "-filter_complex", ";".join(parts), "-map", "[o]", "-ar", "48000", out.name], cwd=work)
+    return out, {"title": item["name"], "credit": item["credit"], "count": n}

@@ -14,8 +14,10 @@
   .drop.over, .drop:hover { border-color: var(--acc); color: var(--ink); background: #11182a; }
   .drop b { display: block; font-size: 18px; color: var(--ink); margin-bottom: 4px; }
   .drop input { display: none; }
-  .row { display: flex; gap: 8px; margin-top: 12px; } .row > input { flex: 1; }
-  input, select { padding: 10px 11px; border-radius: 10px; border: 1px solid var(--line); background: #0e1424; color: var(--ink); font: inherit; width: 100%; }
+  .row { display: flex; gap: 8px; margin-top: 12px; align-items: flex-start; } .row > input, .row > .grow { flex: 1; min-width: 0; }
+  .chip { display: inline-flex; gap: 8px; align-items: center; margin-top: 8px; padding: 5px 10px; border-radius: 99px; background: #1d2740; font-size: 13px; }
+  .chip button { padding: 0 6px; background: transparent; color: var(--muted); }
+  input, select, textarea { padding: 10px 11px; border-radius: 10px; border: 1px solid var(--line); background: #0e1424; color: var(--ink); font: inherit; width: 100%; }
   button { cursor: pointer; border: 0; border-radius: 10px; padding: 10px 14px; font: 600 14px system-ui, sans-serif; background: var(--acc); color: #111; white-space: nowrap; }
   button.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); }
   button:disabled { opacity: .45; cursor: default; }
@@ -37,6 +39,7 @@
 <main>
   <h1>✂ Kesim</h1>
   <div class="sub" id="sub">Bırak, gerisini Kesim yapsın.</div>
+  <div class="sub"><a href="/photos" style="color:var(--ok)">🖼 Fotoğraflarım</a> · <a href="/" style="color:var(--ok)">Kontrol paneli</a></div>
 
   <label class="drop" id="drop">
     <b>Videolarını ve fotoğraflarını buraya bırak</b>
@@ -46,8 +49,9 @@
   <div class="bar" id="bar"><div></div></div>
   <div class="muted" id="msg" style="margin-top:6px"></div>
 
+  <div id="briefChip" class="chip" hidden><span id="briefText"></span><button id="briefClear" title="Kaldır">✕</button></div>
   <div class="row">
-    <input id="topic" placeholder="ya da yaz: “Venüs'te bir gün” videosunu yap">
+    <div class="grow"><textarea id="topic" rows="1" placeholder="ya da yaz: “Venüs'te bir gün” videosunu yap  ·  / yaz → komutlar (/ref, /foto, /kanca…)"></textarea></div>
     <button id="make">Yap</button>
   </div>
 
@@ -73,11 +77,19 @@
     <pre id="probeOut" style="display:none"></pre>
   </details>
 </main>
+<script src="/komut.js"></script>
+<script src="/komutlar.js"></script>
 <script>
 const $ = (id) => document.getElementById(id);
 const api = async (p, body) => (await fetch(p, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {})).json();
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 let ST = {};
+let BRIEF = null;   // /ref ve /kesim komutlarıyla gelen istek: bir sonraki bırakılan dosyalara uygulanır
+function setBrief(b) {
+  BRIEF = b && Object.keys(b).length ? b : null;
+  $("briefChip").hidden = !BRIEF;
+  $("briefText").textContent = BRIEF ? "Sonraki montaj: " + [BRIEF.reference && ("şunun gibi → " + BRIEF.reference.url), BRIEF.serbest].filter(Boolean).join(" · ") : "";
+}
 
 function upload(file) {
   return new Promise((resolve, reject) => {
@@ -98,7 +110,8 @@ async function go(fileList) {
       $("msg").textContent = `Yükleniyor ${i + 1}/${files.length}: ${files[i].name}`;
       names.push((await upload(files[i])).file);
     }
-    const r = await api("/api/kesim/edit", { files: names });
+    const r = await api("/api/kesim/edit", { files: names, brief: BRIEF });
+    if (!r.error) setBrief(null);
     $("msg").textContent = r.error ? "✖ " + r.error : `Montaj başladı (${files.length} dosya, stil: ${r.options.style}). Bitince aşağıda ve Hazır klasöründe.`;
   } catch (e) { $("msg").textContent = "✖ " + e.message; }
   $("bar").style.display = "none"; $("files").value = ""; load();
@@ -114,8 +127,9 @@ $("make").onclick = async () => {
   const t = $("topic").value.trim(); if (!t) return;
   const r = await api("/api/new", { topic: t, text: t.length > 80 ? t : "", kesim: true, count: 1 });
   $("msg").textContent = r.error ? "✖ " + r.error : "Video üretimi başladı (araştırma, senaryo, ses, görsel, müzik). Bitince Hazır klasörüne konur.";
-  $("topic").value = "";
+  $("topic").value = ""; $("topic").dispatchEvent(new Event("input"));
 };
+$("briefClear").onclick = () => setBrief(null);
 
 window.folder = async (which) => { const r = await api("/api/kesim/folder", { which }); $("info").textContent = r.error || r.path; };
 window.publishVid = async (v) => { const r = await api("/api/publish/queue", { video: v }); $("msg").textContent = r.error ? "✖ " + r.error : "Yayın onay kuyruğuna eklendi (📤 Yayın)."; };
@@ -154,6 +168,13 @@ async function load() {
     $("info").textContent = ST.found ? `Kesim.exe: ${ST.path}` : "Kesim.exe bulunamadı (isteğe bağlı).";
   }
 }
+const komut = FabrikaKomut.attach($("topic"), fabrikaKomutlari({
+  kesim: true,
+  ref: (url, istek) => { setBrief({ reference: { url }, ...(istek ? { serbest: istek } : {}) }); return "Tamam: şimdi videolarını/fotoğraflarını yukarıya bırak, bu bağlantının tarzıyla montajlanacak."; },
+  kesimIstek: (istek) => { if (!istek) return "Videolarını ve fotoğraflarını yukarıya bırak."; setBrief({ serbest: istek }); return "Tamam: şimdi dosyalarını bırak, bu isteğe göre montajlanacak."; },
+}), { onEnter: () => $("make").click() });
+const qs = new URLSearchParams(location.search);
+if (qs.get("ref") || qs.get("istek")) setBrief({ ...(qs.get("ref") ? { reference: { url: qs.get("ref") } } : {}), ...(qs.get("istek") ? { serbest: qs.get("istek") } : {}) });
 load(); setInterval(load, 5000);
 </script>
 </body>
