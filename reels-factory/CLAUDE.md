@@ -35,7 +35,7 @@ python scripts/factory.py status [<görev>]
 | `scripts/reels/llm.py` | Claude API ile araştırma + senaryo (yalnızca otonom mod) |
 | `scripts/reels/tts.py` | edge-tts / ElevenLabs / Piper; kelime zamanları ve hizalama |
 | `scripts/reels/captions.py` | Zaman çizelgesi (ses saattir), altyazı grupları, SRT |
-| `scripts/reels/visuals.py` | Görsel sağlayıcıları, lisans filtreleri, ön işleme, aday inceleme |
+| `scripts/reels/visuals.py` | Görsel sağlayıcıları (Wikimedia Commons dahil), lisans filtreleri, ön işleme, aday inceleme; bulunamayınca genel sorgular + Claude görsel denetimi (`vet_image`; `categories.*.vet_images` ile her görsel), yıl uyumlu sıralama |
 | `scripts/reels/audio.py` | Müzik (kütüphane/Openverse/prosedürel), ducking, SFX, iki geçişli loudnorm, mux |
 | `scripts/reels/compose.py` | Metin ölçümü (gerçek font), güvenli alan yerleşimi, HyperFrames proje üretimi, render |
 | `scripts/reels/qc.py` | Teknik QC, ASR ile anlaşılırlık/senkron, kontak tablosu, otomatik düzeltmeler |
