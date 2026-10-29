@@ -85,8 +85,15 @@ python -m pip install -q --upgrade pip
 python -m pip install -q -r requirements.txt
 if ($LASTEXITCODE -ne 0) { Fail "Python paketleri kurulamadi." }
 Ok "requirements.txt"
-python -m pip install -q graphifyy
-if ($LASTEXITCODE -ne 0) { Warn "Graphify (bilgi haritasi) kurulamadi; diger her sey calisir." } else { Ok "Graphify (bilgi haritasi)" }
+python -m pip install -q --upgrade "graphifyy[mcp]>=0.9.95"
+if ($LASTEXITCODE -ne 0) { Warn "Graphify (bilgi haritasi) kurulamadi; diger her sey calisir." } else {
+  Ok "Graphify (bilgi haritasi)"
+  # Claude Code'a /graphify becerisi (Windows surumu); kod haritasi (yapay zekasiz, yerel)
+  python -m graphify install --platform windows | Out-Null
+  if ($LASTEXITCODE -eq 0) { Ok "Graphify Claude Code becerisi (/graphify)" } else { Warn "Graphify becerisi Claude Code'a eklenemedi." }
+  python -m graphify update scripts | Out-Null
+  if (Test-Path (Join-Path $App "scripts\graphify-out\graph.json")) { Ok "Kod haritasi: scripts\graphify-out" }
+}
 python -m pip install -q uv
 if ($LASTEXITCODE -ne 0) { Warn "uv kurulamadi; fetch ve git MCP sunuculari atlanir." } else { Ok "uv (fetch/git MCP sunuculari icin)" }
 

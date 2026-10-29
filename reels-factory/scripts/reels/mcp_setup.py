@@ -46,6 +46,14 @@ def _python() -> str:
     return str(exe)
 
 
+def _graphify(graph: Path) -> dict | None:
+    """Graphify MCP sunucusu (graph.json'u sorgulanabilir yapar); paket kurulu ve harita varsa."""
+    import importlib.util
+    if not graph.is_file() or importlib.util.find_spec("graphify") is None:
+        return None
+    return {"type": "stdio", "command": _python(), "args": ["-m", "graphify.serve", str(graph)]}
+
+
 def _premiere() -> dict | None:
     """Premiere Pro MCP (leancoderkavy/premiere-pro-mcp, MIT): yalnızca paket kurulu ve Premiere Pro varsa eklenir."""
     exe = shutil.which("premiere-pro-mcp")
@@ -86,6 +94,12 @@ def servers() -> list[tuple[str, dict | None, str]]:
         ("context7", {"type": "http", "url": "https://mcp.context7.com/mcp", "headers": {"CONTEXT7_API_KEY": c7}}
          if c7 else {"type": "stdio", **_npx("@upstash/context7-mcp")},
          "API anahtarıyla" if c7 else "anahtarsız yerel sürüm (düşük kota)"),
+        ("graphify-icerik", _graphify(ROOT / "knowledge" / "corpus" / "graphify-out" / "graph.json"),
+         "Graphify içerik haritası (işlenen konular, kavramlar)" if _graphify(ROOT / "knowledge" / "corpus" / "graphify-out" / "graph.json")
+         else "içerik haritası henüz yok (panelde Bilgi haritası → Oluştur)"),
+        ("graphify-kod", _graphify(ROOT / "scripts" / "graphify-out" / "graph.json"),
+         "Graphify kod haritası (fabrika kodu)" if _graphify(ROOT / "scripts" / "graphify-out" / "graph.json")
+         else "kod haritası yok (python -m graphify update scripts)"),
         ("premiere-pro", _premiere(), "Adobe Premiere Pro'yu yönetir (Premiere açık + MCP paneli)" if _premiere()
          else "Premiere Pro ya da premiere-pro-mcp yok (scripts/install-premiere-mcp.ps1)"),
         ("brave-search", {"type": "stdio", **_npx("@brave/brave-search-mcp-server"), "env": {"BRAVE_API_KEY": brave}}

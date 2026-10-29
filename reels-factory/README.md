@@ -217,6 +217,10 @@ Sistemde kullanıldığı yerler:
   Harita 24 saatten eskiyse yeni bir video üretildiğinde kendiliğinden güncellenir.
 - **Kod haritası** (yapay zekâsız, yerel, saniyeler): `python -m graphify update scripts` →
   `scripts/graphify-out/GRAPH_REPORT.md`; bulut rutini kendi kendini onarmadan önce kodda bununla gezinir.
+- **Claude Code'da:** `install-all` Graphify'ı `[mcp]` ekiyle kurar, `/graphify` becerisini (Windows sürümü)
+  Claude Code'a ekler (`python -m graphify install --platform windows`), kod haritasını üretir ve `factory.py mcp`
+  iki MCP sunucusu kaydeder: **graphify-icerik** (içerik haritası) ve **graphify-kod** (kod haritası) —
+  `query_graph`, `get_node`, `get_neighbors`, `shortest_path`, `god_nodes`... Harita dosyası olmayan kaydedilmez.
 
 ## Reel notları (Obsidian)
 
