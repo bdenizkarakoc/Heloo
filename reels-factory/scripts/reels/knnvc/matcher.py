@@ -62,8 +62,11 @@ class KNeighborsVC(nn.Module):
         """
         feats = []
         for p in wavs:
-            feats.append(self.get_features(p, weights=self.weighting if weights is None else weights, vad_trigger_level=vad_trigger_level))
-        
+            f = self.get_features(p, weights=self.weighting if weights is None else weights, vad_trigger_level=vad_trigger_level)
+            if f is not None and f.shape[0]:
+                feats.append(f)
+        if not feats:
+            raise ValueError("kayıtlarda kullanılabilir konuşma yok (hepsi çok kısa ya da sessiz)")
         feats = torch.concat(feats, dim=0).cpu()
         return feats
         
@@ -98,6 +101,8 @@ class KNeighborsVC(nn.Module):
         if vad_trigger_level > 1e-3:
             transform = T.Vad(sample_rate=sr, trigger_level=vad_trigger_level)
             x_front_trim = transform(x)
+            if x_front_trim.shape[-1] < sr // 2:  # tamamen sessiz kayıt
+                return None
             # original way, disabled because it lacks windows support
             #waveform_reversed, sr = apply_effects_tensor(x_front_trim, sr, [["reverse"]])
             waveform_reversed = torch.flip(x_front_trim, (-1,))
@@ -106,7 +111,11 @@ class KNeighborsVC(nn.Module):
             #waveform_end_trim, sr = apply_effects_tensor(
             #    waveform_reversed_front_trim, sr, [["reverse"]]
             #)
-            x = waveform_end_trim
+            # sessiz/çok kısa kayıtta VAD her şeyi keser → WavLM "Kernel size can't be greater than actual input size"
+            if waveform_end_trim.shape[-1] >= sr // 2:
+                x = waveform_end_trim
+        if x.shape[-1] < sr // 2:
+            return None
 
         # extract the representation of each layer
         wav_input_16khz = x.to(self.device)

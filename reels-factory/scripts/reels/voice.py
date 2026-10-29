@@ -441,6 +441,8 @@ def convert(src: Path, dest: Path, slug: str) -> Path:
         matching = torch.load(ms_path, weights_only=True)
         with torch.inference_mode():
             q = m.get_features(_tensor(src))
+            if q is None:
+                raise StageError("dönüştürülecek ses çok kısa (0,5 sn'den az)")
             out = m.match(q, matching, topk=4)
     write_wav(dest, out.numpy().astype(np.float32), 16000)
     return dest
