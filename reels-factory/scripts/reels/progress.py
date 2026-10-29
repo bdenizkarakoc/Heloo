@@ -77,7 +77,9 @@ def job_progress(state: dict) -> dict:
     pct = 100 if status == "done" else round(100 * done_w / total)
     if status == "failed":
         failed = next((x for x in steps if x["status"] == "failed"), None)
-        current = f"{failed['name']} adımında hata" if failed else "hata"
+        err = str((stages.get(failed["key"]) or {}).get("error") or "") if failed else ""
+        err = err.split(": ", 1)[-1] if err.startswith(("StageError", "RuntimeError")) else err
+        current = (f"{failed['name']} adımında hata" if failed else "hata") + (f": {err[:300]}" if err else "")
     return {"pct": pct, "eta": None if status in ("done", "failed") else round(eta), "current": current, "steps": steps}
 
 
