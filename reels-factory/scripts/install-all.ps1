@@ -149,6 +149,10 @@ foreach ($sk in $skills) {
 }
 Ok ("Claude Code becerileri: " + $skills.Count + " (/yt-script, /yt-package, /yt-shorts ...)")
 
+# Premiere Pro MCP (Adobe Premiere kuruluysa Claude'dan Premiere'i yonetmek icin; Premiere yoksa yalnizca paket kurulur)
+Step "Premiere Pro MCP"
+powershell -ExecutionPolicy Bypass -File (Join-Path $App "scripts\install-premiere-mcp.ps1")
+
 # MCP sunuculari (reels-fabrikasi, playwright, memory, filesystem, fetch, git, github, sentry, context7; anahtarliysa brave-search, postgres)
 Step "Claude Code MCP sunuculari"
 python scripts/factory.py mcp

@@ -7,6 +7,7 @@ OAuth isteyenler (GitHub belirteçsiz, Sentry) eklendikten sonra Claude Code'da 
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -45,6 +46,21 @@ def _python() -> str:
     return str(exe)
 
 
+def _premiere() -> dict | None:
+    """Premiere Pro MCP (leancoderkavy/premiere-pro-mcp, MIT): yalnızca paket kurulu ve Premiere Pro varsa eklenir."""
+    exe = shutil.which("premiere-pro-mcp")
+    if not exe:
+        return None
+    if WIN:
+        pf = Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "Adobe"
+        if not any(pf.glob("Adobe Premiere Pro*")):
+            return None
+        return {"type": "stdio", "command": "cmd", "args": ["/c", "premiere-pro-mcp"]}
+    if sys.platform == "darwin" and not any(Path("/Applications").glob("Adobe Premiere Pro*")):
+        return None
+    return {"type": "stdio", "command": exe, "args": []}
+
+
 def servers() -> list[tuple[str, dict | None, str]]:
     """(ad, yapılandırma ya da None, not) listesi; None: eksik gereksinim nedeniyle atlanır."""
     uvx = _uvx()
@@ -70,6 +86,8 @@ def servers() -> list[tuple[str, dict | None, str]]:
         ("context7", {"type": "http", "url": "https://mcp.context7.com/mcp", "headers": {"CONTEXT7_API_KEY": c7}}
          if c7 else {"type": "stdio", **_npx("@upstash/context7-mcp")},
          "API anahtarıyla" if c7 else "anahtarsız yerel sürüm (düşük kota)"),
+        ("premiere-pro", _premiere(), "Adobe Premiere Pro'yu yönetir (Premiere açık + MCP paneli)" if _premiere()
+         else "Premiere Pro ya da premiere-pro-mcp yok (scripts/install-premiere-mcp.ps1)"),
         ("brave-search", {"type": "stdio", **_npx("@brave/brave-search-mcp-server"), "env": {"BRAVE_API_KEY": brave}}
          if brave else None, "web/görsel/video/haber araması" if brave else "BRAVE_API_KEY yok (ücretsiz anahtar)"),
         ("postgres", {"type": "stdio", **_npx("@bytebase/dbhub", "--readonly", "--dsn", pg)} if pg else None,

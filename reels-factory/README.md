@@ -459,6 +459,16 @@ Anahtarlar `.env`'de tutulur (Yayın → Ayarlar), sonra sunucular Claude Code'u
 yazılır. Claude Desktop için: Ayarlar → Developer → Edit Config içine
 `"reels-fabrikasi": {"command": "python", "args": ["C:\\Users\\<ad>\\Documents\\Heloo\\reels-factory\\app\\mcp_server.py"]}`.
 
+### Adobe Premiere Pro MCP
+
+`install-all` (ya da `scripts/install-premiere-mcp.ps1`) [premiere-pro-mcp](https://github.com/leancoderkavy/premiere-pro-mcp)
+(MIT) paketinin yayınlanmış sürümünü (`1.24.4`) global kurar; **Adobe Premiere Pro kurulu ve kapalıysa** Premiere
+bağlayıcısını (CEP paneli) yükler ve `--doctor` denetimini çalıştırır. Premiere kuruluysa `factory.py mcp` sunucuyu
+Claude Code'a `premiere-pro` adıyla ekler. Kullanım: Premiere'de bir proje aç → **Window > Extensions > MCP for Adobe
+Premiere Pro** → Claude'a önce "verify_premiere_connection çalıştır, değişiklik yapma" yaz. Premiere olmadan bu araçlar
+çalışmaz; Premiere'siz montaj için Kesim kullanılır. Kaldırmak: `install-premiere-mcp.ps1 -Remove`.
+Kaynak kodu `../premiere-pro-mcp/` altında değiştirilmeden durur (kurulum npm paketinden yapılır).
+
 ## Bulutta otomatik çalışma (Claude Code on the web)
 
 Zamanlanmış bir bulut görevi günde iki kez (İstanbul saatiyle ~09:47 ve ~18:47) `cloud/ROUTINE.md`

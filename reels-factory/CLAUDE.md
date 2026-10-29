@@ -54,7 +54,7 @@ python scripts/factory.py status [<görev>]
 | `kesim-app/` | Kesim masaüstü programına kurulan dosyalar: SelfEdit + `fabrika/` (client.js fabrika istemcisi, host.js IPC + Claude kontrol kapısı, ui.js Fabrika sekmesi); `scripts/install-kesim.ps1` kurar |
 | `app/kesim.html` | Sade Kesim penceresi (`/kesim`, `server.py --open --page kesim`) |
 | `app/mcp_server.py` | MCP sunucusu (stdio): fabrikayı Claude Code/Desktop'a araç olarak açar; yayın yalnızca onay kuyruğuna |
-| `scripts/reels/mcp_setup.py` | `factory.py mcp`: MCP sunucularını (reels-fabrikasi, playwright, memory, filesystem, fetch, git, github, sentry, context7, brave-search, postgres) Claude Code'a kaydeder |
+| `scripts/reels/mcp_setup.py` | `factory.py mcp`: MCP sunucularını (reels-fabrikasi, playwright, memory, filesystem, fetch, git, github, sentry, context7, premiere-pro, brave-search, postgres) Claude Code'a kaydeder; `scripts/install-premiere-mcp.ps1` Premiere Pro MCP'yi kurar |
 | `app/publish.html` | Yayın sayfası (`/publish`) |
 | `app/studio.html` | Stüdyo sayfası (`/studio`): yükleme, stil adlandırma, düzenleme seçenekleri, sonuçlar |
 | `scripts/reels/cancel.py` | "Durdur": iş kuyruğunun alt süreçlerini izler (Popen kancası `reels/__init__.py`), süreç ağacıyla sonlandırır; `job.stage` ve `util.run` durdurmayı denetler (`Cancelled`, StageError değil) |
