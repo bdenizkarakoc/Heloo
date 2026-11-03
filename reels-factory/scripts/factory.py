@@ -327,10 +327,15 @@ def cmd_anahtar(args, cfg) -> int:
         # panoya anahtarla birlikte etiket/satır sonu da kopyalanmış olabilir: kesin biçimli Gemini anahtarını ayıkla
         # (başka biçimlerde parça seçmek yanlış anahtar kaydedebilir: kaydetmeyip uyarmak daha güvenli)
         import re
-        found = re.findall(r"(?<![0-9A-Za-z_\-])AIza[0-9A-Za-z_\-]{35}(?![0-9A-Za-z_\-])", value)
+        found = re.findall(r"(?<![0-9A-Za-z_\-.])(?:AIza[0-9A-Za-z_\-]{35}|AQ\.[0-9A-Za-z_\-]{30,})(?![0-9A-Za-z_\-.])",
+                           value)
         if len(found) == 1:
             print(f"  panodaki metinden anahtar ayıklandı ({len(found[0])} karakter)")
             value = found[0]
+        else:  # anahtarı göstermeden panoda ne olduğunu anlat: parça uzunlukları + ilk 3 karakter
+            parts = value.split()
+            print("  panoda " + str(len(parts)) + " parça var: " +
+                  ", ".join(f"{len(p)} karakter ({p[:3]}…)" for p in parts[:6]))
     if args.ad != "SUPABASE_URL" and (len(value) < 16 or not value.isascii() or any(c.isspace() for c in value)):
         print(f"✖ kaydedilmedi: değer geçersiz görünüyor ({len(value)} karakter"
               f"{', Türkçe/özel karakter var' if not value.isascii() else ''}{', boşluk var' if any(c.isspace() for c in value) else ''})."
@@ -338,8 +343,8 @@ def cmd_anahtar(args, cfg) -> int:
         return 1
     set_secret(args.ad, value)
     print(f"✔ {args.ad} kaydedildi ({len(value)} karakter, {value[:4]}…) → {ROOT / '.env'}")
-    if args.ad == "GEMINI_API_KEY" and not value.startswith("AIza"):
-        print("  ! Gemini API anahtarları genelde 'AIza' ile başlar: aistudio.google.com/apikey → Create API key")
+    if args.ad == "GEMINI_API_KEY" and not value.startswith(("AIza", "AQ.")):
+        print("  ! Gemini API anahtarları 'AIza' (ya da yeni biçimde 'AQ.') ile başlar: aistudio.google.com/apikey")
     return 0
 
 
