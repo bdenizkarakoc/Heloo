@@ -64,7 +64,7 @@ if (Test-Path (Join-Path $Dir ".git")) {
   git fetch origin $Branch
   git checkout $Branch 2>$null; if ($LASTEXITCODE -ne 0) { git checkout -b $Branch "origin/$Branch" }
   # Kurulumun kendi urettigi dosyalar (npm kilit dosyalari) guncellemeyi engellemesin
-  git checkout -- "reels-factory/package-lock.json" "reels-factory/remotion/package-lock.json" 2>$null
+  git checkout -- "reels-factory/package-lock.json" "reels-factory/remotion/package-lock.json" "reels-factory/animasyon/studio/package-lock.json" 2>$null
   $changed = @(git status --porcelain --untracked-files=no)
   if ($changed.Count) {
     # Bilgisayardaki kaydedilmemis calisma: dokunmadan dur (kaybolmasin, gizlenmesin)
@@ -134,6 +134,13 @@ Push-Location (Join-Path $App "remotion")
 npm ci --silent --no-audit --no-fund
 if ($LASTEXITCODE -ne 0) { npm install --silent --no-save --no-audit --no-fund }
 if ($LASTEXITCODE -eq 0) { npx --yes remotion browser ensure | Out-Null; Ok "Remotion (React render motoru)" } else { Warn "Remotion kurulamadi; HyperFrames ile devam edilir." }
+Pop-Location
+# Animasyon (animasyon/TURKCE.md): cizgi-3D kisa film motoru (three.js + Remotion) + Kenney CC0 3D modelleri (~15 MB)
+Push-Location (Join-Path $App "animasyon\studio")
+npm ci --silent --no-audit --no-fund
+if ($LASTEXITCODE -ne 0) { npm install --silent --no-save --no-audit --no-fund }
+if ($LASTEXITCODE -eq 0) { node scripts/get-models.mjs | Out-Null }
+if ($LASTEXITCODE -eq 0) { Ok "Animasyon motoru (three.js + Remotion, Kenney modelleri)" } else { Warn "Animasyon motoru kurulamadi (diger ozellikler etkilenmez)." }
 Pop-Location
 npx hyperframes browser ensure
 npx hyperframes telemetry disable 2>$null | Out-Null

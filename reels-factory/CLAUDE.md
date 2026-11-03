@@ -21,6 +21,7 @@ python scripts/factory.py kesim <dosyalar...>     # Kesim: tek adımda montaj �
 #   --tarz --sure --altyazi --muzik --efekt --renk --tempo (seçenekler: --help)
 python scripts/factory.py foto [--list | <adlar>|--son N] [--istek ".."] [--anlat ".."]  # Fotoğraflarım → video
 python scripts/factory.py mcp [--list]           # MCP sunucularını Claude Code'a kaydet
+python scripts/factory.py anim-ses <metin> <klasör>   # animasyon kısa filmi için Türkçe voice.wav + words.json
 python scripts/factory.py status [<görev>]
 ```
 
@@ -64,7 +65,7 @@ python scripts/factory.py status [<görev>]
 | `scripts/reels/assistant.py` | AI asistan: yazılan/söylenen isteği sayfanın komutlarına çevirir ("Anladım: …"); ses kaydı GPU Whisper ile yazıya |
 | `scripts/reels/progress.py` | İlerleme: yüzde, kalan süre, adım listesi (`/api/progress`; geçmiş sürelerden öğrenilen ağırlıklar) |
 | `scripts/reels/photos.py` | Fotoğraflarım: `Masaüstü\kesim\Fotoğraflarım` kutusu (asla silinmez/üzerine yazılmaz), önizleme, seçili fotoğraflardan müzikli montaj (Kesim) ya da anlatımlı video (Fabrika); sayfa `app/photos.html` (`/photos`) |
-| `kesim-app/fabrika/komut.js` | `/komut` menüsü + aşağı doğru büyüyen metin kutusu; Kesim'de ve Fabrika sayfalarında (`/komut.js`) aynı dosya. Fabrika komut listesi `app/komutlar.js`, Kesim'inki `fabrika/ui.js`; Claude Code komutları depo kökündeki `.claude/commands/` (/video, /kesim, /foto, /ref, /yayin) |
+| `kesim-app/fabrika/komut.js` | `/komut` menüsü + aşağı doğru büyüyen metin kutusu; Kesim'de ve Fabrika sayfalarında (`/komut.js`) aynı dosya. Fabrika komut listesi `app/komutlar.js`, Kesim'inki `fabrika/ui.js`; Claude Code komutları depo kökündeki `.claude/commands/` (/video, /kesim, /foto, /ref, /yayin, /animasyon) |
 | `app/kesim.html` | Sade Kesim penceresi (`/kesim`, `server.py --open --page kesim`) |
 | `app/mcp_server.py` | MCP sunucusu (stdio): fabrikayı Claude Code/Desktop'a araç olarak açar; yayın yalnızca onay kuyruğuna |
 | `scripts/reels/mcp_setup.py` | `factory.py mcp`: MCP sunucularını (reels-fabrikasi, playwright, memory, filesystem, fetch, git, github, sentry, context7, premiere-pro, brave-search, postgres) Claude Code'a kaydeder; `scripts/install-premiere-mcp.ps1` Premiere Pro MCP'yi kurar |
@@ -72,6 +73,7 @@ python scripts/factory.py status [<görev>]
 | `app/studio.html` | Stüdyo sayfası (`/studio`): yükleme, stil adlandırma, düzenleme seçenekleri, sonuçlar |
 | `scripts/reels/cancel.py` | "Durdur": iş kuyruğunun alt süreçlerini izler (Popen kancası `reels/__init__.py`), süreç ağacıyla sonlandırır; `job.stage` ve `util.run` durdurmayı denetler (`Cancelled`, StageError değil) |
 | `scripts/reels/design.py` | Tasarım temaları: `design.themes` ayar katmanı (renk, yazı tipi, altyazı biçimi, geçiş seti, efektler), son kullanılmayanı seçer; görevde `design` olarak saklanır |
+| `animasyon/` | Çizgi-3D animasyon kısa film (MIT, Mr omi'nin Claude Animated Shorts becerisi): `studio/` three.js + Remotion projesi, `SKILL.md` akış, **`TURKCE.md` fabrika kuralları (öncelikli)**; Türkçe ses `factory.py anim-ses`; Claude Code `/animasyon` |
 | `remotion/` | Remotion (React) render motoru: `src/Reels.tsx` `composition/remotion.json`'ı HyperFrames şablonlarıyla aynı hareketlerle çizer (`render.engine: remotion` ya da `--engine remotion`) |
 | `assets/templates/*.j2` | HyperFrames kompozisyon şablonları (sahne, altyazı, üst katman) |
 | `config/settings.yaml` | Bütün ayarlar (gizli bilgi yok) |

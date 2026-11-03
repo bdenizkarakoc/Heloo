@@ -259,6 +259,38 @@ def cmd_mcp(args, cfg) -> int:
     return 0 if res["ok"] else 1
 
 
+def cmd_anim_ses(args, cfg) -> int:
+    """Animasyon (animasyon/ — çizgi 3D kısa film) için Türkçe seslendirme: fabrikanın ses zinciriyle (Sesim/edge-tts)
+    cümle cümle okur, şablonun beklediği <klasör>/voice.wav (48 kHz) ve words.json [{w, s, e}] dosyalarını yazar."""
+    import json
+    import re
+    import numpy as np
+    from reels import tts
+    from reels.util import load_audio, write_wav
+    text = Path(args.metin).read_text(encoding="utf-8") if Path(args.metin).is_file() else args.metin
+    text = "\n".join(l for l in text.splitlines() if l.strip() and not l.lstrip().startswith("#"))
+    sentences = [x.strip() for x in re.split(r"(?<=[.!?…])\s+", " ".join(text.split())) if x.strip()]
+    out = Path(args.klasor)
+    work = out / "_parts"
+    work.mkdir(parents=True, exist_ok=True)
+    gap = float(args.ara)
+    audio, words, t = [], [], 0.0
+    for i, sent in enumerate(sentences):
+        meta = tts.synthesize_scene({"id": f"c{i:03d}", "narration": sent}, work, cfg)
+        clip = load_audio(work / f"c{i:03d}.wav", tts.SR, 1)
+        words += [{"w": w["text"], "s": round(t + w["start"], 3), "e": round(t + w["end"], 3)} for w in meta["words"]]
+        audio += [clip, np.zeros(int(gap * tts.SR), dtype=np.float32)]
+        t += len(clip) / tts.SR + gap
+        print(f"{i + 1}/{len(sentences)}  {meta['duration']:.2f} sn  {meta['provider']}  {sent[:60]}")
+    write_wav(out / "voice.wav", np.concatenate(audio).astype(np.float32), tts.SR)
+    (out / "words.json").write_text(json.dumps(words, ensure_ascii=False, indent=1), encoding="utf-8")
+    import shutil
+    shutil.rmtree(work, ignore_errors=True)
+    print(f"voice.wav {t:.2f} sn · {len(words)} kelime ({len(words) / max(t, 0.1):.2f} kelime/sn) · "
+          f"story.ts TOTAL ≈ {int(round(t * 30)) + 45} kare (30 fps, sonda 1,5 sn pay)")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Otonom AI Reels Fabrikası")
     ap.add_argument("-v", "--verbose", action="store_true")
@@ -317,6 +349,10 @@ def main() -> int:
     p.add_argument("--list", action="store_true")
     p = sub.add_parser("mcp", help="MCP sunucularını Claude Code'a kaydet (reels-fabrikasi, playwright, github...)")
     p.add_argument("--list", action="store_true", help="yalnızca listele, kaydetme")
+    p = sub.add_parser("anim-ses", help="animasyon kısa filmi için Türkçe voice.wav + words.json (kelime zamanları)")
+    p.add_argument("metin", help="metin dosyası (# ile başlayan satırlar atlanır) ya da doğrudan metin")
+    p.add_argument("klasor", help="çıktı klasörü, ör. animasyon/studio/shorts/<ad>/voice")
+    p.add_argument("--ara", default="0.25", help="cümleler arası sessizlik (sn)")
     p = sub.add_parser("status", help="görev durumları")
     p.add_argument("job", nargs="?")
     args = ap.parse_args()
@@ -328,7 +364,7 @@ def main() -> int:
     handlers = {"doctor": cmd_doctor, "new": cmd_new, "validate": cmd_validate, "produce": cmd_produce,
                 "run": cmd_run, "status": cmd_status, "candidates": cmd_candidates, "selftest": cmd_selftest,
                 "hook": cmd_hook, "title": cmd_title, "chapters": cmd_chapters, "mcp": cmd_mcp, "kesim": cmd_kesim,
-                "foto": cmd_foto}
+                "foto": cmd_foto, "anim-ses": cmd_anim_ses}
     try:
         return handlers[args.cmd](args, cfg)
     except (StageError, FileNotFoundError) as exc:
