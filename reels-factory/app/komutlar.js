@@ -52,6 +52,7 @@
         const c = s.current;
         return [c ? `Çalışıyor: ${c.topic || c.kind} (${c.job || "hazırlanıyor"})` : "Boşta.",
           `Sırada: ${(s.pending || []).length}`, s.claude_limit || ""].filter(Boolean).join("\n"); } },
+      { name: "gorsel", alias: ["görsel", "resim"], desc: "Görselden video: karakter analizi, karaktere göre ses, hareketli klip", run: () => go("/gorsel") },
       { name: "kur", alias: ["videokur"], desc: "Video Kur: görsel, senaryo, ses, altyazı ve kurguyu ayrı ayrı ver", run: () => go("/kur") },
       { name: "sesim", alias: ["ses"], desc: "Sesim: kendi sesinle seslendirme (aç/kapat, dene)", run: () => go("/voice") },
       { name: "yayin", desc: "Yayın sayfası (onay kuyruğu)", run: () => go("/publish") },

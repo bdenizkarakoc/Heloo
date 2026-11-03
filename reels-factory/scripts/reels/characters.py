@@ -101,6 +101,49 @@ def _call(key: str, model: str, prompt: str, ref: Image.Image | None) -> Image.I
     raise StageError(f"Gemini ({model}): {reason}")
 
 
+def extend_vertical(src: Path, dest: Path, cfg: Config) -> Path:
+    """Yatay/kare görseli Gemini ile 9:16 dikey kareye genişletir (kenarlar sahneye uygun doldurulur, asıl içerik
+    değişmez). Model sırası `animation.gemini_models`."""
+    key = secret("GEMINI_API_KEY")
+    if not key:
+        raise StageError("GEMINI_API_KEY yok")
+    img = Image.open(src).convert("RGB")
+    w = img.height * 9 / 16
+    canvas = Image.new("RGB", (max(img.width, round(w)), max(img.height, round(img.width * 16 / 9))), (255, 255, 255))
+    canvas.paste(img, ((canvas.width - img.width) // 2, (canvas.height - img.height) // 2))
+    prompt = ("Outpaint this picture into a 9:16 vertical frame: the original photo sits in the middle of the white "
+              "canvas. Fill ONLY the white empty areas by naturally continuing the scene (same lighting, perspective, "
+              "style). Do not change, move, recolour or redraw anything in the original part. No text, no borders.")
+    models = _models(cfg)
+    for model in models:
+        try:
+            body = {"contents": [{"parts": [{"text": prompt}, _inline(canvas)]}],
+                    "generationConfig": {"responseModalities": ["IMAGE"], "imageConfig": {"aspectRatio": "9:16"}}}
+            r = requests.post(f"{API}/models/{model}:generateContent", headers={"x-goog-api-key": key}, json=body,
+                              timeout=300)
+            if r.status_code == 404:
+                continue
+            if r.status_code >= 400:
+                raise StageError(f"Gemini ({model}): {(r.json().get('error') or {}).get('message', r.status_code)}")
+            for cand in r.json().get("candidates", []):
+                for p in (cand.get("content") or {}).get("parts", []):
+                    data = (p.get("inlineData") or p.get("inline_data") or {}).get("data")
+                    if data:
+                        dest.parent.mkdir(parents=True, exist_ok=True)
+                        Image.open(io.BytesIO(base64.b64decode(data))).convert("RGB").save(dest, quality=95)
+                        return dest
+            raise StageError(f"Gemini ({model}): görsel dönmedi")
+        except requests.RequestException as exc:
+            raise StageError(f"Gemini bağlantı hatası: {exc}") from exc
+    raise StageError("kullanılabilir bir Gemini görsel modeli bulunamadı")
+
+
+def _inline(img: Image.Image) -> dict:
+    buf = io.BytesIO()
+    img.convert("RGB").save(buf, "JPEG", quality=92)
+    return {"inline_data": {"mime_type": "image/jpeg", "data": base64.b64encode(buf.getvalue()).decode()}}
+
+
 def key_out(img: Image.Image) -> Image.Image:
     """Yeşil zemini saydam yapar (yumuşak kenar), kenardaki yeşil yansımayı temizler."""
     a = np.asarray(img.convert("RGB"), dtype=np.float32) / 255

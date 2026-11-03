@@ -300,6 +300,17 @@ def cmd_anim_karakter(args, cfg) -> int:
     return 0
 
 
+def cmd_gorsel(args, cfg) -> int:
+    """Görselden video: analiz → (Gemini kenar) → ElevenLabs sesleri → Higgsfield klipleri → fabrika hattı."""
+    from reels import gorsel
+    opts = {"istek": args.istek or "", "ses": args.ses, "klip": args.klip, "baslik": args.baslik or "",
+            "altyazi": not args.altyazisiz, "muzik": "yok" if args.muziksiz else "var"}
+    jid = gorsel.from_file(Path(args.gorsel), opts)
+    job = Job.load(jid)
+    print(f"✔ {jid}: {(job.state.get('outputs') or {}).get('video', 'üretildi')}")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Otonom AI Reels Fabrikası")
     ap.add_argument("-v", "--verbose", action="store_true")
@@ -368,6 +379,14 @@ def main() -> int:
     p.add_argument("tarif", help="görünüş: yaş, kıyafet, renkler, saç, aksesuar (İngilizce daha tutarlı)")
     p.add_argument("--poz", default="neutral,konusma,sasirma",
                    help="virgülle pozlar: neutral, konusma, gulme, sasirma, yuruyus, uzgun ya da serbest tarif")
+    p = sub.add_parser("gorsel", help="görselden video (karakter analizi, ElevenLabs sesleri, Higgsfield klipleri)")
+    p.add_argument("gorsel", help="görsel dosyası (jpg/png/webp)")
+    p.add_argument("--istek", help="ton/hikâye/süre isteği")
+    p.add_argument("--ses", default="otomatik", choices=["otomatik", "benim", "kadin", "erkek"])
+    p.add_argument("--klip", type=int, default=2, help="Higgsfield klip sayısı (0 = fotoğraf + kamera hareketi)")
+    p.add_argument("--baslik")
+    p.add_argument("--altyazisiz", action="store_true")
+    p.add_argument("--muziksiz", action="store_true")
     p = sub.add_parser("status", help="görev durumları")
     p.add_argument("job", nargs="?")
     args = ap.parse_args()
@@ -380,7 +399,7 @@ def main() -> int:
                 "run": cmd_run, "status": cmd_status, "candidates": cmd_candidates, "selftest": cmd_selftest,
                 "hook": cmd_hook, "title": cmd_title, "chapters": cmd_chapters, "mcp": cmd_mcp, "kesim": cmd_kesim,
                 "foto": cmd_foto, "anim-ses": cmd_anim_ses,
-                "anim-karakter": cmd_anim_karakter}
+                "anim-karakter": cmd_anim_karakter, "gorsel": cmd_gorsel}
     try:
         return handlers[args.cmd](args, cfg)
     except (StageError, FileNotFoundError) as exc:

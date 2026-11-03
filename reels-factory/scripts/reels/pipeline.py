@@ -553,6 +553,11 @@ def stage_export(job: Job, script: dict, final: Path, music: dict | None, cfg: C
                      "design": job.state.get("design"), "format": job.state.get("format"),
                      "music": (music or {}).get("url") or (music or {}).get("title"), "output": info["video"]})
         write_json(HISTORY, hist)
+    from . import supa  # Supabase tanımlıysa video + kayıt buluta (hata üretimi durdurmaz)
+    if supa.available(cfg):
+        supa.record_video(job.id, script.get("title", job.id), job.state["category"], job.state["outputs"],
+                          {"source": "gorsel" if job.state.get("gorsel") else "fabrika", "design": job.state.get("design"),
+                           "gorsel": job.state.get("gorsel")}, cfg)
     return job.state["outputs"]
 
 

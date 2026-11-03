@@ -314,6 +314,19 @@ def align(narration: str, marks: list[dict] | None, t0: float, t1: float) -> lis
 
 def synthesize_scene(scene: dict, out_dir: Path, cfg: Config) -> dict:
     sid, text = scene["id"], scene["narration"]
+    if scene.get("voice_id"):  # görselden video: bu sahneyi konuşan karakterin ElevenLabs sesi
+        import copy
+        cfg = Config(copy.deepcopy(dict(cfg)))
+        cfg.setdefault("tts", {}).setdefault("elevenlabs", {})["voice_id"] = scene["voice_id"]
+        cfg["tts"]["provider_chain"] = ["elevenlabs"] + [p for p in cfg["tts"].get("provider_chain", ["edge"])
+                                                         if p not in ("elevenlabs", "my_voice")]
+    if scene.get("edge_voice"):  # ElevenLabs yokken konuşan başına ayrı Türkçe ses / perde
+        import copy
+        cfg = Config(copy.deepcopy(dict(cfg)))
+        e = cfg.setdefault("tts", {}).setdefault("edge", {})
+        e["voices"] = [scene["edge_voice"]] + [v for v in e.get("voices", []) if v != scene["edge_voice"]]
+        if scene.get("edge_pitch"):
+            e["pitch"] = scene["edge_pitch"]
     chain = cfg.get_path("tts.provider_chain", ["edge"])
     errors = []
     for name in chain:

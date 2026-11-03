@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Görselden Video</title>
+<style>
+  :root { --bg:#0b0f1a; --card:#141b2d; --line:#253049; --ink:#eef2fb; --muted:#9aa6c2; --acc:#ffd23f; --acc2:#4fd1c5; --bad:#ff6b6b; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.45 system-ui, "Segoe UI", sans-serif; }
+  header { display: flex; align-items: center; gap: 14px; padding: 14px 22px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  header h1 { font-size: 19px; margin: 0; } header a { color: var(--acc2); text-decoration: none; font-weight: 600; }
+  main { max-width: 1100px; margin: 0 auto; padding: 18px 16px 60px; display: grid; grid-template-columns: 1fr 360px; gap: 18px; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; margin-bottom: 16px; }
+  .card h2 { font-size: 15px; margin: 0 0 4px; display: flex; gap: 8px; align-items: center; }
+  .card h2 .n { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--acc); color: #111; font-size: 13px; }
+  .lead { color: var(--muted); font-size: 13px; margin: 0 0 10px; }
+  textarea, input[type=text], select { width: 100%; padding: 9px 10px; border-radius: 10px; border: 1px solid var(--line); background: #0e1424; color: var(--ink); font: inherit; }
+  button { cursor: pointer; border: 0; border-radius: 10px; padding: 9px 13px; font: 600 14px system-ui, sans-serif; background: var(--acc); color: #111; }
+  button.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+  button:disabled { opacity: .45; cursor: default; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .opts { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+  .opt { border: 1px solid var(--line); border-radius: 10px; padding: 9px; cursor: pointer; font-size: 13px; display: block; }
+  .opt input { margin-right: 6px; } .opt:has(input:checked) { border-color: var(--acc); background: #1a2136; }
+  .opt small { display: block; color: var(--muted); margin-top: 2px; } .opt.off { opacity: .45; pointer-events: none; }
+  .drop { border: 2px dashed var(--line); border-radius: 12px; padding: 16px; text-align: center; color: var(--muted); cursor: pointer; display: block; }
+  .drop.over, .drop:hover { border-color: var(--acc); color: var(--ink); } .drop input { display: none; }
+  .media { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; margin-top: 10px; }
+  .mi { position: relative; aspect-ratio: 9/16; border-radius: 9px; overflow: hidden; background: #0e1424; border: 1px solid var(--line); }
+  .mi img, .mi video { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .mi .tag { position: absolute; left: 4px; top: 4px; background: var(--acc); color: #111; border-radius: 9px; font: 700 11px/18px system-ui; padding: 0 6px; }
+  .mi .ctl { position: absolute; bottom: 3px; left: 3px; right: 3px; display: flex; gap: 3px; justify-content: space-between; }
+  .mi .ctl button { padding: 2px 6px; font-size: 12px; background: rgba(0,0,0,.65); color: #fff; }
+  .mi .nm { position: absolute; bottom: 26px; left: 4px; right: 4px; font-size: 10px; color: #fff; text-shadow: 0 1px 2px #000; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .rec { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
+  .rec button.on { background: var(--bad); color: #fff; animation: p 1s infinite; } @keyframes p { 50% { opacity: .6; } }
+  .sw { display: flex; gap: 10px; align-items: center; font-size: 14px; } .sw input { transform: scale(1.3); }
+  .sticky { position: sticky; top: 12px; }
+  .sum div { display: flex; justify-content: space-between; gap: 10px; padding: 5px 0; border-bottom: 1px dashed var(--line); font-size: 13px; }
+  .sum div span:first-child { color: var(--muted); } .sum div span:last-child { text-align: right; }
+  .err { color: var(--bad); font-size: 13px; margin-top: 8px; white-space: pre-line; }
+  .pg { border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-top: 12px; background: #0e1424; }
+  .pg-top { display: flex; justify-content: space-between; } .pg-pct { font: 700 22px system-ui; color: var(--acc); }
+  .pg-bar { height: 10px; border-radius: 6px; background: #1d2740; overflow: hidden; margin: 8px 0; } .pg-bar > div { height: 100%; background: var(--acc); transition: width .6s; }
+  .pg.done .pg-bar > div { background: var(--acc2); } .pg.bad .pg-bar > div { background: var(--bad); }
+  .pg-steps { font-size: 12.5px; color: var(--muted); line-height: 1.7; } .pg-steps .done { color: var(--acc2); } .pg-steps .running { color: var(--acc); font-weight: 600; } .pg-steps .failed { color: var(--bad); }
+  .pg video { width: 100%; max-height: 420px; border-radius: 10px; margin-top: 8px; background: #000; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(70px, 1fr)); gap: 4px; max-height: 260px; overflow: auto; margin-top: 8px; }
+  .grid .ph { aspect-ratio: 1; border-radius: 6px; overflow: hidden; cursor: pointer; border: 2px solid transparent; }
+  .grid .ph img { width: 100%; height: 100%; object-fit: cover; } .grid .ph.on { border-color: var(--acc); }
+</style>
+</head>
+<body>
+<header><h1>🖼→🎬 Görselden video</h1><a href="/">Kontrol paneli</a><a href="/kur">Video Kur</a><a href="/publish">Yayın</a></header>
+<main>
+  <section>
+    <div class="card"><h2><span class="n">1</span>Görsel</h2>
+      <p class="lead">Bir fotoğraf ya da çizim bırak. Claude görseli inceler, karakterleri ve sahneyi çıkarır, kısa bir anlatı yazar.</p>
+      <label class="drop" id="drop">Görseli buraya bırak ya da tıkla<input type="file" id="file" accept="image/*"></label>
+      <div class="media"><div class="mi" id="prev" hidden><img id="prevImg" alt=""></div></div>
+    </div>
+    <div class="card"><h2><span class="n">2</span>Ne olsun?</h2>
+      <p class="lead">İsteğe bağlı: ton, hikâye, süre (ör. “komik, 30 sn, kedi anlatsın”).</p>
+      <textarea id="istek" rows="2" placeholder="boş bırakırsan görselden kendisi bulur"></textarea>
+      <div class="row"><input type="text" id="baslik" placeholder="Başlık (isteğe bağlı)"></div>
+    </div>
+  </section>
+  <aside>
+    <div class="card"><h2><span class="n">3</span>Ses</h2>
+      <div class="opts">
+        <label class="opt"><input type="radio" name="ses" value="otomatik" checked>Karaktere göre<small>ElevenLabs ses tasarımı</small></label>
+        <label class="opt"><input type="radio" name="ses" value="benim">Benim sesim<small>Sesim</small></label>
+        <label class="opt"><input type="radio" name="ses" value="kadin">Kadın<small>Türkçe</small></label>
+        <label class="opt"><input type="radio" name="ses" value="erkek">Erkek<small>Türkçe</small></label>
+      </div>
+    </div>
+    <div class="card"><h2><span class="n">4</span>Hareket</h2>
+      <p class="lead">Higgsfield görseli canlandırır (ücretli, klip başına). 0 = fotoğraf + kamera hareketi.</p>
+      <select id="klip"><option value="0">0 klip</option><option value="1">1 klip</option><option value="2" selected>2 klip</option><option value="3">3 klip</option></select>
+      <div class="row"><label class="sw"><input type="checkbox" id="altyazi" checked>Altyazı</label><label class="sw"><input type="checkbox" id="muzik" checked>Müzik</label></div>
+    </div>
+    <div class="card"><div id="status" class="muted">Hesaplar: …</div>
+      <div class="row"><button id="go" disabled>Videoyu üret</button></div><p id="msg" class="muted"></p></div>
+  </aside>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+let image = null;
+async function upload(f) {
+  const r = await (await fetch("/api/studio/upload?name=" + encodeURIComponent(f.name), { method: "PUT", body: f })).json();
+  if (r.error) throw new Error(r.error);
+  image = r.file; $("prevImg").src = URL.createObjectURL(f); $("prev").hidden = false; $("go").disabled = false;
+  $("msg").textContent = "✓ " + f.name;
+}
+$("file").onchange = (e) => e.target.files[0] && upload(e.target.files[0]).catch((x) => ($("msg").textContent = x.message));
+const drop = $("drop");
+drop.ondragover = (e) => { e.preventDefault(); drop.classList.add("over"); };
+drop.ondragleave = () => drop.classList.remove("over");
+drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove("over"); const f = e.dataTransfer.files[0]; if (f) upload(f).catch((x) => ($("msg").textContent = x.message)); };
+$("go").onclick = async () => {
+  $("go").disabled = true;
+  const body = { image, istek: $("istek").value, baslik: $("baslik").value, klip: +$("klip").value,
+    ses: document.querySelector("input[name=ses]:checked").value, altyazi: $("altyazi").checked, muzik: $("muzik").checked ? "var" : "yok" };
+  const r = await (await fetch("/api/gorsel", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })).json();
+  $("msg").textContent = r.error ? r.error : "Sıraya alındı. İlerlemeyi kontrol panelinden izleyebilirsin.";
+  $("go").disabled = false;
+};
+(async () => {
+  try {
+    const s = await (await fetch("/api/publish/status")).json(), k = s.keys || {};
+    const y = (n, v) => `${n} ${v ? "✓" : "—"}`;
+    $("status").textContent = [y("ElevenLabs", k.ELEVENLABS_API_KEY), y("Higgsfield", k.HIGGSFIELD_KEY_ID && k.HIGGSFIELD_KEY_SECRET),
+      y("Gemini", k.GEMINI_API_KEY), y("Supabase", k.SUPABASE_URL && k.SUPABASE_SERVICE_KEY)].join(" · ") + " (eksikler Yayın → Ayarlar)";
+  } catch { $("status").textContent = ""; }
+})();
+</script>
+</body>
+</html>

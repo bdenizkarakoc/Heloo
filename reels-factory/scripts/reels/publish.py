@@ -675,6 +675,8 @@ def status_summary() -> dict:
             "stock": {"pexels": bool(secret("PEXELS_API_KEY")), "pixabay": bool(secret("PIXABAY_API_KEY")),
                       "hf": bool(secret("HF_TOKEN")), "replicate": bool(secret("REPLICATE_API_TOKEN")),
                       "openai": bool(secret("OPENAI_API_KEY"))},
+            "keys": {k: bool(secret(k)) for k in ("ELEVENLABS_API_KEY", "HIGGSFIELD_KEY_ID", "HIGGSFIELD_KEY_SECRET",
+                                                  "GEMINI_API_KEY", "SUPABASE_URL", "SUPABASE_SERVICE_KEY")},
             **settings()}
 
 

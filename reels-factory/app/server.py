@@ -232,6 +232,13 @@ class Factory:
             job = got["job"]
             with self.lock:
                 self.current["job"] = job.id
+        elif task["kind"] == "gorsel":  # görselden video: analiz, ElevenLabs sesleri, Higgsfield klipleri
+            from reels import gorsel
+            got = {}
+            gorsel.run(task["image"], task.get("opts") or {}, lambda j: got.update(job=j))
+            job = got["job"]
+            with self.lock:
+                self.current["job"] = job.id
         elif task["kind"] == "new":
             media = [studio.UPLOADS / Path(f).name for f in (task.get("media") or [])
                      if (studio.UPLOADS / Path(f).name).is_file()]
@@ -646,6 +653,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(kesim.style_data(path[len("/api/kesim/style"):].strip("/")))
             except Exception as exc:  # noqa: BLE001
                 return self._json({"error": str(exc)}, 400)
+        if path in ("/gorsel", "/gorsel.html"):  # görselden video
+            return self._file(ROOT / "app" / "gorsel.html")
         if path in ("/kur", "/kur.html"):  # Video Kur: görsel, senaryo, ses, altyazı, kurgu ayrı ayrı
             return self._file(ROOT / "app" / "kur.html")
         if path in ("/photos", "/photos.html"):
@@ -855,6 +864,14 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as exc:  # noqa: BLE001
                 return self._json({"error": str(exc)}, 400)
             return self.send_error(404)
+        if path == "/api/gorsel":  # görselden video (app/gorsel.html, /gorsel komutu)
+            name = Path(str(data.get("image", ""))).name
+            if not name or not (studio.UPLOADS / name).is_file():
+                return self._json({"error": "önce bir görsel yükleyin"}, 400)
+            opts = {k: data.get(k) for k in ("istek", "ses", "klip", "baslik", "altyazi", "muzik") if data.get(k) is not None}
+            t = FACTORY.enqueue("gorsel", image=name, opts=opts, kesim=True,
+                                topic="Görselden video: " + (opts.get("istek") or name)[:50])
+            return self._json({"task": t["id"]})
         if path == "/api/compose":  # Video Kur
             opts = {k: data.get(k) for k in ("media", "photos", "senaryo", "senaryo_mod", "ses", "kayit", "altyazi",
                                              "kurgu", "muzik", "baslik", "category", "ref")}
@@ -1118,7 +1135,8 @@ class Handler(BaseHTTPRequestHandler):
         return f"http://127.0.0.1:{self.server.server_address[1]}/oauth/youtube"
 
     # Uygulamadan girilebilecek gizli değerler (başka ad yazılamaz; değerler asla geri gönderilmez)
-    SECRET_NAMES = {"GEMINI_API_KEY", "META_APP_ID", "META_APP_SECRET", "YOUTUBE_CLIENT_ID", "YOUTUBE_CLIENT_SECRET", "TIKTOK_CLIENT_KEY", "TIKTOK_CLIENT_SECRET",
+    SECRET_NAMES = {"HIGGSFIELD_KEY_ID", "HIGGSFIELD_KEY_SECRET", "SUPABASE_URL", "SUPABASE_SERVICE_KEY",
+                    "ELEVENLABS_API_KEY", "GEMINI_API_KEY", "META_APP_ID", "META_APP_SECRET", "YOUTUBE_CLIENT_ID", "YOUTUBE_CLIENT_SECRET", "TIKTOK_CLIENT_KEY", "TIKTOK_CLIENT_SECRET",
                     "TELEGRAM_BOT_TOKEN", "PEXELS_API_KEY", "PIXABAY_API_KEY", "HF_TOKEN", "REPLICATE_API_TOKEN",
                     "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "BRAVE_API_KEY", "CONTEXT7_API_KEY", "GITHUB_PAT", "POSTGRES_DSN"}
 

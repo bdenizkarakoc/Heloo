@@ -369,6 +369,21 @@ animation:
   gemini_models: [gemini-3.1-flash-image, gemini-3.1-flash-image-preview, gemini-3-pro-image, gemini-3-pro-image-preview]
   max_character_images: 24   # film başına (her poz bir görsel)
 
+# Görselden video (scripts/reels/gorsel.py, /gorsel sayfası, factory.py gorsel)
+gorsel:
+  clips: 2                   # Higgsfield klip sayısı (HIGGSFIELD_KEY_ID/SECRET yoksa 0: fotoğraf + kamera hareketi)
+  extend: true               # dikey olmayan görselin kenarlarını Gemini ile 9:16'ya genişlet (GEMINI_API_KEY)
+  eleven_voices: true        # konuşan başına ElevenLabs ses tasarımı (ELEVENLABS_API_KEY)
+  max_voices: 3
+higgsfield:
+  image_to_video: kling-video/v2.5-turbo/standard/image-to-video   # ya da minimax/hailuo-2.3/standard/image-to-video
+  duration: 5
+  negative_prompt: "text, watermark, logo, extra limbs, distorted face"
+  timeout_sec: 900
+supabase:
+  enabled: true              # SUPABASE_URL + SUPABASE_SERVICE_KEY varsa biten video yüklenir (supabase/schema.sql)
+  bucket: reels
+
 budget:
   max_ai_images_per_video: 8
   max_ai_video_clips_per_video: 4

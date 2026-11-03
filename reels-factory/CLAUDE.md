@@ -23,6 +23,7 @@ python scripts/factory.py foto [--list | <adlar>|--son N] [--istek ".."] [--anla
 python scripts/factory.py mcp [--list]           # MCP sunucularını Claude Code'a kaydet
 python scripts/factory.py anim-ses <metin> <klasör>   # animasyon kısa filmi için Türkçe voice.wav + words.json
 python scripts/factory.py anim-karakter <film> <Ad> "<tarif>" [--poz ...]  # Gemini ile özgün karakter kartları
+python scripts/factory.py gorsel <görsel> [--istek ".."] [--ses otomatik|benim|kadin|erkek] [--klip N]  # görselden video
 python scripts/factory.py status [<görev>]
 ```
 
@@ -74,6 +75,8 @@ python scripts/factory.py status [<görev>]
 | `app/studio.html` | Stüdyo sayfası (`/studio`): yükleme, stil adlandırma, düzenleme seçenekleri, sonuçlar |
 | `scripts/reels/cancel.py` | "Durdur": iş kuyruğunun alt süreçlerini izler (Popen kancası `reels/__init__.py`), süreç ağacıyla sonlandırır; `job.stage` ve `util.run` durdurmayı denetler (`Cancelled`, StageError değil) |
 | `scripts/reels/design.py` | Tasarım temaları: `design.themes` ayar katmanı (renk, yazı tipi, altyazı biçimi, geçiş seti, efektler), son kullanılmayanı seçer; görevde `design` olarak saklanır |
+| `scripts/reels/gorsel.py` | Görselden video (`/gorsel` sayfası, `factory.py gorsel`): Claude görsel analizi (karakter/kişilik/ses tarifi, kimlik tespiti yok) → Gemini ile 9:16 kenar genişletme → konuşan başına ElevenLabs ses tasarımı (`eleven.py`; yoksa Edge sesi + perde) → Higgsfield görselden video klipleri (`higgsfield.py`) → fabrika hattı (sahne başına `voice_id`) |
+| `scripts/reels/supa.py` | Supabase: biten video, kapak, paylaşım metni → Storage (`reels`) + `reels_videos` tablosu (`supabase/schema.sql`); `SUPABASE_URL` + `SUPABASE_SERVICE_KEY` |
 | `animasyon/` | Çizgi-3D animasyon kısa film (MIT, Mr omi'nin Claude Animated Shorts becerisi): `studio/` three.js + Remotion projesi, `SKILL.md` akış, **`TURKCE.md` fabrika kuralları (öncelikli)**; Türkçe ses `factory.py anim-ses`; Gemini karakter kartları `factory.py anim-karakter` (`scripts/reels/characters.py`, `GEMINI_API_KEY`) → sahnede `gemcast.ts`; Claude Code `/animasyon` |
 | `remotion/` | Remotion (React) render motoru: `src/Reels.tsx` `composition/remotion.json`'ı HyperFrames şablonlarıyla aynı hareketlerle çizer (`render.engine: remotion` ya da `--engine remotion`) |
 | `assets/templates/*.j2` | HyperFrames kompozisyon şablonları (sahne, altyazı, üst katman) |
