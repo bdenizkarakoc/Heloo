@@ -53,6 +53,24 @@ def slug(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", t).strip("-") or "karakter"
 
 
+def _err(r: requests.Response) -> str:
+    """Gemini hata yanıtını anlaşılır kısa metne çevirir (yanıt JSON olmasa da)."""
+    try:
+        msg = (r.json().get("error") or {}).get("message") or r.text[:200]
+    except ValueError:
+        msg = r.text[:200].strip() or "boş yanıt"
+    hint = {400: "istek ya da anahtar biçimi hatalı", 401: "anahtar geçersiz", 403: "anahtarın Gemini API izni yok "
+            "(aistudio.google.com/apikey'den Gemini API anahtarı al)", 429: "kota doldu, biraz sonra dene"}.get(r.status_code, "")
+    return f"HTTP {r.status_code}" + (f" ({hint})" if hint else "") + f": {msg}"
+
+
+def _json(r: requests.Response) -> dict:
+    try:
+        return r.json()
+    except ValueError as exc:
+        raise StageError(f"Gemini yanıtı okunamadı: {_err(r)}") from exc
+
+
 def _models(cfg: Config) -> list[str]:
     return list(cfg.get_path("animation.gemini_models", ["gemini-3.1-flash-image", "gemini-3.1-flash-image-preview",
                                                          "gemini-3-pro-image", "gemini-3-pro-image-preview"]))
@@ -66,7 +84,7 @@ def _discover(key: str) -> list[str]:
     except requests.RequestException:
         return []
     out = []
-    for m in r.json().get("models", []):
+    for m in _json(r).get("models", []):
         name = m.get("name", "").split("/")[-1]
         if "image" in name and "generateContent" in (m.get("supportedGenerationMethods") or []):
             out.append(name)
@@ -90,14 +108,14 @@ def _call(key: str, model: str, prompt: str, ref: Image.Image | None) -> Image.I
         body["generationConfig"].pop("imageConfig")
         r = requests.post(f"{API}/models/{model}:generateContent", headers={"x-goog-api-key": key}, json=body, timeout=300)
     if r.status_code >= 400:
-        msg = (r.json().get("error") or {}).get("message", r.text[:200]) if r.content else r.status_code
-        raise StageError(f"Gemini ({model}): {msg}")
-    for cand in r.json().get("candidates", []):
+        raise StageError(f"Gemini ({model}): {_err(r)}")
+    data_ = _json(r)
+    for cand in data_.get("candidates", []):
         for p in (cand.get("content") or {}).get("parts", []):
             data = (p.get("inlineData") or p.get("inline_data") or {}).get("data")
             if data:
                 return Image.open(io.BytesIO(base64.b64decode(data))).convert("RGB")
-    reason = (r.json().get("promptFeedback") or {}).get("blockReason") or "görsel dönmedi"
+    reason = (data_.get("promptFeedback") or {}).get("blockReason") or "görsel dönmedi"
     raise StageError(f"Gemini ({model}): {reason}")
 
 
@@ -124,8 +142,8 @@ def extend_vertical(src: Path, dest: Path, cfg: Config) -> Path:
             if r.status_code == 404:
                 continue
             if r.status_code >= 400:
-                raise StageError(f"Gemini ({model}): {(r.json().get('error') or {}).get('message', r.status_code)}")
-            for cand in r.json().get("candidates", []):
+                raise StageError(f"Gemini ({model}): {_err(r)}")
+            for cand in _json(r).get("candidates", []):
                 for p in (cand.get("content") or {}).get("parts", []):
                     data = (p.get("inlineData") or p.get("inline_data") or {}).get("data")
                     if data:
