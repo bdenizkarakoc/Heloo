@@ -323,7 +323,14 @@ def cmd_anahtar(args, cfg) -> int:
     else:
         value = getpass.getpass(f"{args.ad} (sağ tıkla yapıştır — Ctrl+V çalışmaz — sonra Enter): ").strip()
     value = value.strip().strip('"').strip("'")
-    if args.ad != "SUPABASE_URL" and (len(value) < 16 or not value.isascii() or any(c.isspace() for c in value)):
+    if args.ad != "SUPABASE_URL" and any(c.isspace() for c in value):
+        # panoya anahtarla birlikte etiket/satır sonu da kopyalanmış olabilir: anahtara benzeyen parçayı ayıkla
+        import re
+        pat = r"AIza[0-9A-Za-z_\-]{30,}" if args.ad == "GEMINI_API_KEY" else r"[A-Za-z0-9_\-.:]{20,}"
+        found = re.findall(pat, value) or re.findall(r"[A-Za-z0-9_\-.:]{20,}", value)
+        if len(found) == 1:
+            print(f"  panodaki metinden anahtar ayıklandı ({len(found[0])} karakter)")
+            value = found[0] (len(value) < 16 or not value.isascii() or any(c.isspace() for c in value)):
         print(f"✖ kaydedilmedi: değer geçersiz görünüyor ({len(value)} karakter"
               f"{', Türkçe/özel karakter var' if not value.isascii() else ''}{', boşluk var' if any(c.isspace() for c in value) else ''})."
               " Anahtarı sitesinden yeniden kopyala ve --pano ile dene.")
