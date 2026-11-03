@@ -1118,7 +1118,7 @@ class Handler(BaseHTTPRequestHandler):
         return f"http://127.0.0.1:{self.server.server_address[1]}/oauth/youtube"
 
     # Uygulamadan girilebilecek gizli değerler (başka ad yazılamaz; değerler asla geri gönderilmez)
-    SECRET_NAMES = {"META_APP_ID", "META_APP_SECRET", "YOUTUBE_CLIENT_ID", "YOUTUBE_CLIENT_SECRET", "TIKTOK_CLIENT_KEY", "TIKTOK_CLIENT_SECRET",
+    SECRET_NAMES = {"GEMINI_API_KEY", "META_APP_ID", "META_APP_SECRET", "YOUTUBE_CLIENT_ID", "YOUTUBE_CLIENT_SECRET", "TIKTOK_CLIENT_KEY", "TIKTOK_CLIENT_SECRET",
                     "TELEGRAM_BOT_TOKEN", "PEXELS_API_KEY", "PIXABAY_API_KEY", "HF_TOKEN", "REPLICATE_API_TOKEN",
                     "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "BRAVE_API_KEY", "CONTEXT7_API_KEY", "GITHUB_PAT", "POSTGRES_DSN"}
 

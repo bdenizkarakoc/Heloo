@@ -23,6 +23,22 @@ ve çakışmada bu dosya geçerlidir.
 - **Çıktı:** son video 1080x1920 (`--scale 1`) ya da 2K (`--scale 1.3333`), H.264/AAC 30 fps; sesi mux ettikten sonra
   `output/videos/` altına kopyala. Yayın yalnızca onay kuyruğuna (`/api/publish/queue`), elle yayın yok.
 
+## Gemini karakterleri (isteğe bağlı)
+Karakterleri `toon.ts` ile kod içinde çizmek yerine Gemini'ye çizdirebilirsin (Google'ın resmî Gemini API'si; gemini.google.com
+sitesi otomatik gezdirilmez):
+- Anahtar: Yayın → Ayarlar → **Gemini API anahtarı** (aistudio.google.com/apikey) → `.env` `GEMINI_API_KEY`.
+- `python scripts/factory.py anim-karakter <film> <Ad> "<görünüş tarifi>" --poz neutral,konusma,sasirma`
+  → `animasyon/studio/public/<film>/chars/<ad>_<poz>.png` (600x1000 kart, tabanlar y=975, yeşil zemin saydam) +
+  `chars.json` (istem, model, tarih). İlk poz sonraki pozlara referans verilir (aynı karakter). Pozlar: neutral,
+  konusma, gulme, sasirma, yuruyus, uzgun ya da serbest İngilizce tarif. Film başına en çok 24 görsel
+  (`animation.max_character_images`); model sırası `animation.gemini_models`.
+- Sahnede: `src/videos/<film>/gemcast.ts` → `Bridge.tsx`'teki `loadKit()` beklemesine `loadChars("<film>", [...])`
+  ekle; `cast.ts`/`world.ts`'te kartın `draw`'ı yerine `imgDraw("<ad>_<poz>")` (aynalı: `imgDraw(ad, true)`). Işık,
+  gölge, alan derinliği ve NOINK katmanı aynen işler. Konuşma/şaşırma gibi ifadeler poz kartları arasında geçilerek,
+  yürüyüş sallanma/eğilme ile verilir (tek kart göz kırpmaz).
+- Karakterler **özgün** olmalı: tanınmış/telifli bir çizgi karakterine, maskota ya da gerçek bir kişiye benzetme
+  isteme (tarif ve istem bunu yasaklar). Üretilen görseller "AI üretimi (Gemini)" olarak paylaşım metnine yazılır.
+
 ## Klasörler
 | Yol | İçerik |
 |---|---|

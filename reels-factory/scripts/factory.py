@@ -291,6 +291,15 @@ def cmd_anim_ses(args, cfg) -> int:
     return 0
 
 
+def cmd_anim_karakter(args, cfg) -> int:
+    """Animasyon karakteri: Gemini API ile özgün karakter kartları (pozlar) → animasyon/studio/public/<film>/chars/."""
+    from reels import characters
+    poses = [p.strip() for p in args.poz.split(",") if p.strip()]
+    for f in characters.generate(args.film, args.ad, args.tarif, poses, cfg):
+        print(f"✔ {f.relative_to(ROOT)}")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Otonom AI Reels Fabrikası")
     ap.add_argument("-v", "--verbose", action="store_true")
@@ -353,6 +362,12 @@ def main() -> int:
     p.add_argument("metin", help="metin dosyası (# ile başlayan satırlar atlanır) ya da doğrudan metin")
     p.add_argument("klasor", help="çıktı klasörü, ör. animasyon/studio/shorts/<ad>/voice")
     p.add_argument("--ara", default="0.25", help="cümleler arası sessizlik (sn)")
+    p = sub.add_parser("anim-karakter", help="animasyon için Gemini ile özgün karakter kartları (GEMINI_API_KEY)")
+    p.add_argument("film", help="film adı (animasyon/studio/shorts/<film>)")
+    p.add_argument("ad", help="karakter adı, ör. Can")
+    p.add_argument("tarif", help="görünüş: yaş, kıyafet, renkler, saç, aksesuar (İngilizce daha tutarlı)")
+    p.add_argument("--poz", default="neutral,konusma,sasirma",
+                   help="virgülle pozlar: neutral, konusma, gulme, sasirma, yuruyus, uzgun ya da serbest tarif")
     p = sub.add_parser("status", help="görev durumları")
     p.add_argument("job", nargs="?")
     args = ap.parse_args()
@@ -364,7 +379,8 @@ def main() -> int:
     handlers = {"doctor": cmd_doctor, "new": cmd_new, "validate": cmd_validate, "produce": cmd_produce,
                 "run": cmd_run, "status": cmd_status, "candidates": cmd_candidates, "selftest": cmd_selftest,
                 "hook": cmd_hook, "title": cmd_title, "chapters": cmd_chapters, "mcp": cmd_mcp, "kesim": cmd_kesim,
-                "foto": cmd_foto, "anim-ses": cmd_anim_ses}
+                "foto": cmd_foto, "anim-ses": cmd_anim_ses,
+                "anim-karakter": cmd_anim_karakter}
     try:
         return handlers[args.cmd](args, cfg)
     except (StageError, FileNotFoundError) as exc:

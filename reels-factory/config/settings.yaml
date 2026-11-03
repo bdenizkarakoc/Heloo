@@ -364,6 +364,11 @@ qc:
 # ---------------------------------------------------------------------
 # Maliyet kontrolü (ücretli API'ler yalnızca anahtar tanımlıysa devreye girer)
 # ---------------------------------------------------------------------
+# Animasyon (animasyon/TURKCE.md): Gemini ile karakter kartları (factory.py anim-karakter, GEMINI_API_KEY)
+animation:
+  gemini_models: [gemini-3.1-flash-image, gemini-3.1-flash-image-preview, gemini-3-pro-image, gemini-3-pro-image-preview]
+  max_character_images: 24   # film başına (her poz bir görsel)
+
 budget:
   max_ai_images_per_video: 8
   max_ai_video_clips_per_video: 4
