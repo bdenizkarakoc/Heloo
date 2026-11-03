@@ -327,10 +327,11 @@ def cmd_anahtar(args, cfg) -> int:
         # panoya anahtarla birlikte etiket/satır sonu da kopyalanmış olabilir: kesin biçimli Gemini anahtarını ayıkla
         # (başka biçimlerde parça seçmek yanlış anahtar kaydedebilir: kaydetmeyip uyarmak daha güvenli)
         import re
-        found = re.findall(r"AIza[0-9A-Za-z_\-]{35}", value)
+        found = re.findall(r"(?<![0-9A-Za-z_\-])AIza[0-9A-Za-z_\-]{35}(?![0-9A-Za-z_\-])", value)
         if len(found) == 1:
             print(f"  panodaki metinden anahtar ayıklandı ({len(found[0])} karakter)")
-            value = found[0] (len(value) < 16 or not value.isascii() or any(c.isspace() for c in value)):
+            value = found[0]
+    if args.ad != "SUPABASE_URL" and (len(value) < 16 or not value.isascii() or any(c.isspace() for c in value)):
         print(f"✖ kaydedilmedi: değer geçersiz görünüyor ({len(value)} karakter"
               f"{', Türkçe/özel karakter var' if not value.isascii() else ''}{', boşluk var' if any(c.isspace() for c in value) else ''})."
               " Anahtarı sitesinden yeniden kopyala ve --pano ile dene.")
