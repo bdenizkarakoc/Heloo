@@ -442,7 +442,7 @@ def restart_server() -> None:
     os._exit(0)
 
 
-KESIM_API = 4  # Kesim'in beklediği uç sürümü (4: Fotoğraflarım + araç komutları); Kesim daha eski bir fabrika görürse (boşta ise) yeniden başlatır
+KESIM_API = 5  # Kesim'in beklediği uç sürümü (5: /ref bilgisayardaki video yolu); Kesim daha eski bir fabrika görürse (boşta ise) yeniden başlatır
 KESIM_RESULTS: dict = {}  # Kesim'in yan işleri (altyazı, AI planı, ses) -> durum/sonuç
 
 

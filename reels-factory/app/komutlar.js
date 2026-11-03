@@ -12,6 +12,7 @@
   const go = (p) => { location.href = p; return "Açılıyor…"; };
   const q = (o) => "?" + new URLSearchParams(Object.entries(o).filter(([, v]) => v)).toString();
   const URL_RE = /https?:\/\/\S+/i;
+  const PATH_RE = /"([^"]+\.(?:mp4|mov|m4v|webm|mkv|avi))"|([A-Za-z]:\\\S+\.(?:mp4|mov|m4v|webm|mkv|avi))|(\/\S+\.(?:mp4|mov|m4v|webm|mkv|avi))/i;   // bilgisayardaki referans video
 
   window.fabrikaKomutlari = function (page = {}) {
     const list = [
@@ -24,9 +25,13 @@
       { name: "anlat", args: "<ne anlatsın>", desc: "Fotoğraflarından seslendirmeli, altyazılı video", run: (a) => page.foto ? page.foto("anlatim", a) : go("/photos" + q({ mode: "anlatim", istek: a })) },
       { name: "fotolar", desc: "Fotoğraflarım klasörünü aç (fotoğrafları buraya at)", run: async () => "Klasör: " + (await post("/api/photos/open")).path },
       { name: "kesim", alias: ["montaj"], args: "[istek]", desc: "Kesim: video/fotoğraf bırak → montaj", run: (a) => page.kesimIstek ? page.kesimIstek(a) : go("/kesim" + q({ istek: a })) },
-      { name: "ref", alias: ["benzet", "gibi"], args: "<bağlantı> [istek]", needArgs: true, desc: "Şunun gibi yap: bağlantıdaki videonun tarzıyla montaj", run: (a) => {
-        const u = (a.match(URL_RE) || [""])[0];
-        if (!u) throw new Error("Instagram/TikTok/YouTube bağlantısı yaz.");
+      { name: "ref", alias: ["benzet", "gibi"], args: "<bağlantı | video yolu> [istek]", needArgs: true, desc: "Şunun gibi yap: bağlantıdaki ya da bilgisayardaki videonun tarzıyla montaj", run: (a) => {
+        const pm = a.match(PATH_RE), u = (a.match(URL_RE) || [""])[0];
+        if (pm) {
+          const file = pm[1] || pm[2] || pm[3], rest = a.replace(pm[0], "").trim();
+          return page.ref ? page.ref(file, rest, true) : go("/kesim" + q({ reffile: file, istek: rest }));
+        }
+        if (!u) throw new Error("Instagram/TikTok/YouTube bağlantısı ya da bilgisayardaki video yolunu yaz (boşluklu yolu tırnakla).");
         const rest = a.replace(u, "").trim();
         return page.ref ? page.ref(u, rest) : go("/kesim" + q({ ref: u, istek: rest })); } },
       { name: "not", args: "<bağlantı>", needArgs: true, desc: "Reel'den Obsidian notu (döküm + fikirler)", run: async (a) => {

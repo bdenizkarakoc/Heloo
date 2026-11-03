@@ -510,16 +510,18 @@
   /* ---------- /komutlar: Fabrika araçları tek satırdan ---------- */
   const tabOpen = (id) => { const b = tabs.querySelector(`[data-tab="${id}"]`); if (b) b.click(); return !!b; };
   const URL_RE = /https?:\/\/\S+/i;
+  const PATH_RE = /"([^"]+\.(?:mp4|mov|m4v|webm|mkv|avi))"|([A-Za-z]:\\\S+\.(?:mp4|mov|m4v|webm|mkv|avi))|(\/\S+\.(?:mp4|mov|m4v|webm|mkv|avi))/i;   // bilgisayardaki referans video
   const COMMANDS = [
     { name: "video", args: "<konu>", needArgs: true, desc: "Fabrika konuyu araştırıp video üretir", run: (a) => { makeVideo(a); return "Video üretimi başladı (İşler bölümünden izle)."; } },
     { name: "kesim", alias: ["montaj"], args: "[istek]", desc: "Zaman çizelgesindekini montajla (ör. /kesim enerjik, lo-fi, 30 sn)",
       run: async (a) => { await montageTimeline(a ? { serbest: a } : undefined); } },
-    { name: "ref", alias: ["benzet", "gibi"], args: "<bağlantı> [istek]", needArgs: true, desc: "Şunun gibi yap: bağlantıdaki videonun tarzıyla montaj",
+    { name: "ref", alias: ["benzet", "gibi"], args: "<bağlantı | video yolu> [istek]", needArgs: true, desc: "Şunun gibi yap: bağlantıdaki ya da bilgisayardaki videonun tarzıyla montaj",
       run: async (a) => {
-        const u = (a.match(URL_RE) || [""])[0];
-        if (!u) throw new Error("Instagram/TikTok/YouTube bağlantısı yaz.");
-        const rest = a.replace(u, "").trim();
-        await montageTimeline({ reference: { url: u }, ...(rest ? { serbest: rest } : {}) });
+        const pm = a.match(PATH_RE), u = (a.match(URL_RE) || [""])[0];
+        if (!pm && !u) throw new Error("Instagram/TikTok/YouTube bağlantısı ya da bilgisayardaki video yolunu yaz (boşluklu yolu tırnakla).");
+        const reference = pm ? { file: pm[1] || pm[2] || pm[3] } : { url: u };
+        const rest = a.replace(pm ? pm[0] : u, "").trim();
+        await montageTimeline({ reference, ...(rest ? { serbest: rest } : {}) });
       } },
     { name: "foto", alias: ["fotograf"], args: "[istek]", desc: "Seçili fotoğraflardan müzikli montaj", run: (a) => { photoVideo("montaj", a); } },
     { name: "anlat", args: "<ne anlatsın>", needArgs: true, desc: "Seçili fotoğraflardan seslendirmeli, altyazılı video", run: (a) => { photoVideo("anlatim", a); } },

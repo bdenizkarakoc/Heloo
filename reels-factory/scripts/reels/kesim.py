@@ -276,10 +276,33 @@ def edit_options(files: list[str], total_sec: float) -> dict:
             "enhance": True, "improve_rounds": 1, "kesim": True}
 
 
+VIDEO_EXT = {".mp4", ".mov", ".m4v", ".webm", ".mkv", ".avi"}
+
+
+def _local_reference(answers: dict | None) -> dict | None:
+    """Referans olarak bilgisayardaki bir video yolu verildiyse (/ref C:\\...\\ornek.mp4) yüklemeler klasörüne
+    kopyalanır; brief yalnızca o klasördeki adı bilir. Yol yoksa ya da video değilse anlaşılır bir hata verir."""
+    from . import studio
+    ref = (answers or {}).get("reference") or {}
+    src = str(ref.get("file") or "").strip().strip('"')
+    if not src or (studio.UPLOADS / Path(src).name).is_file() and not Path(src).is_absolute():
+        return answers
+    path = Path(src)
+    if not path.is_file():
+        raise FileNotFoundError(f"referans video bulunamadı: {src}")
+    if path.suffix.lower() not in VIDEO_EXT:
+        raise ValueError(f"referans bir video olmalı ({', '.join(sorted(VIDEO_EXT))}): {path.name}")
+    studio.UPLOADS.mkdir(parents=True, exist_ok=True)
+    dest = studio.UPLOADS / studio.safe_upload_name(path.name)
+    shutil.copy2(path, dest)
+    return {**answers, "reference": {"file": dest.name}}
+
+
 def start(files: list[Path], enqueue, answers: dict | None = None) -> dict:
     """Yüklenmiş dosyalarla (studio/uploads) montaj işini kuyruğa ekler. answers: montaj sihirbazının
     (isteğe bağlı) cevapları — referans bağlantı/video, tarz, süre, müzik, geçiş sesi... (reels.brief)."""
     from . import brief, studio
+    answers = _local_reference(answers)
     names = [f.name for f in files]
     total = sum(studio.media_info(f).get("duration") or 3.5 for f in files)
     opts = edit_options(names, total)
@@ -373,11 +396,6 @@ def montage(paths: list[Path], on_stage=None, answers: dict | None = None) -> di
         shutil.copy2(p, dest)
         ups.append(dest)
     holder = {}
-    ref = (answers or {}).get("reference") or {}
-    if ref.get("file") and Path(ref["file"]).is_file():   # referans video yolu → yüklemeler klasörüne kopya
-        rdest = studio.UPLOADS / studio.safe_upload_name(Path(ref["file"]).name)
-        shutil.copy2(ref["file"], rdest)
-        answers = {**answers, "reference": {"file": rdest.name}}
     proj = start(ups, lambda kind, **kw: holder.update(kw), answers)
     proj = studio.run_edit(holder["project"])
     proj["delivered"] = deliver(proj)

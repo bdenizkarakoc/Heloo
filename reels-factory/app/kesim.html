@@ -88,7 +88,7 @@ let BRIEF = null;   // /ref ve /kesim komutlarıyla gelen istek: bir sonraki bı
 function setBrief(b) {
   BRIEF = b && Object.keys(b).length ? b : null;
   $("briefChip").hidden = !BRIEF;
-  $("briefText").textContent = BRIEF ? "Sonraki montaj: " + [BRIEF.reference && ("şunun gibi → " + BRIEF.reference.url), BRIEF.serbest].filter(Boolean).join(" · ") : "";
+  $("briefText").textContent = BRIEF ? "Sonraki montaj: " + [BRIEF.reference && ("şunun gibi → " + (BRIEF.reference.url || BRIEF.reference.file)), BRIEF.serbest].filter(Boolean).join(" · ") : "";
 }
 
 function upload(file) {
@@ -170,11 +170,12 @@ async function load() {
 }
 const komut = FabrikaKomut.attach($("topic"), fabrikaKomutlari({
   kesim: true,
-  ref: (url, istek) => { setBrief({ reference: { url }, ...(istek ? { serbest: istek } : {}) }); return "Tamam: şimdi videolarını/fotoğraflarını yukarıya bırak, bu bağlantının tarzıyla montajlanacak."; },
+  ref: (src, istek, isFile) => { setBrief({ reference: isFile ? { file: src } : { url: src }, ...(istek ? { serbest: istek } : {}) }); return `Tamam: şimdi videolarını/fotoğraflarını yukarıya bırak, bu ${isFile ? "videonun" : "bağlantının"} tarzıyla montajlanacak.`; },
   kesimIstek: (istek) => { if (!istek) return "Videolarını ve fotoğraflarını yukarıya bırak."; setBrief({ serbest: istek }); return "Tamam: şimdi dosyalarını bırak, bu isteğe göre montajlanacak."; },
 }), { onEnter: () => $("make").click() });
 const qs = new URLSearchParams(location.search);
-if (qs.get("ref") || qs.get("istek")) setBrief({ ...(qs.get("ref") ? { reference: { url: qs.get("ref") } } : {}), ...(qs.get("istek") ? { serbest: qs.get("istek") } : {}) });
+if (qs.get("ref") || qs.get("reffile") || qs.get("istek")) setBrief({ ...(qs.get("ref") ? { reference: { url: qs.get("ref") } } : {}),
+  ...(qs.get("reffile") ? { reference: { file: qs.get("reffile") } } : {}), ...(qs.get("istek") ? { serbest: qs.get("istek") } : {}) });
 load(); setInterval(load, 5000);
 </script>
 <script>/* git pull sonrası eski sunucu çalışıyorsa uyar: yeni düğmeler sessizce çalışmaz */
