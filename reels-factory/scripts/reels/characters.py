@@ -191,6 +191,9 @@ def generate(film: str, name: str, desc: str, poses: list[str], cfg: Config) -> 
     key = secret("GEMINI_API_KEY")
     if not key:
         raise StageError("GEMINI_API_KEY yok: Yayın → Ayarlar'a Gemini API anahtarını gir (aistudio.google.com/apikey)")
+    if len(key) < 16 or not key.isascii():
+        raise StageError(f"GEMINI_API_KEY bozuk ({len(key)} karakter): anahtarı kopyala, sonra "
+                         "`python scripts\\factory.py anahtar GEMINI_API_KEY --pano` ile yeniden kaydet")
     film, cid = slug(film), slug(name)
     folder = STUDIO / "public" / film / "chars"
     folder.mkdir(parents=True, exist_ok=True)

@@ -314,13 +314,24 @@ def cmd_gorsel(args, cfg) -> int:
 def cmd_anahtar(args, cfg) -> int:
     """API anahtarını görünmeden sorup .env'e (UTF-8) yazar; ekrana ve loglara yazmaz."""
     import getpass
+    import subprocess
     from reels.config import set_secret
-    value = getpass.getpass(f"{args.ad} (yapıştır, görünmez, Enter): ").strip()
-    if not value:
-        print("boş bırakıldı, değişiklik yok")
+    if args.pano:  # panoya kopyalanan değer (Windows: Get-Clipboard) — gizli girişte Ctrl+V çalışmaz
+        cmd = ["powershell", "-NoProfile", "-Command", "Get-Clipboard"] if sys.platform.startswith("win") else \
+            ["sh", "-c", "xclip -o -selection clipboard 2>/dev/null || pbpaste"]
+        value = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace").stdout.strip()
+    else:
+        value = getpass.getpass(f"{args.ad} (sağ tıkla yapıştır — Ctrl+V çalışmaz — sonra Enter): ").strip()
+    value = value.strip().strip('"').strip("'")
+    if args.ad != "SUPABASE_URL" and (len(value) < 16 or not value.isascii() or any(c.isspace() for c in value)):
+        print(f"✖ kaydedilmedi: değer geçersiz görünüyor ({len(value)} karakter"
+              f"{', Türkçe/özel karakter var' if not value.isascii() else ''}{', boşluk var' if any(c.isspace() for c in value) else ''})."
+              " Anahtarı sitesinden yeniden kopyala ve --pano ile dene.")
         return 1
     set_secret(args.ad, value)
-    print(f"✔ {args.ad} kaydedildi ({len(value)} karakter) → {ROOT / '.env'}")
+    print(f"✔ {args.ad} kaydedildi ({len(value)} karakter, {value[:4]}…) → {ROOT / '.env'}")
+    if args.ad == "GEMINI_API_KEY" and not value.startswith("AIza"):
+        print("  ! Gemini API anahtarları genelde 'AIza' ile başlar: aistudio.google.com/apikey → Create API key")
     return 0
 
 
@@ -404,6 +415,7 @@ def main() -> int:
     p.add_argument("ad", choices=["GEMINI_API_KEY", "ELEVENLABS_API_KEY", "HIGGSFIELD_KEY_ID", "HIGGSFIELD_KEY_SECRET",
                                   "SUPABASE_URL", "SUPABASE_SERVICE_KEY", "PEXELS_API_KEY", "PIXABAY_API_KEY",
                                   "ANTHROPIC_API_KEY", "HF_TOKEN", "REPLICATE_API_TOKEN", "OPENAI_API_KEY"])
+    p.add_argument("--pano", action="store_true", help="değeri panodan al (anahtarı kopyala, sonra bu komutu çalıştır)")
     p = sub.add_parser("status", help="görev durumları")
     p.add_argument("job", nargs="?")
     args = ap.parse_args()
