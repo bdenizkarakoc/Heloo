@@ -323,11 +323,11 @@ def cmd_anahtar(args, cfg) -> int:
     else:
         value = getpass.getpass(f"{args.ad} (sağ tıkla yapıştır — Ctrl+V çalışmaz — sonra Enter): ").strip()
     value = value.strip().strip('"').strip("'")
-    if args.ad != "SUPABASE_URL" and any(c.isspace() for c in value):
-        # panoya anahtarla birlikte etiket/satır sonu da kopyalanmış olabilir: anahtara benzeyen parçayı ayıkla
+    if args.ad == "GEMINI_API_KEY" and any(c.isspace() for c in value):
+        # panoya anahtarla birlikte etiket/satır sonu da kopyalanmış olabilir: kesin biçimli Gemini anahtarını ayıkla
+        # (başka biçimlerde parça seçmek yanlış anahtar kaydedebilir: kaydetmeyip uyarmak daha güvenli)
         import re
-        pat = r"AIza[0-9A-Za-z_\-]{30,}" if args.ad == "GEMINI_API_KEY" else r"[A-Za-z0-9_\-.:]{20,}"
-        found = re.findall(pat, value) or re.findall(r"[A-Za-z0-9_\-.:]{20,}", value)
+        found = re.findall(r"AIza[0-9A-Za-z_\-]{35}", value)
         if len(found) == 1:
             print(f"  panodaki metinden anahtar ayıklandı ({len(found[0])} karakter)")
             value = found[0] (len(value) < 16 or not value.isascii() or any(c.isspace() for c in value)):
