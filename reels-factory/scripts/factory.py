@@ -319,7 +319,14 @@ def cmd_anahtar(args, cfg) -> int:
     if args.pano:  # panoya kopyalanan değer (Windows: Get-Clipboard) — gizli girişte Ctrl+V çalışmaz
         cmd = ["powershell", "-NoProfile", "-Command", "Get-Clipboard"] if sys.platform.startswith("win") else \
             ["sh", "-c", "xclip -o -selection clipboard 2>/dev/null || pbpaste"]
-        value = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace").stdout.strip()
+        # komutu kopyalayıp yapıştırınca pano o komutla dolar: anahtarı ŞİMDİ kopyalamasını bekle, sonra oku
+        for _ in range(3):
+            input("→ Şimdi anahtarı sitesinden kopyala ('Anahtarı kopyala'), sonra buraya dönüp Enter'a bas: ")
+            value = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
+                                   errors="replace").stdout.strip()
+            if "factory.py" not in value:
+                break
+            print("  panoda hâlâ komut var, anahtar değil — anahtarı kopyalayıp tekrar Enter'a bas")
     else:
         value = getpass.getpass(f"{args.ad} (sağ tıkla yapıştır — Ctrl+V çalışmaz — sonra Enter): ").strip()
     value = value.strip().strip('"').strip("'")
