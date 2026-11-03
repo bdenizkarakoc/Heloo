@@ -520,6 +520,10 @@ class SceneBuilder:
         # ---------------- geçiş efektleri ----------------
         if idx > 0 and enter != "cut" and sc.get("role") != "payoff":
             sfx.append({"name": WHOOSHES[idx % 2], "time": abs0 - 0.05, "gain_db": -2})
+        for e in sc.get("sfx") or []:  # senaryodaki sahne efektleri: [{"name": "key-press", "at": 0.4, "gain_db": -4}]
+            if isinstance(e, dict) and e.get("name"):
+                sfx.append({"name": str(e["name"]), "time": abs0 + float(e.get("at", 0)),
+                            "gain_db": float(e.get("gain_db", -4))})
 
         js = {
             "id": sid, "W": W, "H": H, "dur": dur, "overlap": self.overlap, "enter": enter,
