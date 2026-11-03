@@ -27,12 +27,27 @@ KNOWN_KEYS = (
 )
 
 
+def _env_lines(path: Path) -> list[str]:
+    """.env satırları. Windows PowerShell (Add-Content) dosyaya ANSI/cp1254 ya da UTF-16 yazabilir: her satır önce UTF-8,
+    olmazsa cp1254 ile çözülür; dosya bir sonraki set_secret'te UTF-8 olarak yeniden yazılır."""
+    data = path.read_bytes()
+    if data.startswith((b"\xff\xfe", b"\xfe\xff")):
+        return data.decode("utf-16").splitlines()
+    out = []
+    for raw in data.removeprefix(b"\xef\xbb\xbf").splitlines():
+        try:
+            out.append(raw.decode("utf-8"))
+        except UnicodeDecodeError:
+            out.append(raw.decode("cp1254", errors="replace"))
+    return out
+
+
 def load_dotenv(path: Path | None = None) -> None:
     """Basit .env okuyucu: mevcut ortam değişkenlerinin üzerine yazmaz."""
     path = path or ROOT / ".env"
     if not path.exists():
         return
-    for raw in path.read_text(encoding="utf-8").splitlines():
+    for raw in _env_lines(path):
         line = raw.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
@@ -51,7 +66,7 @@ def set_secret(name: str, value: str) -> None:
         raise ValueError("geçersiz anahtar adı")
     value = (value or "").strip().replace("\n", "").replace("\r", "")
     path = ROOT / ".env"
-    lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+    lines = _env_lines(path) if path.exists() else []
     out, done = [], False
     for line in lines:
         if line.split("=", 1)[0].strip() == name:

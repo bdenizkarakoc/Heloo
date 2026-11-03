@@ -311,6 +311,19 @@ def cmd_gorsel(args, cfg) -> int:
     return 0
 
 
+def cmd_anahtar(args, cfg) -> int:
+    """API anahtarını görünmeden sorup .env'e (UTF-8) yazar; ekrana ve loglara yazmaz."""
+    import getpass
+    from reels.config import set_secret
+    value = getpass.getpass(f"{args.ad} (yapıştır, görünmez, Enter): ").strip()
+    if not value:
+        print("boş bırakıldı, değişiklik yok")
+        return 1
+    set_secret(args.ad, value)
+    print(f"✔ {args.ad} kaydedildi ({len(value)} karakter) → {ROOT / '.env'}")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Otonom AI Reels Fabrikası")
     ap.add_argument("-v", "--verbose", action="store_true")
@@ -387,6 +400,10 @@ def main() -> int:
     p.add_argument("--baslik")
     p.add_argument("--altyazisiz", action="store_true")
     p.add_argument("--muziksiz", action="store_true")
+    p = sub.add_parser("anahtar", help="API anahtarını görünmeden kaydet (.env), ör. anahtar GEMINI_API_KEY")
+    p.add_argument("ad", choices=["GEMINI_API_KEY", "ELEVENLABS_API_KEY", "HIGGSFIELD_KEY_ID", "HIGGSFIELD_KEY_SECRET",
+                                  "SUPABASE_URL", "SUPABASE_SERVICE_KEY", "PEXELS_API_KEY", "PIXABAY_API_KEY",
+                                  "ANTHROPIC_API_KEY", "HF_TOKEN", "REPLICATE_API_TOKEN", "OPENAI_API_KEY"])
     p = sub.add_parser("status", help="görev durumları")
     p.add_argument("job", nargs="?")
     args = ap.parse_args()
@@ -399,7 +416,8 @@ def main() -> int:
                 "run": cmd_run, "status": cmd_status, "candidates": cmd_candidates, "selftest": cmd_selftest,
                 "hook": cmd_hook, "title": cmd_title, "chapters": cmd_chapters, "mcp": cmd_mcp, "kesim": cmd_kesim,
                 "foto": cmd_foto, "anim-ses": cmd_anim_ses,
-                "anim-karakter": cmd_anim_karakter, "gorsel": cmd_gorsel}
+                "anim-karakter": cmd_anim_karakter, "gorsel": cmd_gorsel,
+                "anahtar": cmd_anahtar}
     try:
         return handlers[args.cmd](args, cfg)
     except (StageError, FileNotFoundError) as exc:
