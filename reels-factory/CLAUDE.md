@@ -64,7 +64,7 @@ python scripts/factory.py status [<görev>]
 | `scripts/reels/assistant.py` | AI asistan: yazılan/söylenen isteği sayfanın komutlarına çevirir ("Anladım: …"); ses kaydı GPU Whisper ile yazıya |
 | `scripts/reels/progress.py` | İlerleme: yüzde, kalan süre, adım listesi (`/api/progress`; geçmiş sürelerden öğrenilen ağırlıklar) |
 | `scripts/reels/photos.py` | Fotoğraflarım: `Masaüstü\kesim\Fotoğraflarım` kutusu (asla silinmez/üzerine yazılmaz), önizleme, seçili fotoğraflardan müzikli montaj (Kesim) ya da anlatımlı video (Fabrika); sayfa `app/photos.html` (`/photos`) |
-| `kesim-app/fabrika/komut.js` | `/komut` menüsü + aşağı doğru büyüyen metin kutusu; Kesim'de ve Fabrika sayfalarında (`/komut.js`) aynı dosya. Fabrika komut listesi `app/komutlar.js`, Kesim'inki `fabrika/ui.js`; Claude Code komutları `.claude/commands/` (/kesim, /foto, /video, /ref) |
+| `kesim-app/fabrika/komut.js` | `/komut` menüsü + aşağı doğru büyüyen metin kutusu; Kesim'de ve Fabrika sayfalarında (`/komut.js`) aynı dosya. Fabrika komut listesi `app/komutlar.js`, Kesim'inki `fabrika/ui.js`; Claude Code komutları depo kökündeki `.claude/commands/` (/video, /kesim, /foto, /ref, /yayin) |
 | `app/kesim.html` | Sade Kesim penceresi (`/kesim`, `server.py --open --page kesim`) |
 | `app/mcp_server.py` | MCP sunucusu (stdio): fabrikayı Claude Code/Desktop'a araç olarak açar; yayın yalnızca onay kuyruğuna |
 | `scripts/reels/mcp_setup.py` | `factory.py mcp`: MCP sunucularını (reels-fabrikasi, playwright, memory, filesystem, fetch, git, github, sentry, context7, premiere-pro, brave-search, postgres) Claude Code'a kaydeder; `scripts/install-premiere-mcp.ps1` Premiere Pro MCP'yi kurar |
