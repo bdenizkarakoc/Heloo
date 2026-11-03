@@ -95,7 +95,8 @@
       <div class="card">
         <h2>Hesaplar <span class="muted" id="accFor"></span></h2>
         <div class="acc"><h3>Instagram + Facebook Sayfası <span id="stMeta"></span></h3>
-          <p class="muted">Instagram İşletme/İçerik Üreticisi hesabı bir Facebook Sayfasına bağlı olmalı. developers.facebook.com'da bir uygulama oluştur, Graph API Explorer'dan <code>instagram_basic, instagram_content_publish, pages_show_list, pages_read_engagement, pages_manage_posts</code> izinleriyle uzun ömürlü kullanıcı belirteci al ve yapıştır.</p>
+          <p class="muted">Instagram İşletme/İçerik Üreticisi hesabı bir Facebook Sayfasına bağlı olmalı. developers.facebook.com'da bir uygulama oluştur, Graph API Explorer'dan <code>instagram_basic, instagram_content_publish, pages_show_list, pages_read_engagement, pages_manage_posts</code> izinleriyle kullanıcı belirteci al ve yapıştır. Uygulamanın kimliğini ve gizli anahtarını (Uygulama ayarları → Temel) bir kez girersen kısa belirteç kendiliğinden uzun ömürlüye çevrilir ve bağlantı kopmaz.</p>
+          <div class="row"><input id="metaAppId" type="password" placeholder="Meta uygulama kimliği (App ID)"><input id="metaAppSecret" type="password" placeholder="Uygulama gizli anahtarı (App Secret)"><button class="ghost" style="flex:0 0 auto" id="btnMetaApp">Kaydet</button></div>
           <div class="row"><input id="metaToken" type="password" placeholder="Meta kullanıcı belirteci"><button class="ghost" style="flex:0 0 auto" id="btnMetaPages">Sayfaları getir</button></div>
           <div class="row" id="metaPick" style="display:none"><select id="metaPages"></select><button style="flex:0 0 auto" id="btnMetaConnect">Bağla</button></div>
         </div>
@@ -303,6 +304,7 @@ async function loadMcp() { try { const r = await (await fetch("/api/mcp")).json(
 window.setupMcp = async () => { $("btnMcp").disabled = true; $("stMcp").textContent = "Ekleniyor…"; const r = await api("/api/mcp/setup", {}); $("btnMcp").disabled = false; $("stMcp").textContent = (r.rows || []).map((x) => `${x.status === "eklendi" ? "✓" : x.status === "hata" ? "✖" : "–"} ${x.name}: ${x.note}`).join("\n") + "\n" + (r.message || r.error || ""); $("stMcp").style.whiteSpace = "pre-line"; };
 loadMcp();
 window.saveSecret = async (name, inputId) => { const r = await api("/api/publish/secret", { name, value: $(inputId).value }); $(inputId).value = ""; r.error ? flash(r.error) : flash("Kaydedildi (.env)"); loadStatus(); loadMcp(); };
+$("btnMetaApp").onclick = async () => { await saveSecret("META_APP_ID", "metaAppId"); await saveSecret("META_APP_SECRET", "metaAppSecret"); };
 $("btnYtSave").onclick = async () => { await saveSecret("YOUTUBE_CLIENT_ID", "ytId"); await saveSecret("YOUTUBE_CLIENT_SECRET", "ytSecret"); };
 $("btnYtConnect").onclick = async () => { if (!curSlug()) { flash("Önce kanalı kaydet"); return; } $("btnChSave").click(); location.href = `/api/publish/youtube/start?slug=${encodeURIComponent(curSlug())}`; };
 $("btnTtApp").onclick = async () => { await saveSecret("TIKTOK_CLIENT_KEY", "ttKey"); await saveSecret("TIKTOK_CLIENT_SECRET", "ttSecret"); };

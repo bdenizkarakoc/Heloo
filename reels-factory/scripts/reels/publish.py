@@ -512,7 +512,23 @@ def meta_pages(user_token: str) -> list[dict]:
              "ig_username": (p.get("instagram_business_account") or {}).get("username")} for p in data.get("data", [])]
 
 
+def long_lived(user_token: str) -> str:
+    """Graph API Explorer'ın 1-2 saatlik belirtecini ~60 günlük belirtece çevirir (META_APP_ID/SECRET girilmişse).
+    Uzun ömürlü kullanıcı belirteciyle alınan Sayfa belirtecinin süresi dolmaz; yoksa bağlantı saatler içinde kopar."""
+    app_id, app_secret = secret("META_APP_ID"), secret("META_APP_SECRET")
+    if not app_id or not app_secret:
+        return user_token
+    r = requests.get(f"{GRAPH}/oauth/access_token", timeout=60, params={
+        "grant_type": "fb_exchange_token", "client_id": app_id, "client_secret": app_secret,
+        "fb_exchange_token": user_token})
+    data = r.json() if r.content else {}
+    if r.status_code >= 400 or not data.get("access_token"):
+        raise StageError(f"Meta belirteci uzatılamadı: {(data.get('error') or {}).get('message', r.status_code)}")
+    return data["access_token"]
+
+
 def connect_meta(slug: str, user_token: str, page_id: str) -> dict:
+    user_token = long_lived(user_token)
     page = next((p for p in meta_pages(user_token) if p["page_id"] == page_id), None)
     if not page:
         raise StageError("sayfa bulunamadı")
