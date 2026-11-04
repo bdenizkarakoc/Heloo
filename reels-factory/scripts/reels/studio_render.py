@@ -8,6 +8,7 @@ altyazılar + açılış başlığı (ASS) ve ilerleme çubuğu eklenir; ses ist
 from __future__ import annotations
 
 import copy
+import math
 import shutil
 from pathlib import Path
 
@@ -29,7 +30,7 @@ DEFAULT_STYLE: dict = {
     "frame": {"mode": "blur"},
     "grade": {"contrast": 1.06, "saturation": 1.15, "brightness": 0.0, "gamma": 1.0, "warmth": 0.0,
               "vignette": True},
-    "punch": {"enabled": True, "scale": 1.12},
+    "punch": {"enabled": True, "scale": 1.12, "interrupt": 2.8, "emphasis": 1.08},  # kesim yoksa 2,8 sn'de bir zoom değişir
     "captions": {"enabled": True, "weight": 900, "size": 78, "uppercase": True, "color": "#FFFFFF",
                  "highlight": "#FFD23F", "outline": 7, "outline_color": "#000000", "shadow": 2, "box": False,
                  "box_color": "#000000", "words": 3, "y": 0.64, "pop": True},
@@ -272,8 +273,53 @@ def target_size(src_w: int, src_h: int, aspect: str) -> tuple[int, int]:
     return 1080, 1920
 
 
+EMPH_STOP = {"gerçekten", "aslında", "yani", "şimdi", "bunu", "şunu", "onların", "bizim", "sizin"}
+
+
+def emphasis_times(words: list[dict], min_gap: float = 2.5) -> list[float]:
+    """Vurgu anları: sayılar, ünlemli ve uzun (≥8 harf) kelimeler; aralarında en az min_gap sn."""
+    out: list[float] = []
+    for w in words:
+        t = str(w.get("word", "")); core = t.strip(".,!?;:…\"'").lower()
+        if core in EMPH_STOP:
+            continue
+        if any(ch.isdigit() for ch in t) or t.endswith("!") or len(core) >= 8:
+            if not out or w["start"] - out[-1] >= min_gap:
+                out.append(float(w["start"]))
+    return out
+
+
+def zoom_plan(pieces_out: list[tuple[float, float]], words: list[dict], style: dict) -> list[tuple[float, float, float]]:
+    """Kısa video kurgusunun 'görüntü 2-3 sn'de bir değişsin' kuralı: kesimlerde sırayla zoom (punch), kesim olmayan uzun
+    parçalar `interrupt` sn'de bir bölünür, vurgu kelimelerinde 0,45 sn'lik ek yakınlaşma. Dönen: (başla, bitir, zoom)."""
+    p = style["punch"]
+    if not p.get("enabled"):
+        return []
+    z, inter, emph = float(p["scale"]), float(p.get("interrupt", 2.8)), float(p.get("emphasis", 1.08))
+    base, k = [], 0
+    for a, b in pieces_out:
+        n = max(1, math.ceil((b - a) / inter - 1e-6)) if inter > 0 else 1
+        for j in range(n):
+            base.append((a + (b - a) * j / n, a + (b - a) * (j + 1) / n, z if k % 2 else 1.0)); k += 1
+    em = [(t, t + 0.45) for t in emphasis_times(words)] if emph > 1.0 else []
+    pts = sorted({x for a, b, _ in base for x in (a, b)} | {x for a, b in em for x in (a, b)})
+    segs: list[tuple[float, float, float]] = []
+    for a, b in zip(pts, pts[1:]):
+        if b - a < 1e-3:
+            continue
+        m = (a + b) / 2
+        v = next((zz for x, y, zz in base if x <= m < y), 1.0)
+        if any(x <= m < y for x, y in em):
+            v = min(1.4, v * emph)
+        if segs and abs(segs[-1][2] - v) < 1e-6 and abs(segs[-1][1] - a) < 1e-6:
+            segs[-1] = (segs[-1][0], b, v)
+        else:
+            segs.append((a, b, v))
+    return [sg for sg in segs if sg[2] > 1.0001]
+
+
 def video_filter(style: dict, W: int, H: int, pieces_out: list[tuple[float, float]], total: float,
-                 select: str, fps: int, hdr: bool = False) -> str:
+                 select: str, fps: int, hdr: bool = False, words: list[dict] | None = None) -> str:
     fr, g = style["frame"]["mode"], style["grade"]
     from .studio import HDR_TO_SDR
     tone = (HDR_TO_SDR + ",") if hdr else ""  # iPhone HDR: soluk/gri görünmesin
@@ -289,10 +335,10 @@ def video_filter(style: dict, W: int, H: int, pieces_out: list[tuple[float, floa
     else:
         graph = f"{chain[0]},scale={W}:{H}:force_original_aspect_ratio=decrease,pad={W}:{H}:(ow-iw)/2:(oh-ih)/2[f0]"
     post = []
-    if style["punch"]["enabled"] and len(pieces_out) > 1:
-        z = style["punch"]["scale"]
-        zoomed = "+".join(f"between(it\\,{a:.3f}\\,{b - 0.001:.3f})" for i, (a, b) in enumerate(pieces_out) if i % 2)
-        post.append(f"zoompan=z='if({zoomed}\\,{z}\\,1)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:"
+    plan = zoom_plan(pieces_out, words or [], style)
+    if plan:
+        zexpr = "1+" + "+".join(f"between(it\\,{a:.3f}\\,{b - 0.001:.3f})*{v - 1:.3f}" for a, b, v in plan)
+        post.append(f"zoompan=z='{zexpr}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:"
                     f"s={W}x{H}:fps={fps}")
     post.append(f"eq=contrast={g['contrast']:.3f}:saturation={g['saturation']:.3f}:"
                 f"brightness={g['brightness']:.3f}:gamma={g['gamma']:.3f}")
@@ -392,7 +438,7 @@ def render_clip(src: Path, window: tuple[float, float], words: list[dict], title
     audio = loudnorm_two_pass(mix_src, work / "mix.wav", cfg)
 
     # --- görüntü
-    graph = video_filter(style, W, H, out_pieces, total, sel, fps, hdr=pinfo.get("hdr", False))
+    graph = video_filter(style, W, H, out_pieces, total, sel, fps, hdr=pinfo.get("hdr", False), words=w_out)
     dest.parent.mkdir(parents=True, exist_ok=True)
     run(["ffmpeg", "-y", "-v", "error", *seek, "-i", str(audio.resolve()), "-filter_complex", graph,
          "-map", "[v]", "-map", "1:a:0", "-c:v", "libx264", "-preset", cfg.get_path("output.preset", "medium"),

@@ -44,7 +44,7 @@ python -m pytest tests -q                         # hızlı testler (her gönder
 | `scripts/reels/compose.py` | Metin ölçümü (gerçek font), güvenli alan yerleşimi, HyperFrames proje üretimi, render |
 | `scripts/reels/qc.py` | Teknik QC, ASR ile anlaşılırlık/senkron, kontak tablosu, otomatik düzeltmeler |
 | `scripts/reels/studio.py` | Stüdyo: referanstan stil öğrenme (ölçüm + Claude görsel analizi), kullanıcı videosunu düzenleme, çoklu video/fotoğraf (HEIC/HDR/döndürme) montajı, klip seçimi, stil iyileştirme |
-| `scripts/reels/studio_render.py` | Stüdyo render: jump cut, 9:16 çerçeve, renk, zoom, ASS kelime vurgulu altyazı, ilerleme çubuğu, müzik ducking |
+| `scripts/reels/studio_render.py` | Stüdyo render: jump cut, 9:16 çerçeve, renk, zoom planı (`zoom_plan`: kesimlerde sırayla punch, kesimsiz parçada `punch.interrupt` sn'de bir değişim, vurgu kelimesinde `punch.emphasis`), ASS kelime vurgulu altyazı, ilerleme çubuğu, müzik ducking |
 | `scripts/reels/audiofx.py` | Ortak konuşma sesi iyileştirme: analiz, uğultu çentiği, Wiener gürültü azaltma, EQ, seviye, loudnorm; video sesini değiştirme |
 | `scripts/reels/voice.py` | Sesim: sohbetle ses toplama, ses iyileştirme, profil (perde/hız), kNN-VC ile kendi sesinle seslendirme (`my_voice` TTS) |
 | `scripts/reels/knnvc/` | kNN-VC (MIT) model kodu — torch.hub yok, ağırlıklar `weights_only` ile yüklenir |
