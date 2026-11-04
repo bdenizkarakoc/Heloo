@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-PY = sorted(p for d in ("scripts", "app") for p in (ROOT / d).rglob("*.py") if "__pycache__" not in p.parts)
+PY = sorted(p for d in ("scripts", "app", "cizgi") for p in (ROOT / d).rglob("*.py") if "__pycache__" not in p.parts)
 JS = sorted([*(ROOT / "app").glob("*.js"), *(ROOT / "kesim-app" / "fabrika").glob("*.js")])
 
 
