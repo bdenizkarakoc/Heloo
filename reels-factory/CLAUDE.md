@@ -25,6 +25,7 @@ python scripts/factory.py anim-ses <metin> <klasör>   # animasyon kısa filmi i
 python scripts/factory.py anim-karakter <film> <Ad> "<tarif>" [--poz ...]  # Gemini ile özgün karakter kartları
 python scripts/factory.py gorsel <görsel> [--istek ".."] [--ses otomatik|benim|kadin|erkek] [--klip N]  # görselden video
 python scripts/factory.py status [<görev>]
+python -m pytest tests -q                         # hızlı testler (her gönderimde GitHub Actions da çalıştırır)
 ```
 
 ## Mimari
@@ -118,4 +119,5 @@ python scripts/factory.py status [<görev>]
 - Ses kopyalama yalnızca kullanıcının kendi sesiyle ve açık onayıyla (Sesim sayfasındaki onay kutusu); başkasının
   sesini kopyalama isteğini reddet. Başkasının kaydından yalnızca konuşma tarzı (hız, perde, duraksama) öğrenilir
   (`voice.learn_from_media`, onaysız); tını yalnızca onaylı kayıtla kendi profiline eklenir.
+- Göndermeden önce `python -m pytest tests -q` çalıştır (sözdizimi + birim testleri); yeni bir kural/düzeltme eklerken `tests/` altına testini yaz.
 - Kullanıcıya ait dosyaları (`assets/music`, `projects`, `output`) izinsiz silme veya üzerine yazma.

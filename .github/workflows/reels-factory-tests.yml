@@ -1,0 +1,30 @@
+# Reels Fabrikası: her gönderimde hızlı testler (sözdizimi, komut satırı, birim testleri). Ağ ve ücretli API yok.
+name: reels-factory-tests
+on:
+  push:
+    paths: ["reels-factory/**", ".github/workflows/reels-factory-tests.yml"]
+  pull_request:
+    paths: ["reels-factory/**"]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: reels-factory
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: reels-factory/requirements.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Paketler (ağır isteğe bağlılar hariç)
+        run: |
+          grep -vE '^(faster-whisper|mcp|anthropic)' requirements.txt > /tmp/req.txt
+          python -m pip install -q -r /tmp/req.txt pytest
+      - name: Testler
+        run: python -m pytest tests -q
