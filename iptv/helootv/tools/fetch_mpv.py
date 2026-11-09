@@ -44,7 +44,34 @@ def _creationflags() -> int:
     return 0x08000000 if os.name == "nt" else 0
 
 
+def _transient(e: Exception) -> bool:
+    """GitHub'ın geçici hataları (502/503/504, 429, bağlantı kopması): kısa bekleyip yeniden denenir."""
+    import urllib.error
+    if isinstance(e, urllib.error.HTTPError):
+        return e.code in (408, 429, 500, 502, 503, 504)
+    return isinstance(e, (urllib.error.URLError, TimeoutError, ConnectionError, OSError))
+
+
+def _retry(fn, *args, attempts: int = 4, progress: Callable[[str], None] | None = None, **kwargs):
+    for i in range(attempts):
+        try:
+            return fn(*args, **kwargs)
+        except FetchError:
+            raise
+        except Exception as e:  # noqa: BLE001
+            if i == attempts - 1 or not _transient(e):
+                raise
+            wait = 2 ** (i + 1)
+            if progress:
+                progress(f"Geçici ağ hatası ({e}); {wait} sn sonra yeniden deneniyor…")
+            time.sleep(wait)
+
+
 def _gh_json(url: str) -> dict:
+    return _retry(_gh_json_once, url)
+
+
+def _gh_json_once(url: str) -> dict:
     headers = {"Accept": "application/vnd.github+json", "User-Agent": UA, "X-GitHub-Api-Version": "2022-11-28"}
     token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
     if token:
@@ -77,6 +104,10 @@ def pick_asset(assets: list[dict], kind: str, avx2: bool, arch: str = "x86_64") 
 
 def download(url: str, dest: Path, digest: str | None = None,
              progress: Callable[[str], None] | None = None) -> Path:
+    return _retry(_download_once, url, dest, digest, progress, progress=progress)
+
+
+def _download_once(url: str, dest: Path, digest: str | None, progress: Callable[[str], None] | None) -> Path:
     dest.parent.mkdir(parents=True, exist_ok=True)
     h = hashlib.sha256()
     tmp = dest.with_name(dest.name + ".part")

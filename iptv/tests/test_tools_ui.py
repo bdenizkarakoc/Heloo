@@ -219,3 +219,29 @@ def test_source_dialog_and_settings_page(tmp_path, monkeypatch):
     assert settings["latency"]["mode"] == "ultra" and settings["video"]["vsr_target"] == "1440"
     assert settings["video"]["rtx_hdr"] is True and changed
     app.processEvents()
+
+
+def test_download_retries_transient_github_errors(monkeypatch):
+    """Windows CI'da yakalanan: GitHub 504 Gateway Time-out verince indirme hemen düşüyordu."""
+    import urllib.error
+
+    from helootv.tools import fetch_mpv as fm
+    monkeypatch.setattr(fm.time, "sleep", lambda s: None)
+    calls = []
+
+    def flaky(x):
+        calls.append(x)
+        if len(calls) < 3:
+            raise urllib.error.HTTPError("u", 504, "Gateway Time-out", {}, None)
+        return x
+
+    msgs = []
+    assert fm._retry(flaky, 7, progress=msgs.append) == 7 and len(calls) == 3 and len(msgs) == 2
+
+    def missing():
+        calls.append("404")
+        raise urllib.error.HTTPError("u", 404, "Not Found", {}, None)
+
+    with pytest.raises(urllib.error.HTTPError):
+        fm._retry(missing)
+    assert calls.count("404") == 1   # kalıcı hata yeniden denenmez
