@@ -496,6 +496,25 @@ class Store:
                     out[(sid, ch)] = (cur, nxt)
         return out
 
+    def epg_grid(self, pairs: Iterable[tuple[int, str]], start: float, end: float) -> dict:
+        """TV rehberi ızgarası: {(kaynak, epg_id): [program, ...]} — [start, end) aralığıyla kesişenler."""
+        by_source: dict[int, list[str]] = {}
+        for sid, ch in pairs:
+            if ch:
+                by_source.setdefault(sid, []).append(ch)
+        out: dict = {}
+        for sid, chans in by_source.items():
+            uniq = list(dict.fromkeys(chans))
+            for i in range(0, len(uniq), 400):
+                part = uniq[i:i + 400]
+                marks = ", ".join("?" for _ in part)
+                rows = self.epg_conn.execute(
+                    f"SELECT channel, start, stop, title, descr FROM epg WHERE source_id=? AND channel IN ({marks}) "
+                    "AND stop>? AND start<? ORDER BY channel, start", (sid, *part, int(start), int(end))).fetchall()
+                for ch, st, sp, title, desc in rows:
+                    out.setdefault((sid, ch), []).append({"start": st, "stop": sp, "title": title, "desc": desc})
+        return out
+
     def epg_for_channel(self, source_id: int, channel: str, start: float, end: float) -> list[dict]:
         rows = self.epg_conn.execute("SELECT start, stop, title, descr FROM epg WHERE source_id=? AND channel=? "
                                  "AND stop>? AND start<? ORDER BY start", (source_id, channel, int(start), int(end)))

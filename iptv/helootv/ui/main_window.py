@@ -141,6 +141,12 @@ class MainWindow(QMainWindow):
         self.refresh_btn = QPushButton("⟳")
         self.refresh_btn.setObjectName("Flat")
         self.refresh_btn.setToolTip("Listeleri ve yayın akışını yenile (F5)")
+        self.guide_btn = QPushButton("📅 Rehber")
+        self.guide_btn.setObjectName("Flat")
+        self.guide_btn.setToolTip("TV Rehberi: kanallar × saatler (F2)")
+        self.guide_btn.setCursor(Qt.PointingHandCursor)
+        self.guide_btn.clicked.connect(self.open_guide)
+        h.addWidget(self.guide_btn)
         h.addWidget(self.refresh_btn)
         v.addWidget(self.topbar)
 
@@ -239,6 +245,7 @@ class MainWindow(QMainWindow):
             ("Ctrl+P", self.picture_dialog),
             ("Ctrl+G", self.toggle_lossless),
             ("Ctrl+R", self.toggle_record),
+            ("F2", self.open_guide),
             ("Ctrl+M", lambda: self._set_pip(not self._pip)),
         ]
         shortcuts += [("Ctrl+O", self.open_file_dialog), ("Ctrl+U", self.open_url_dialog),
@@ -1459,6 +1466,25 @@ class MainWindow(QMainWindow):
         box.finished.connect(done)
         box.show()
         QApplication.alert(self)
+
+    # ------------------------------------------------------------------ TV rehberi
+    def open_guide(self) -> None:
+        from .guide import GuideWindow
+        if getattr(self, "_guide", None) is None:
+            g = self._guide = GuideWindow(self.ctx, self)
+            g.play_live.connect(self.play_live)
+            g.catchup.connect(self.play_catchup)
+            g.record.connect(self.schedule_record)
+            g.remind.connect(self.schedule_reminder)
+            g.canvas.marks = lambda item, prog: ("⏺ " if self.scheduler.find("record", item.key, prog["start"])
+                                                 else "🔔 " if self.scheduler.find("remind", item.key, prog["start"])
+                                                 else "")
+        items = list(self.live_page.model.items)
+        g = self._guide
+        g.canvas.playing_key = self.current_item.key if self.current_item else None
+        g.load(items, self.live_page.header.text())
+        g.show()
+        g.raise_()
 
     # ------------------------------------------------------------------ resim içinde resim (mini oynatıcı)
     def _set_pip(self, on: bool) -> None:

@@ -121,6 +121,9 @@ TiviMate / IPTVnator / OTT Navigator'daki özelliklerin karşılıkları:
 - **Zamanlanmış kayıt**: yayın akışında bir programa sağ tık → "⏺ Bu programı kaydet". Kayıt 1 dk önce başlar,
   program bitiminden 2 dk sonra biter; uygulama açık olmalıdır. Programın yanında ⏺ işareti görünür.
 - **Hatırlatıcı**: sağ tık → "🔔 Başlayınca hatırlat": program başlamadan 1 dk önce bildirim ve "Kanalı aç".
+- **📅 TV Rehberi (F2)**: TiviMate'teki gibi kanallar × saatler ızgarası (şimdiden 3 saat önce … 24 saat sonra,
+  kırmızı "şimdi" çizgisi; kanal sütunu ve saat şeridi kaydırmada yerinde kalır). Çift tık: şu anki program → kanalı aç,
+  geçmiş (⟲, arşivli kanal) → geri izle, gelecek → hatırlat. Sağ tık: kaydet / hatırlat / geri izle.
 - **⧉ Resim içinde resim (Ctrl+M)**: yalnız video, her zaman üstte, ekranın sağ altında küçük pencere; başka bir işle
   uğraşırken izlemek için. Esc ya da çift tık: geri döner.
 - Oynatıcı çubuğu iki satıra bölündü (sarma düğmeleri ilerleme çubuğunun yanında; ses ve pencere düğmeleri başlık

@@ -135,3 +135,81 @@ def test_ui_record_button_and_pip(tmp_path, monkeypatch):
         win.recorder.stop_all()
         win.close()
         httpd.shutdown()
+
+
+def test_tv_guide_grid(tmp_path, monkeypatch):
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("HELOOTV_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtCore import QPoint
+    from PySide6.QtWidgets import QApplication
+
+    from helootv import catalog
+    from helootv import settings as settings_mod
+    from helootv.store import Store
+    from helootv.ui.guide import CH_W, HEAD_H, ROW_H
+    from helootv.ui.main_window import MainWindow
+    app = QApplication.instance() or QApplication([])
+    m3u = tmp_path / "k.m3u"
+    m3u.write_text("#EXTM3U\n" + "".join(
+        f'#EXTINF:-1 tvg-id="k{i}" tvg-rec="3" group-title="Ulusal",Kanal {i}\nhttp://127.0.0.1:9/k{i}.ts\n'
+        for i in range(1, 4)), encoding="utf-8")
+    store = Store(tmp_path / "t.db")
+    sid = store.add_source(name="Test", kind="m3u", url=str(m3u))
+    s = settings_mod.merged_defaults()
+    s["ui"]["resume_last_channel"] = False
+    s["ui"]["auto_refresh_hours"] = 0
+    catalog.refresh_source(store, store.get_source(sid), s)
+    now = int(time.time())
+    base = now - now % 3600
+    with store.epg_transaction() as c:
+        for i in (1, 2):
+            for h in range(-3, 6):
+                c.execute("INSERT INTO epg(source_id, channel, start, stop, title, descr) VALUES (?,?,?,?,?,?)",
+                          (sid, f"k{i}", base + h * 3600, base + (h + 1) * 3600, f"Program {i}/{h}", "açıklama"))
+    grid = store.epg_grid([(sid, "k1"), (sid, "k2"), (sid, "k3")], now - 7200, now + 7200)
+    assert len(grid[(sid, "k1")]) == 5 and (sid, "k3") not in grid
+    win = MainWindow(store, s, headless=True)
+    win.show()
+
+    def pump(sec, until):
+        end = time.time() + sec
+        while time.time() < end:
+            app.processEvents()
+            if until():
+                return True
+            time.sleep(0.02)
+        return until()
+
+    assert pump(5, lambda: len(win.live_page.model.items) == 3)
+    win.open_guide()
+    g = win._guide
+    assert pump(5, lambda: len(g.canvas.items) == 3 and g.canvas.progs)
+    assert "2 kanalın yayın akışı var" in g.info.text()
+    played, caught, remind = [], [], []
+    g.play_live.disconnect()
+    g.catchup.disconnect()
+    g.remind.disconnect()
+    g.play_live.connect(lambda it: played.append(it.name))
+    g.catchup.connect(lambda it, p: caught.append(p["title"]))
+    g.remind.connect(lambda it, p: remind.append(p["title"]))
+    c = g.canvas
+    y = HEAD_H + ROW_H // 2                       # 1. kanal satırı
+    item, prog, _ = c.hit(QPoint(c.x_of(now) + 1, y))
+    assert item.name == "Kanal 1" and prog["title"] == "Program 1/0"
+    g._activated(item, prog)                      # şimdi → kanalı aç
+    _, past, _ = c.hit(QPoint(c.x_of(now - 7000), y))
+    g._activated(item, past)                      # geçmiş + arşiv → geri izle
+    _, fut, _ = c.hit(QPoint(c.x_of(now + 7300), y))
+    g._activated(item, fut)                       # gelecek → hatırlat
+    assert played == ["Kanal 1"] and caught == ["Program 1/-2"] and remind == ["Program 1/2"]
+    assert c.hit(QPoint(CH_W // 2, y))[1] is None  # kanal sütunu
+    c.repaint()                                   # çizim hatasız
+    g.grab().save(str(tmp_path / "rehber.png"))
+    # gerçek bağlantı: rehberden hatırlatıcı → zamanlayıcıda ve işaretli
+    g.remind.disconnect()
+    g.remind.connect(win.schedule_reminder)
+    g.remind.emit(item, fut)
+    assert win.scheduler.find("remind", item.key, fut["start"]) and c.marks(item, fut) == "🔔 "
+    g.close()
+    win.close()
