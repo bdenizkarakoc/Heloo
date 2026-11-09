@@ -1,0 +1,487 @@
+﻿#Requires -Version 5.1
+<#
+.SYNOPSIS
+  Hoparlör Ses Ayarı — Logitech Z607 5.1 ve diğer hoparlörler için ekolayzır (bas, tiz, müzik türü hazırları).
+
+.DESCRIPTION
+  Tek başına çalışan pencereli program. Logitech, Z607 için bilgisayarda ekolayzır programı sunmadığından ses
+  ayarı ücretsiz, açık kaynak Equalizer APO ile bütün Windows sesine uygulanır:
+    <Equalizer APO>\config\heloo-hoparlor.txt   (her hoparlör için ayrı blok: Device: {çıkış GUID})
+    config.txt içine bir kez:  Include: heloo-hoparlor.txt
+  Ayarlar: %APPDATA%\HelooHoparlor\ayarlar.json (reels-factory /hoparlor sayfasıyla aynı hazırlar ve kurallar).
+
+  Çalıştırma: dosyaya sağ tık → "PowerShell ile çalıştır". Equalizer APO klasörüne yazabilmek için yönetici izni ister.
+  İnternetten indirdiysen bir kez:  Unblock-File .\hoparlor.ps1
+
+.PARAMETER SelfTest
+  Pencere açmadan örnek ayar dosyasını ekrana yazar (deneme için).
+#>
+param([switch]$NoElevate, [switch]$SelfTest)
+
+$ErrorActionPreference = 'Stop'
+Set-StrictMode -Version 2
+
+# ------------------------------------------------------------------ veriler
+$Bands = @(31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000)
+$Limit = 12
+$Fs = 48000.0
+
+$Presets = [ordered]@{
+  duz        = @{ ad = 'Düz';               b = @(0, 0, 0, 0, 0, 0, 0, 0, 0, 0) }
+  pop        = @{ ad = 'Pop';               b = @(-1, 1, 3, 4, 2, 0, -1, 0, 1, 2) }
+  rock       = @{ ad = 'Rock';              b = @(4, 3, 2, 0, -1, -1, 1, 3, 4, 4) }
+  rnb        = @{ ad = 'R&&B';              b = @(3, 6, 5, 1, -2, -1, 1, 2, 3, 3) }
+  hiphop     = @{ ad = 'Hip-hop / Rap';     b = @(5, 5, 3, 1, -1, -1, 1, 0, 1, 2) }
+  caz        = @{ ad = 'Caz';               b = @(3, 2, 1, 2, -1, -1, 0, 1, 2, 3) }
+  klasik     = @{ ad = 'Klasik';            b = @(3, 2, 1, 0, -1, -1, 0, 1, 2, 3) }
+  turku      = @{ ad = 'Türkü / Halk';      b = @(0, 1, 1, 0, 1, 2, 3, 3, 2, 1) }
+  arabesk    = @{ ad = 'Arabesk';           b = @(1, 2, 2, 0, 0, 1, 2, 2, 1, 1) }
+  elektronik = @{ ad = 'Elektronik';        b = @(5, 4, 1, 0, -2, 0, 1, 2, 4, 5) }
+  akustik    = @{ ad = 'Akustik';           b = @(2, 1, 1, 1, 2, 1, 2, 2, 2, 1) }
+  bas        = @{ ad = 'Bol bas';           b = @(7, 6, 4, 2, 0, 0, 0, 0, 0, 0) }
+  film       = @{ ad = 'Film / Dizi';       b = @(4, 3, 1, 0, 0, 1, 2, 1, 2, 2); merkez = 3 }
+  konusma    = @{ ad = 'Konuşma / Podcast'; b = @(-4, -3, -1, 0, 2, 3, 4, 3, 1, 0); merkez = 2 }
+  oyun       = @{ ad = 'Oyun';              b = @(3, 2, 0, -1, 0, 1, 3, 3, 2, 1) }
+  gece       = @{ ad = 'Gece (kısık ses)';  b = @(-4, -3, -2, 0, 1, 2, 2, 1, 0, -1) }
+}
+
+# hp: koruma için alçak kesim (Hz), max: en çok yükseltme (dB). Hoparlörün çalamadığı derin bas yükseltilmez.
+$Kinds = [ordered]@{
+  z607      = @{ ad = 'Logitech Z607 5.1';               hp = 35;  max = 10; k51 = $true }
+  masaustu  = @{ ad = 'Masaüstü hoparlör (2.0/2.1)';     hp = 45;  max = 9;  k51 = $false }
+  soundbar  = @{ ad = 'Soundbar';                        hp = 45;  max = 9;  k51 = $false }
+  bluetooth = @{ ad = 'Taşınabilir Bluetooth hoparlör';  hp = 70;  max = 8;  k51 = $false }
+  laptop    = @{ ad = 'Dizüstü dahili hoparlör';         hp = 150; max = 6;  k51 = $false }
+  kulaklik  = @{ ad = 'Kulaklık';                        hp = 0;   max = 10; k51 = $false }
+}
+
+# sade sürgüler: anahtar, ad, süzgeç türü, frekans, Q
+$Simple = @(
+  @{ k = 'bas';   ad = 'Bas';            t = 'LSC'; f = 105;  q = 0.71 },
+  @{ k = 'orta';  ad = 'Orta';           t = 'PK';  f = 900;  q = 0.7 },
+  @{ k = 'vokal'; ad = 'Vokal / netlik'; t = 'PK';  f = 3000; q = 1.0 },
+  @{ k = 'tiz';   ad = 'Tiz';            t = 'HSC'; f = 8000; q = 0.71 }
+)
+$Chans = @(
+  @{ k = 'sub';    ad = 'Subwoofer';        ch = 'SUB' },
+  @{ k = 'merkez'; ad = 'Merkez (diyalog)'; ch = 'C' },
+  @{ k = 'arka';   ad = 'Arka hoparlörler'; ch = 'RL RR SL SR' }
+)
+
+$AppDir = Join-Path $(if ($env:APPDATA) { $env:APPDATA } else { $HOME }) 'HelooHoparlor'
+$StateFile = Join-Path $AppDir 'ayarlar.json'
+$ApoFile = 'heloo-hoparlor.txt'
+$ApoInclude = "Include: $ApoFile"
+$ApoUrl = 'https://sourceforge.net/projects/equalizerapo/'
+
+# ------------------------------------------------------------------ ayarlar
+function New-Settings([string]$preset = 'duz') {
+  $p = $Presets[$preset]
+  $m = 0; if ($p.ContainsKey('merkez')) { $m = $p.merkez }
+  [pscustomobject]@{ acik = $true; preset = $preset; bands = @($p.b | ForEach-Object { [double]$_ })
+    bas = 0.0; orta = 0.0; vokal = 0.0; tiz = 0.0; seviye = 0.0; sub = 0.0; merkez = [double]$m; arka = 0.0 }
+}
+
+function New-Speaker([string]$id, [string]$ad, [string]$kind) {
+  [pscustomobject]@{ id = $id; ad = $ad; kind = $kind; device = ''; device_ad = ''; settings = (New-Settings) }
+}
+
+function Clamp([double]$v, [double]$lo = -12, [double]$hi = $Limit) { [math]::Round([math]::Min($hi, [math]::Max($lo, $v)), 1) }
+
+function Repair-Settings($s) {
+  $d = New-Settings
+  if ($null -eq $s) { return $d }
+  foreach ($k in 'acik', 'preset', 'bas', 'orta', 'vokal', 'tiz', 'seviye', 'sub', 'merkez', 'arka') {
+    if ($s.PSObject.Properties[$k]) { $d.$k = $s.$k }
+  }
+  if ($s.PSObject.Properties['bands'] -and @($s.bands).Count -eq $Bands.Count) { $d.bands = @($s.bands | ForEach-Object { Clamp $_ }) }
+  foreach ($k in 'bas', 'orta', 'vokal', 'tiz', 'sub', 'merkez', 'arka') { $d.$k = Clamp $d.$k }
+  $d.seviye = Clamp $d.seviye -20 6
+  $d.acik = [bool]$d.acik
+  if (-not ($Presets.Contains([string]$d.preset) -or $d.preset -eq 'ozel')) { $d.preset = 'ozel' }
+  $d
+}
+
+function Read-State {
+  try {
+    if (Test-Path $StateFile) {
+      $st = Get-Content $StateFile -Raw -Encoding UTF8 | ConvertFrom-Json
+      if ($st.speakers) {
+        $st.speakers = @($st.speakers | ForEach-Object {
+            if (-not $Kinds.Contains([string]$_.kind)) { $_.kind = 'masaustu' }
+            $_.settings = Repair-Settings $_.settings; $_ })
+        return $st
+      }
+    }
+  } catch { }
+  [pscustomobject]@{ active = 'z607'; speakers = @(New-Speaker 'z607' 'Logitech Z607' 'z607') }
+}
+
+function Save-State($st) {
+  New-Item -ItemType Directory -Force -Path $AppDir | Out-Null
+  [IO.File]::WriteAllText($StateFile, ($st | ConvertTo-Json -Depth 6), (New-Object Text.UTF8Encoding $false))
+}
+
+function Get-Active($st) {
+  $a = @($st.speakers | Where-Object { $_.id -eq $st.active })
+  if ($a.Count) { $a[0] } else { $st.speakers[0] }
+}
+
+# ------------------------------------------------------------------ süzgeçler
+function Get-Filters($s, [string]$kind) {
+  $k = $Kinds[$kind]; $mx = [double]$k.max
+  $out = New-Object System.Collections.ArrayList
+  if ($k.hp) { [void]$out.Add(@('HP', [double]$k.hp, 0.0, 0.71)) }
+  for ($i = 0; $i -lt $Bands.Count; $i++) {
+    $g = [math]::Min([double]$s.bands[$i], $mx)
+    if ($k.hp -and $Bands[$i] -lt $k.hp * 1.3) { $g = [math]::Min($g, 0) }   # çalamadığı bas yükseltilmez
+    if ($g -ne 0) { [void]$out.Add(@('PK', [double]$Bands[$i], $g, 1.41)) }
+  }
+  foreach ($x in $Simple) {
+    $g = [math]::Min([double]$s.($x.k), $mx)
+    if ($x.k -eq 'bas' -and $k.hp -ge 100) { $g = [math]::Min($g, 3) }
+    if ($g -ne 0) { [void]$out.Add(@($x.t, [double]$x.f, $g, [double]$x.q)) }
+  }
+  , $out
+}
+
+function Get-Coeffs([string]$t, [double]$f, [double]$g, [double]$q) {
+  $a = [math]::Pow(10, $g / 40); $w = 2 * [math]::PI * $f / $Fs
+  $cw = [math]::Cos($w); $al = [math]::Sin($w) / (2 * $q)
+  switch ($t) {
+    'PK' { return @((1 + $al * $a), (-2 * $cw), (1 - $al * $a), (1 + $al / $a), (-2 * $cw), (1 - $al / $a)) }
+    'HP' { return @(((1 + $cw) / 2), (-(1 + $cw)), ((1 + $cw) / 2), (1 + $al), (-2 * $cw), (1 - $al)) }
+  }
+  $r = 2 * [math]::Sqrt($a) * $al
+  if ($t -eq 'LSC') {
+    return @(($a * (($a + 1) - ($a - 1) * $cw + $r)), (2 * $a * (($a - 1) - ($a + 1) * $cw)), ($a * (($a + 1) - ($a - 1) * $cw - $r)),
+      (($a + 1) + ($a - 1) * $cw + $r), (-2 * (($a - 1) + ($a + 1) * $cw)), (($a + 1) + ($a - 1) * $cw - $r))
+  }
+  @(($a * (($a + 1) + ($a - 1) * $cw + $r)), (-2 * $a * (($a - 1) + ($a + 1) * $cw)), ($a * (($a + 1) + ($a - 1) * $cw - $r)),
+    (($a + 1) - ($a - 1) * $cw + $r), (2 * (($a - 1) - ($a + 1) * $cw)), (($a + 1) - ($a - 1) * $cw - $r))
+}
+
+$CurveFreqs = @(0..119 | ForEach-Object { 20 * [math]::Pow(1000, $_ / 119) })
+
+function Get-Curve($flt) {
+  $cs = @($flt | ForEach-Object { , (Get-Coeffs $_[0] $_[1] $_[2] $_[3]) })
+  foreach ($f in $CurveFreqs) {
+    $w = 2 * [math]::PI * $f / $Fs; $c1 = [math]::Cos($w); $s1 = [math]::Sin($w); $c2 = [math]::Cos(2 * $w); $s2 = [math]::Sin(2 * $w)
+    $db = 0.0
+    foreach ($c in $cs) {
+      $nr = $c[0] + $c[1] * $c1 + $c[2] * $c2; $ni = $c[1] * $s1 + $c[2] * $s2
+      $dr = $c[3] + $c[4] * $c1 + $c[5] * $c2; $di = $c[4] * $s1 + $c[5] * $s2
+      $db += 10 * [math]::Log10([math]::Max(1e-18, ($nr * $nr + $ni * $ni) / ($dr * $dr + $di * $di)))
+    }
+    $db
+  }
+}
+
+function Get-Analysis($sp) {
+  $s = $sp.settings; $k = $Kinds[$sp.kind]
+  $flt = Get-Filters $s $sp.kind
+  $curve = if ($flt.Count) { @(Get-Curve $flt) } else { @($CurveFreqs | ForEach-Object { 0.0 }) }
+  $peak = [math]::Max(0, ($curve[3..($curve.Count - 1)] | Measure-Object -Maximum).Maximum)
+  $chPeak = 0.0
+  if ($k.k51) { foreach ($c in $Chans) { $chPeak = [math]::Max($chPeak, [double]$s.($c.k)) } }
+  @{ filters = $flt; curve = $curve; preamp = [math]::Round($s.seviye - $peak - $chPeak, 1) }
+}
+
+# ------------------------------------------------------------------ Equalizer APO
+$Inv = [Globalization.CultureInfo]::InvariantCulture
+function N([double]$v, [string]$f = '0.0') { $v.ToString($f, $Inv) }
+
+function Get-Block($sp) {
+  $k = $Kinds[$sp.kind]
+  $l = New-Object System.Collections.ArrayList
+  $title = "# $($sp.ad) ($($k.ad))"; if ($sp.device_ad) { $title += " - $($sp.device_ad)" }
+  [void]$l.Add($title)
+  [void]$l.Add($(if ($sp.device) { "Device: $($sp.device)" } else { 'Device: all' }))
+  if (-not $sp.settings.acik) { [void]$l.Add('# kapalı (düz ses)'); return ($l -join "`r`n") }
+  $an = Get-Analysis $sp
+  [void]$l.Add("Preamp: $(N $an.preamp) dB")
+  foreach ($x in $an.filters) {
+    if ($x[0] -eq 'HP') { [void]$l.Add("Filter: ON HP Fc $(N $x[1] '0') Hz Q $(N $x[3] '0.00')") }
+    else { [void]$l.Add("Filter: ON $($x[0]) Fc $(N $x[1] '0') Hz Gain $(N $x[2]) dB Q $(N $x[3] '0.00')") }
+  }
+  if ($k.k51) {
+    $any = $false
+    foreach ($c in $Chans) {
+      $v = [double]$sp.settings.($c.k)
+      if ($v -ne 0) { [void]$l.Add("Channel: $($c.ch)"); [void]$l.Add("Preamp: $(N $v) dB"); $any = $true }
+    }
+    if ($any) { [void]$l.Add('Channel: all') }
+  }
+  $l -join "`r`n"
+}
+
+function Get-ApoConfig($st) {
+  $blocks = New-Object System.Collections.ArrayList
+  $act = Get-Active $st
+  if (-not $act.device) { [void]$blocks.Add((Get-Block $act)) }   # çıkışı seçilmemiş: varsayılan çıkışa
+  foreach ($sp in $st.speakers) { if ($sp.device) { [void]$blocks.Add((Get-Block $sp)) } }
+  "# Heloo hoparlör ayarı - hoparlor.ps1 yazar, elle değiştirme.`r`n`r`n" + ($blocks -join "`r`n`r`n") + "`r`n`r`nDevice: all`r`n"
+}
+
+function Get-ApoDir {
+  foreach ($key in 'HKLM:\SOFTWARE\EqualizerAPO', 'HKLM:\SOFTWARE\WOW6432Node\EqualizerAPO') {
+    try { $p = (Get-ItemProperty -Path $key -Name ConfigPath -ErrorAction Stop).ConfigPath; if ($p -and (Test-Path $p)) { return $p } } catch { }
+  }
+  $p = Join-Path $env:ProgramFiles 'EqualizerAPO\config'
+  if (Test-Path $p) { return $p }
+  $null
+}
+
+function Write-Apo($st) {
+  $dir = Get-ApoDir
+  if (-not $dir) { return @{ ok = $false; msg = 'Equalizer APO kurulu değil — "Equalizer APO indir" düğmesine bas.' } }
+  $text = Get-ApoConfig $st
+  try {
+    $enc = New-Object Text.UTF8Encoding $true
+    [IO.File]::WriteAllText((Join-Path $dir $ApoFile), $text, $enc)
+    $main = Join-Path $dir 'config.txt'
+    $cur = if (Test-Path $main) { [IO.File]::ReadAllText($main) } else { '' }
+    if ($cur -notmatch [regex]::Escape($ApoInclude)) {
+      $nl = if ($cur -and -not $cur.EndsWith("`n")) { "`r`n" } else { '' }
+      [IO.File]::AppendAllText($main, "$nl$ApoInclude`r`n", (New-Object Text.UTF8Encoding $false))
+    }
+    @{ ok = $true; msg = 'Uygulandı - ses anında değişti.' }
+  } catch [UnauthorizedAccessException] {
+    @{ ok = $false; msg = 'Yazma izni yok: programı yönetici olarak aç (sağ tık → PowerShell ile çalıştır, izin penceresine Evet).' }
+  } catch {
+    @{ ok = $false; msg = "Yazılamadı: $($_.Exception.Message)" }
+  }
+}
+
+function Get-Devices {
+  try {
+    @(Get-PnpDevice -Class AudioEndpoint -PresentOnly -ErrorAction Stop | Where-Object { $_.InstanceId -like '*{0.0.0.*' } | ForEach-Object {
+        if ($_.InstanceId -match '(\{[0-9A-Fa-f-]{36}\})$') { [pscustomobject]@{ guid = $Matches[1]; ad = $_.FriendlyName } } })
+  } catch { @() }
+}
+
+# ------------------------------------------------------------------ deneme (pencere yok)
+if ($SelfTest) {
+  $st = Read-State
+  $sp = Get-Active $st
+  $sp.settings = New-Settings 'turku'; $sp.settings.bas = 3
+  Get-ApoConfig $st
+  return
+}
+
+# ------------------------------------------------------------------ yönetici izni
+$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $isAdmin -and -not $NoElevate -and $PSCommandPath) {
+  try {
+    Start-Process powershell -Verb RunAs -WindowStyle Hidden -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-STA', '-File', "`"$PSCommandPath`"", '-NoElevate')
+    return
+  } catch { }   # izin verilmezse yine açılır; yazarken uyarır
+}
+
+# ------------------------------------------------------------------ pencere
+Add-Type -AssemblyName System.Windows.Forms, System.Drawing, Microsoft.VisualBasic
+[Windows.Forms.Application]::EnableVisualStyles()
+
+$C = @{ bg = [Drawing.Color]::FromArgb(11, 15, 26); card = [Drawing.Color]::FromArgb(20, 27, 45); ink = [Drawing.Color]::FromArgb(238, 242, 251)
+  muted = [Drawing.Color]::FromArgb(154, 166, 194); acc = [Drawing.Color]::FromArgb(255, 210, 63); line = [Drawing.Color]::FromArgb(37, 48, 73)
+  ok = [Drawing.Color]::FromArgb(79, 209, 197); bad = [Drawing.Color]::FromArgb(255, 107, 107) }
+$Font = New-Object Drawing.Font('Segoe UI', 9.5)
+$Bold = New-Object Drawing.Font('Segoe UI', 9.5, [Drawing.FontStyle]::Bold)
+
+$script:st = Read-State
+$script:loading = $false
+$script:an = $null
+$script:devs = @()
+
+function L([string]$text, $x, $y, $w = 150, $fnt = $null, $color = $null) {
+  if (-not $fnt) { $fnt = $Font }; if (-not $color) { $color = $C.ink }
+  $l = New-Object Windows.Forms.Label -Property @{ Text = $text; Left = $x; Top = $y; Width = $w; Height = 22; Font = $fnt; ForeColor = $color; BackColor = [Drawing.Color]::Transparent }
+  $l
+}
+
+$form = New-Object Windows.Forms.Form -Property @{ Text = 'Hoparlör Ses Ayarı'; Width = 1000; Height = 790; BackColor = $C.bg; ForeColor = $C.ink
+  Font = $Font; StartPosition = 'CenterScreen'; FormBorderStyle = 'FixedSingle'; MaximizeBox = $false }
+
+# --- üst: hoparlör
+$form.Controls.Add((L 'HOPARLÖR' 16 12 200 $Bold $C.muted))
+$cbSpk = New-Object Windows.Forms.ComboBox -Property @{ Left = 16; Top = 36; Width = 260; DropDownStyle = 'DropDownList'; Font = $Bold }
+$btnAdd = New-Object Windows.Forms.Button -Property @{ Left = 284; Top = 35; Width = 110; Height = 28; Text = '+ Hoparlör ekle'; FlatStyle = 'Flat'; ForeColor = $C.ink }
+$btnDel = New-Object Windows.Forms.Button -Property @{ Left = 400; Top = 35; Width = 60; Height = 28; Text = 'Sil'; FlatStyle = 'Flat'; ForeColor = $C.ink }
+$chkOn = New-Object Windows.Forms.CheckBox -Property @{ Left = 476; Top = 38; Width = 140; Text = 'Ses ayarı açık'; ForeColor = $C.ink }
+$btnApo = New-Object Windows.Forms.Button -Property @{ Left = 820; Top = 35; Width = 150; Height = 28; Text = 'Equalizer APO indir'; FlatStyle = 'Flat'; ForeColor = $C.acc }
+$form.Controls.AddRange(@($cbSpk, $btnAdd, $btnDel, $chkOn, $btnApo))
+$form.Controls.Add((L 'Tür:' 16 72 40))
+$cbKind = New-Object Windows.Forms.ComboBox -Property @{ Left = 56; Top = 69; Width = 220; DropDownStyle = 'DropDownList' }
+$form.Controls.Add((L 'Windows çıkışı:' 290 72 100))
+$cbDev = New-Object Windows.Forms.ComboBox -Property @{ Left = 392; Top = 69; Width = 420; DropDownStyle = 'DropDownList' }
+$btnDev = New-Object Windows.Forms.Button -Property @{ Left = 820; Top = 68; Width = 150; Height = 28; Text = 'Çıkışları yenile'; FlatStyle = 'Flat'; ForeColor = $C.ink }
+$form.Controls.AddRange(@($cbKind, $cbDev, $btnDev))
+foreach ($k in $Kinds.Keys) { [void]$cbKind.Items.Add($Kinds[$k].ad) }
+
+# --- müzik türü
+$form.Controls.Add((L 'MÜZİK TÜRÜ' 16 108 200 $Bold $C.muted))
+$flow = New-Object Windows.Forms.FlowLayoutPanel -Property @{ Left = 16; Top = 130; Width = 955; Height = 78; BackColor = $C.bg }
+$form.Controls.Add($flow)
+$presetBtns = @{}
+foreach ($id in $Presets.Keys) {
+  $b = New-Object Windows.Forms.Button -Property @{ Text = $Presets[$id].ad; Tag = $id; AutoSize = $true; Height = 30; FlatStyle = 'Flat'; ForeColor = $C.ink; BackColor = $C.card }
+  $b.FlatAppearance.BorderColor = $C.line
+  $b.Add_Click({ Set-Preset $this.Tag })
+  $flow.Controls.Add($b); $presetBtns[$id] = $b
+}
+
+# --- sade sürgüler
+$form.Controls.Add((L 'SESİNİ KENDİN AYARLA' 16 216 300 $Bold $C.muted))
+$tracks = @{}; $vals = @{}
+function Add-Slider([string]$key, [string]$label, $y, [int]$lo = -12, [int]$hi = 12) {
+  $form.Controls.Add((L $label 16 ($y + 6) 140))
+  $tb = New-Object Windows.Forms.TrackBar -Property @{ Left = 156; Top = $y; Width = 250; Minimum = $lo; Maximum = $hi; TickFrequency = 3; Tag = $key; BackColor = $C.bg }
+  $v = L '0 dB' 410 ($y + 6) 70 $Bold $C.acc
+  $tb.Add_ValueChanged({ if ($script:loading) { return }; $sp = Get-Active $script:st; $sp.settings.($this.Tag) = [double]$this.Value; Show-Value $this.Tag; Request-Apply })
+  $form.Controls.AddRange(@($tb, $v)); $script:tracks[$key] = $tb; $script:vals[$key] = $v
+}
+$y = 240
+foreach ($x in $Simple) { Add-Slider $x.k $x.ad $y; $y += 40 }
+Add-Slider 'seviye' 'Ses seviyesi' $y -20 6; $y += 48
+$lbl51 = L '5.1 kanal düzeyleri (Z607)' 16 $y 300 $Font $C.muted; $form.Controls.Add($lbl51); $y += 24
+foreach ($x in $Chans) { Add-Slider $x.k $x.ad $y; $y += 40 }
+
+# --- eğri
+$form.Controls.Add((L 'SES EĞRİSİ' 500 216 200 $Bold $C.muted))
+$pic = New-Object Windows.Forms.PictureBox -Property @{ Left = 500; Top = 240; Width = 470; Height = 230; BackColor = [Drawing.Color]::FromArgb(14, 20, 36) }
+$lblPre = L '' 500 476 470 $Font $C.muted
+$form.Controls.AddRange(@($pic, $lblPre))
+$pic.Add_Paint({
+    param($s, $e)
+    $g = $e.Graphics; $g.SmoothingMode = 'AntiAlias'; $W = $pic.Width; $H = $pic.Height; $R = 15.0
+    $px = { param($f) [float]([math]::Log($f / 20) / [math]::Log(1000) * $W) }
+    $py = { param($d) [float]($H / 2 - $d / $R * ($H / 2 - 10)) }
+    $pen = New-Object Drawing.Pen($C.line, 1); $br = New-Object Drawing.SolidBrush($C.muted); $sf = New-Object Drawing.Font('Segoe UI', 7.5)
+    foreach ($f in 50, 100, 200, 500, 1000, 2000, 5000, 10000) { $xx = & $px $f; $g.DrawLine($pen, $xx, 0, $xx, $H); $g.DrawString($(if ($f -ge 1000) { "$($f / 1000)k" } else { "$f" }), $sf, $br, $xx + 2, $H - 14) }
+    foreach ($d in -12, -6, 0, 6, 12) { $yy = & $py $d; $g.DrawLine($pen, 0, $yy, $W, $yy); $g.DrawString("$d", $sf, $br, 2, $yy - 13) }
+    if (-not $script:an) { return }
+    $on = (Get-Active $script:st).settings.acik
+    $pts = New-Object 'System.Collections.Generic.List[System.Drawing.PointF]'
+    for ($i = 0; $i -lt $CurveFreqs.Count; $i++) { $pts.Add([Drawing.PointF]::new((& $px $CurveFreqs[$i]), (& $py $(if ($on) { $script:an.curve[$i] } else { 0 })))) }
+    $cp = New-Object Drawing.Pen($(if ($on) { $C.acc } else { $C.muted }), 2.5)
+    $g.DrawLines($cp, $pts.ToArray())
+  })
+
+# --- 10 bant
+$form.Controls.Add((L 'GELİŞMİŞ EKOLAYZIR (10 BANT)' 500 506 300 $Bold $C.muted))
+$bandTracks = @(); $bandVals = @()
+for ($i = 0; $i -lt $Bands.Count; $i++) {
+  $x0 = 500 + $i * 47
+  $v = L '0' $x0 528 44 $Bold $C.acc; $v.TextAlign = 'MiddleCenter'
+  $tb = New-Object Windows.Forms.TrackBar -Property @{ Left = $x0; Top = 548; Height = 150; Width = 44; Orientation = 'Vertical'; Minimum = -12; Maximum = 12; TickFrequency = 3; Tag = $i; BackColor = $C.bg }
+  $f = $Bands[$i]; $fl = L $(if ($f -ge 1000) { "$($f / 1000)k" } else { "$f" }) $x0 700 44 $Font $C.muted; $fl.TextAlign = 'MiddleCenter'
+  $tb.Add_ValueChanged({
+      if ($script:loading) { return }
+      $sp = Get-Active $script:st; $sp.settings.bands[$this.Tag] = [double]$this.Value; $sp.settings.preset = 'ozel'
+      $script:bandVals[$this.Tag].Text = "$($this.Value)"; Show-Presets; Request-Apply })
+  $form.Controls.AddRange(@($v, $tb, $fl)); $bandTracks += $tb; $bandVals += $v
+}
+$btnReset = New-Object Windows.Forms.Button -Property @{ Left = 16; Top = $y + 6; Width = 100; Height = 28; Text = 'Sıfırla'; FlatStyle = 'Flat'; ForeColor = $C.ink }
+$form.Controls.Add($btnReset)
+
+$status = L '' 16 724 955 $Bold $C.muted
+$form.Controls.Add($status)
+$tip = L 'İpucu: Z607 kumandasındaki bas düzeyini ortada bırak, ince ayarı buradan yap. Telefondan Bluetooth ile çalarken bu ayar uygulanmaz.' 16 700 470 $Font $C.muted
+$tip.Height = 22; $form.Controls.Add($tip)
+
+# ------------------------------------------------------------------ davranış
+function Show-Value([string]$k) { $v = [double](Get-Active $script:st).settings.$k; $script:vals[$k].Text = ('{0}{1} dB' -f $(if ($v -gt 0) { '+' } else { '' }), $v) }
+
+function Show-Presets {
+  $cur = (Get-Active $script:st).settings.preset
+  foreach ($id in $presetBtns.Keys) {
+    $on = ($id -eq $cur)
+    $presetBtns[$id].BackColor = $(if ($on) { $C.acc } else { $C.card }); $presetBtns[$id].ForeColor = $(if ($on) { [Drawing.Color]::Black } else { $C.ink })
+  }
+}
+
+function Fill-Devices {
+  $sp = Get-Active $script:st
+  $cbDev.Items.Clear(); [void]$cbDev.Items.Add("Windows'ta seçili çıkış")
+  $list = @($script:devs)
+  if ($sp.device -and -not ($list | Where-Object { $_.guid -eq $sp.device })) { $list += [pscustomobject]@{ guid = $sp.device; ad = $(if ($sp.device_ad) { $sp.device_ad } else { $sp.device }) } }
+  $script:devList = $list
+  foreach ($d in $list) { [void]$cbDev.Items.Add($d.ad) }
+  $idx = 0; for ($i = 0; $i -lt $list.Count; $i++) { if ($list[$i].guid -eq $sp.device) { $idx = $i + 1 } }
+  $cbDev.SelectedIndex = $idx
+}
+
+function Load-UI {
+  $script:loading = $true
+  $sp = Get-Active $script:st; $s = $sp.settings; $k = $Kinds[$sp.kind]
+  $cbSpk.Items.Clear(); foreach ($x in $script:st.speakers) { [void]$cbSpk.Items.Add($x.ad) }
+  $cbSpk.SelectedIndex = [array]::IndexOf(@($script:st.speakers | ForEach-Object { $_.id }), $sp.id)
+  $cbKind.SelectedIndex = [array]::IndexOf(@($Kinds.Keys), $sp.kind)
+  $chkOn.Checked = [bool]$s.acik
+  foreach ($key in @($script:tracks.Keys)) {
+    $tb = $script:tracks[$key]; $tb.Value = [int][math]::Max($tb.Minimum, [math]::Min($tb.Maximum, [math]::Round([double]$s.$key))); Show-Value $key
+  }
+  foreach ($x in $Chans) { $script:tracks[$x.k].Enabled = $k.k51 }
+  $lbl51.Text = $(if ($k.k51) { '5.1 kanal düzeyleri (Windows: 5.1 Surround yapılandır)' } else { '5.1 kanal düzeyleri yalnızca 5.1 hoparlörde' })
+  for ($i = 0; $i -lt $Bands.Count; $i++) { $bandTracks[$i].Value = [int][math]::Round([double]$s.bands[$i]); $bandVals[$i].Text = "$($bandTracks[$i].Value)" }
+  Show-Presets; Fill-Devices
+  $script:loading = $false
+}
+
+$timer = New-Object Windows.Forms.Timer -Property @{ Interval = 300 }
+function Request-Apply { $timer.Stop(); $timer.Start() }
+$timer.Add_Tick({
+    $timer.Stop()
+    Save-State $script:st
+    $script:an = Get-Analysis (Get-Active $script:st)
+    $lblPre.Text = "Ön kısma: $(N $script:an.preamp) dB (yükseltilen yerde cızırtı olmasın diye otomatik)"
+    $pic.Invalidate()
+    $r = Write-Apo $script:st
+    $status.Text = $r.msg; $status.ForeColor = $(if ($r.ok) { $C.ok } else { $C.bad })
+    $btnApo.Visible = -not (Get-ApoDir)
+  })
+
+function Set-Preset([string]$id) {
+  $sp = Get-Active $script:st; $old = $sp.settings; $new = New-Settings $id
+  foreach ($key in 'bas', 'orta', 'vokal', 'tiz', 'seviye', 'sub', 'arka', 'acik') { $new.$key = $old.$key }   # kendi sürgülerin korunur
+  $sp.settings = $new; Load-UI; Request-Apply
+}
+
+$cbSpk.Add_SelectedIndexChanged({ if ($script:loading -or $cbSpk.SelectedIndex -lt 0) { return }; $script:st.active = $script:st.speakers[$cbSpk.SelectedIndex].id; Load-UI; Request-Apply })
+$cbKind.Add_SelectedIndexChanged({ if ($script:loading) { return }; (Get-Active $script:st).kind = @($Kinds.Keys)[$cbKind.SelectedIndex]; Load-UI; Request-Apply })
+$cbDev.Add_SelectedIndexChanged({
+    if ($script:loading) { return }
+    $sp = Get-Active $script:st
+    if ($cbDev.SelectedIndex -le 0) { $sp.device = ''; $sp.device_ad = '' } else { $d = $script:devList[$cbDev.SelectedIndex - 1]; $sp.device = $d.guid; $sp.device_ad = $d.ad }
+    Request-Apply })
+$chkOn.Add_CheckedChanged({ if ($script:loading) { return }; (Get-Active $script:st).settings.acik = $chkOn.Checked; Request-Apply })
+$btnReset.Add_Click({ (Get-Active $script:st).settings = New-Settings 'duz'; Load-UI; Request-Apply })
+$btnApo.Add_Click({ Start-Process $ApoUrl })
+$btnDev.Add_Click({ $script:devs = Get-Devices; $script:loading = $true; Fill-Devices; $script:loading = $false; $status.Text = "$(@($script:devs).Count) ses çıkışı bulundu"; $status.ForeColor = $C.muted })
+$btnAdd.Add_Click({
+    $ad = [Microsoft.VisualBasic.Interaction]::InputBox('Hoparlörün adı (ör. Masa hoparlörü, Soundbar):', 'Hoparlör ekle', '')
+    if (-not $ad.Trim()) { return }
+    $ids = @($script:st.speakers | ForEach-Object { $_.id }); $n = 1
+    do { $id = "hoparlor$n"; $n++ } while ($ids -contains $id)
+    $script:st.speakers = @($script:st.speakers) + (New-Speaker $id $ad.Trim() 'masaustu')
+    $script:st.active = $id; Load-UI; Request-Apply
+    $status.Text = 'Eklendi: türünü ve Windows çıkışını seç.'; $status.ForeColor = $C.ok
+  })
+$btnDel.Add_Click({
+    if (@($script:st.speakers).Count -lt 2) { return }
+    $sp = Get-Active $script:st
+    if ([Windows.Forms.MessageBox]::Show("$($sp.ad) silinsin mi?", 'Sil', 'YesNo') -ne 'Yes') { return }
+    $script:st.speakers = @($script:st.speakers | Where-Object { $_.id -ne $sp.id }); $script:st.active = $script:st.speakers[0].id
+    Load-UI; Request-Apply
+  })
+
+$form.Add_Shown({
+    $script:devs = Get-Devices
+    Load-UI; Request-Apply
+    if (-not (Get-ApoDir)) {
+      $r = [Windows.Forms.MessageBox]::Show("Ses ayarı için ücretsiz Equalizer APO gerekiyor.`n`nKurulumda Z607'nin bağlı olduğu çıkışı (Hoparlörler) işaretle ve bilgisayarı yeniden başlat.`n`nİndirme sayfası açılsın mı?", 'Equalizer APO', 'YesNo', 'Information')
+      if ($r -eq 'Yes') { Start-Process $ApoUrl }
+    }
+  })
+$form.Add_FormClosing({ $timer.Stop(); Save-State $script:st; [void](Write-Apo $script:st) })
+[void]$form.ShowDialog()
