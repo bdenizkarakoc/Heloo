@@ -44,6 +44,7 @@ sys.path.insert(0, str(KOK))
 import girdi  # noqa: E402
 import ses as ses_mod  # noqa: E402
 import sertifika  # noqa: E402
+import lg  # noqa: E402
 
 UYGULAMA_ADI = "TV Yansıt"
 VARSAYILAN_PORT = 8780  # 8765'i Reels Fabrikası kullanır; çakışmasın
@@ -826,11 +827,54 @@ class Yayin:
 
 # ---------------------------------------------------------------------------- uygulama durumu + sunucu
 
+def kalici_pin(yeni: bool = False) -> str:
+    """4 haneli kod. Her açılışta değişmez (TV bir kez öğrenir, tarayıcı geçmişinden açılır); 'Yeni kod' değiştirir."""
+    dosya = VERI / "kod.txt"
+    if not yeni:
+        try:
+            kod = dosya.read_text(encoding="utf-8").strip()
+            if re.fullmatch(r"\d{4}", kod):
+                return kod
+        except OSError:
+            pass
+    kod = f"{random.SystemRandom().randint(1000, 9999)}"
+    try:
+        VERI.mkdir(parents=True, exist_ok=True)
+        dosya.write_text(kod, encoding="utf-8")
+    except OSError:
+        pass
+    return kod
+
+
+GIRIS_SAYFASI = """<!doctype html><html lang="tr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>TV Yansıt</title>
+<style>html,body{margin:0;height:100%;background:#0f1115;color:#e8eaf0;font-family:sans-serif}
+main{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;text-align:center}
+h1{font-size:44px;margin:0 0 12px}p{font-size:26px;color:#9aa0ad;margin:8px}
+#kod{display:flex;gap:18px;margin:34px 0}#kod div{width:90px;height:110px;border-radius:14px;background:#181b22;
+border:3px solid #333a48;font:700 64px/110px monospace;color:#fff}#kod div.d{border-color:#4f8cff}
+#m{font-size:28px;min-height:36px;color:#ff6b6b}</style></head><body><main>
+<h1>TV Yansıt</h1><p>Bilgisayardaki panelde yazan 4 haneli kodu kumandanın rakam tuşlarıyla girin</p>
+<div id="kod"><div></div><div></div><div></div><div></div></div><p id="m"></p></main>
+<script>
+var kod='', kutular=document.getElementById('kod').children, m=document.getElementById('m');
+function ciz(){for(var i=0;i<4;i++){kutular[i].textContent=kod.charAt(i)||'';kutular[i].className=i===kod.length?'d':'';}}
+function dene(){var x=new XMLHttpRequest();x.open('GET','/'+kod,true);x.onload=function(){
+ if(x.status===200){location.href='/'+kod;}else{m.textContent=x.status===403?'Çok fazla yanlış deneme: bilgisayardaki paneli açın':'Kod yanlış, tekrar deneyin';kod='';ciz();}};
+ x.onerror=function(){m.textContent='Bilgisayara ulaşılamadı';};x.send();}
+document.addEventListener('keydown',function(e){var k=e.keyCode||e.which,r=-1;
+ if(k>=48&&k<=57)r=k-48;else if(k>=96&&k<=105)r=k-96;
+ if(r>=0&&kod.length<4){kod+=r;m.textContent='';ciz();if(kod.length===4)dene();e.preventDefault();}
+ else if((k===8||k===37||k===461)&&kod.length){kod=kod.slice(0,-1);ciz();e.preventDefault();}},false);
+ciz();
+</script></body></html>"""
+
+
 class Uygulama:
     def __init__(self, port: int, kaynak: str = "ana"):
         self.port = port
         self.kaynak = kaynak
-        self.pin = f"{random.SystemRandom().randint(1000, 9999)}"
+        self.pin = kalici_pin()
         self.ffmpeg = ffmpeg_yolu()
         self.ts = Yayin("ts")
         self.mjpeg = Yayin("mjpeg")
@@ -933,7 +977,7 @@ class Uygulama:
                 s.durdur()
 
     def durum(self) -> dict:
-        return {"uygulama": UYGULAMA_ADI, "ip": self.ip, "port": self.port, "pin": self.pin, "tv_adresi": self.tv_adresi(),
+        return {"uygulama": UYGULAMA_ADI, "kisa_adres": f"{self.ip}:{self.port}", "ip": self.ip, "port": self.port, "pin": self.pin, "tv_adresi": self.tv_adresi(),
                 "tv_adresleri": [self.tv_adresi(ip) for ip in yerel_ipler()], "hotspot": self.hotspot,
                 "ffmpeg": bool(self.ffmpeg), "kodlayici": _kodlayici_onbellek, "ses": (self.ses_y.kaynak if self.ses_y and self.ses_y.calisiyor else None),
                 "ses_hata": self.ses_y.hata if self.ses_y else "",
@@ -997,8 +1041,10 @@ def sunucu_kur(app: Uygulama) -> type[BaseHTTPRequestHandler]:
             yol = urllib.parse.urlparse(self.path).path.rstrip("/") or "/"
             p = f"/{app.pin}"
             if yol == "/":
-                if not self._yerel():
-                    return self._gonder(404, b"", "text/plain")
+                if not self._yerel():   # TV: yalnızca adres yazıldı → kod sorulur
+                    if self._engelli():
+                        return self._gonder(403, b"", "text/plain")
+                    return self._gonder(200, GIRIS_SAYFASI.encode("utf-8"), "text/html; charset=utf-8")
                 return self._gonder(200, (KOK / "panel.html").read_bytes(), "text/html; charset=utf-8")
             if yol == "/api/durum" and self._yerel():
                 return self._json(app.durum())
@@ -1167,6 +1213,18 @@ def sunucu_kur(app: Uygulama) -> type[BaseHTTPRequestHandler]:
                                          f"(şifre: {h.get('sifre')}), sonra 'TV'leri ara'.")
                         else:
                             app.mesaj = "Bilgisayarın Wi-Fi erişim noktası kapalı."
+                elif yol == "/api/lg":
+                    ip = str(veri.get("ip") or "").strip()
+                    if not ip and str(veri.get("tv", "")).isdigit() and int(veri["tv"]) < len(app.tvler):
+                        ip = app.tvler[int(veri["tv"])]["ip"]
+                    if not re.fullmatch(r"\d{1,3}(\.\d{1,3}){3}", ip):
+                        raise RuntimeError("Önce TV'leri arayıp LG TV'yi seçin ya da TV'nin IP adresini yazın.")
+                    adres = app.tv_adresi(ayni_agdaki_ip(ip, yerel_ipler()))
+                    app.mesaj = lg.tvde_ac(ip, adres, VERI / "lg.json")
+                elif yol == "/api/yeni-kod":
+                    app.pin = kalici_pin(yeni=True)
+                    app.yanlis_pin.clear()
+                    app.mesaj = f"Yeni kod: {app.pin}. TV'de yeniden girin."
                 elif yol == "/api/lossless":
                     app.mesaj = lossless_ac()
                 elif yol == "/api/steam":

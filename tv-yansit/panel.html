@@ -23,6 +23,12 @@
   .durum { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
   .etiket { background:#0f1115; border-radius:20px; padding:3px 10px; font-size:13px; color:var(--soluk); }
   .etiket.iyi { color: var(--iyi); } .etiket.kotu { color: var(--kotu); }
+  .ikili { display:flex; flex-wrap:wrap; gap:12px; margin:8px 0; }
+  .ikili > div { flex:1 1 220px; }
+  .kucuk { color: var(--soluk); font-size: 13px; }
+  .adres.kod { font-size: 40px; letter-spacing: 10px; text-align:center; color:#4f8cff; }
+  input#lgIp { background:#0f1115; color:var(--yazi); border:1px solid #333a48; border-radius:8px; padding:9px; font-size:15px; width:240px; max-width:100%; }
+  details { margin-top: 10px; } summary { cursor:pointer; color: var(--soluk); }
   #mesaj { min-height: 24px; color:#fff; font-weight:600; margin: 0 0 14px; }
   label { color: var(--soluk); }
   ol { color: var(--soluk); padding-left: 20px; margin: 6px 0; }
@@ -69,13 +75,23 @@
   </section>
 
   <section class="kart">
-    <h2>Yol 2 — TV tarayıcısı (en düşük gecikme)</h2>
-    <p><b>Adresi http:// ile başlayarak yazın.</b> TV kendiliğinden https:// açarsa "bağlantı gizli değil" uyarısı çıkabilir: <b>Gelişmiş → Devam et</b> deyin (sertifika bu bilgisayarın kendisine ait; bir kez yeterli).</p>
-    <p>TV'nin internet tarayıcısını açın ve bu adresi yazın (sonundaki 4 haneli sayı sizin şifrenizdir). Birden çok adres varsa TV'nin bağlı olduğu ağdakini kullanın (bilgisayarın Wi-Fi'sinde: 192.168.137.1):</p>
-    <div class="adres" id="tvAdresi">…</div>
+    <h2>Yol 2 — TV tarayıcısı (en düşük gecikme, sesli, kumandalı)</h2>
+    <p><b>LG TV ise en kolayı:</b> TV'yi seçin ya da IP adresini yazın, <b>TV'de aç</b>'a basın. İlk seferde TV'de çıkan izin sorusunu kumandayla kabul edin; TV sayfayı kendisi açar.</p>
+    <input id="lgIp" placeholder="TV IP adresi (ör. 192.168.1.17)" inputmode="decimal">
+    <button id="btnLg">TV'de aç (LG)</button>
+    <p>Ya da TV'nin internet tarayıcısında şunu yazın, sonra kodu kumandanın rakam tuşlarıyla girin:</p>
+    <div class="ikili">
+      <div><span class="kucuk">TV'de yazın</span><div class="adres" id="kisaAdres">…</div></div>
+      <div><span class="kucuk">Kod</span><div class="adres kod" id="kod">…</div></div>
+    </div>
+    <button class="ikincil" id="btnYeniKod">Yeni kod</button>
+    <details><summary>Tam adresler ve ipuçları</summary>
+      <div class="adres" id="tvAdresi">…</div>
+      <p>TV kendiliğinden https:// açarsa "bağlantı gizli değil" uyarısı çıkabilir: <b>Gelişmiş → Devam et</b> deyin (sertifika bu bilgisayarın kendisine ait; bir kez yeterli). Bilgisayarın kendi Wi-Fi'sinde adres 192.168.137.1'dir.</p>
+    </details>
     <ol>
       <li>Görüntü gelince ekrana bir kez tıklayın → tam ekran.</li>
-      <li>Ses de TV'den çıkar (bilgisayarın sesi ~60 ms gecikmeyle). TV ilk açılışta "Ses için Tamam'a basın" derse kumandada Tamam'a basın.</li>
+      <li>Ses de TV'den çıkar. TV "Ses için Tamam'a basın" derse kumandada Tamam'a basın.</li>
     </ol>
   </section>
 
@@ -114,6 +130,9 @@ function goster(d) {
   $('mesaj').textContent = d.hata ? (d.mesaj ? d.mesaj + ' — ' : '') + 'ffmpeg: ' + d.hata : (d.mesaj || '');
   $('tvAdresi').textContent = (d.tv_adresleri && d.tv_adresleri.length ? d.tv_adresleri : [d.tv_adresi]).join('\n');
   $('tvAdresi').style.whiteSpace = 'pre-line';
+  $('kisaAdres').textContent = d.kisa_adres;
+  $('kod').textContent = d.pin;
+  if (!$('lgIp').value && d.tvler.length) $('lgIp').placeholder = 'Listeden seçili TV ya da IP adresi';
   const h = d.hotspot || {};
   $('wifiBilgi').hidden = !h.acik;
   $('wifiBilgi').textContent = h.acik ? 'Ağ: ' + h.ag + '\nŞifre: ' + h.sifre + (h.bagli ? '\nBağlı cihaz: ' + h.bagli : '') : '';
@@ -161,7 +180,7 @@ function goster(d) {
 async function istek(yol, veri) {
   const butonlar = document.querySelectorAll('button');
   butonlar.forEach(b => b.disabled = true);
-  $('mesaj').textContent = 'Bekleyin…';
+  $('mesaj').textContent = yol === '/api/lg' ? 'TV\'ye bağlanılıyor… TV\'de izin sorusu çıkarsa kumandayla KABUL ET\'e basın.' : 'Bekleyin…';
   try {
     const r = await fetch(yol, { method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(Object.assign({ ayar: $('ayar').value, lossless_otomatik: $('lossless').checked, kumanda_acik: $('kumanda').checked }, veri || {})) });
@@ -178,6 +197,8 @@ async function yenile() {
 }
 
 $('btnAra').onclick = () => istek('/api/ara');
+$('btnLg').onclick = () => istek('/api/lg', { ip: $('lgIp').value.trim(), tv: $('tvler').value });
+$('btnYeniKod').onclick = () => istek('/api/yeni-kod');
 $('btnGonder').onclick = () => istek('/api/gonder', { tv: Number($('tvler').value || 0) });
 $('btnDurdur').onclick = () => istek('/api/durdur');
 $('btnMiracast').onclick = () => istek('/api/miracast');

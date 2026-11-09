@@ -248,7 +248,8 @@ def test_pin_tahmini_engellenir():
             return e.code
 
     try:
-        assert kod("/") == 404                      # panel yalnızca bilgisayardan
+        sayfa = urllib.request.urlopen(f"{taban}/", timeout=5).read().decode()
+        assert "4 haneli kodu" in sayfa and "Kapat" not in sayfa   # TV: panel değil, kod giriş sayfası
         assert kod(f"/{app.pin}") == 200
         yanlis = "0000" if app.pin != "0000" else "1111"
         for _ in range(tv.YANLIS_PIN_SINIRI):
@@ -266,7 +267,7 @@ def test_kurulum_parcalari():
     assert kur.startswith(b"\xef\xbb\xbf")                   # PowerShell 5.1 Türkçe için UTF-8 BOM
     assert kur.count(b"\r\n") == kur.count(b"\n")              # Windows satır sonu (CRLF)
     assert not kur.startswith(b"\xef\xbb\xbf" * 2)           # çift BOM: ilk satır yorum sayılmaz, hata verir
-    for dosya in ("tv_yansit.py", "girdi.py", "ses.py", "sertifika.py", "panel.html", "tv.html", "tv-yansit.ico"):
+    for dosya in ("tv_yansit.py", "girdi.py", "ses.py", "sertifika.py", "lg.py", "panel.html", "tv.html", "tv-yansit.ico"):
         assert dosya.encode() in kur and (kok / dosya).exists()
     assert isinstance(tv.kurulum_ayari(), dict)
 
@@ -384,3 +385,69 @@ def test_iki_istek_ayni_kareyi_almaz():
             y.kilit.notify_all()
     threading.Timer(0.05, yeni).start()
     assert y.yeni_kare(0, bekle=2, istemci="tv", gonderilen=gonderilen)[:2] == (2, b"k2")
+
+
+def test_kod_kalici_ve_yenilenir(monkeypatch, tmp_path):
+    monkeypatch.setattr(tv, "VERI", tmp_path)
+    ilk = tv.kalici_pin()
+    assert len(ilk) == 4 and ilk.isdigit()
+    assert tv.kalici_pin() == ilk                       # yeniden açılışta aynı kod (TV hatırlar)
+    for _ in range(5):
+        yeni = tv.kalici_pin(yeni=True)
+        if yeni != ilk:
+            break
+    assert yeni != ilk and tv.kalici_pin() == yeni
+
+
+def test_lg_tvde_ac_sahte_tv(tmp_path):
+    """Sahte LG TV (WebSocket): izin kaydı → anahtar saklanır → sayfa açma isteği doğru adresle gelir."""
+    import base64, hashlib, socket as sk, struct
+    import lg
+    sunucu = sk.socket()
+    sunucu.bind(("127.0.0.1", 0))
+    sunucu.listen(1)
+    port = sunucu.getsockname()[1]
+    gelen = []
+
+    def oku(c):
+        b1, b2 = c.recv(2)
+        n = b2 & 0x7F
+        if n == 126:
+            n = struct.unpack(">H", c.recv(2))[0]
+        maske = c.recv(4)
+        veri = b""
+        while len(veri) < n:
+            veri += c.recv(n - len(veri))
+        return json.loads(bytes(b ^ maske[i % 4] for i, b in enumerate(veri)))
+
+    def yaz(c, d):
+        v = json.dumps(d).encode()
+        c.sendall(bytes([0x81, len(v)]) + v if len(v) < 126 else bytes([0x81, 126]) + struct.pack(">H", len(v)) + v)
+
+    def tv_taklidi():
+        c, _ = sunucu.accept()
+        istek = b""
+        while b"\r\n\r\n" not in istek:
+            istek += c.recv(1024)
+        anahtar = [l.split(b": ")[1] for l in istek.split(b"\r\n") if l.lower().startswith(b"sec-websocket-key")][0]
+        kabul = base64.b64encode(hashlib.sha1(anahtar + b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11").digest())
+        c.sendall(b"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+                  b"Sec-WebSocket-Accept: " + kabul + b"\r\n\r\n")
+        kayit = oku(c)
+        gelen.append(kayit)
+        yaz(c, {"type": "response", "id": "kayit", "payload": {"pairingType": "PROMPT"}})
+        yaz(c, {"type": "registered", "id": "kayit", "payload": {"client-key": "ANAHTAR123"}})
+        gelen.append(oku(c))
+        yaz(c, {"type": "response", "id": "ac", "payload": {"returnValue": True}})
+        c.close()
+
+    threading.Thread(target=tv_taklidi, daemon=True).start()
+    dosya = tmp_path / "lg.json"
+    sonuc = lg.tvde_ac("127.0.0.1", "http://192.168.1.16:8780/2391", dosya, bekle=5, portlar=((port, False),))
+    sunucu.close()
+    assert "açıldı" in sonuc
+    assert gelen[0]["type"] == "register" and gelen[0]["payload"]["pairingType"] == "PROMPT"
+    assert gelen[1]["uri"] == "ssap://system.launcher/open"
+    assert gelen[1]["payload"]["target"] == "http://192.168.1.16:8780/2391"
+    assert json.loads(dosya.read_text())["127.0.0.1"] == "ANAHTAR123"   # ikinci sefer izin sorulmaz
+    assert lg.kayit_mesaji("ANAHTAR123")["payload"]["client-key"] == "ANAHTAR123"

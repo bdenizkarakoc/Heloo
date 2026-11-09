@@ -44,6 +44,15 @@ verirse **Windows ayarlarını aç** ile etkin noktayı elle açın; bunun için
 
 Bilgisayar Miracast destekliyorsa panelde **Yansıt panelini aç (Win+K)** düğmesi de işe yarar.
 
+### TV'yi bağlamak (Yol 2)
+- **LG TV:** Panelde TV'yi seçin ya da IP adresini yazın (TV'de Ayarlar → Ağ'da yazar), **TV'de aç**'a basın.
+  İlk seferde TV'de izin sorusu çıkar; kumandayla **Kabul et**'e basın. TV'nin tarayıcısı sayfayı kendisi açar.
+  Sonraki seferlerde soru çıkmaz.
+- **Her TV:** TV'nin tarayıcısında panelde yazan kısa adresi yazın (ör. `192.168.1.16:8780`). Açılan sayfada
+  panelde görünen **4 haneli kodu** kumandanın rakam tuşlarıyla girin. Kod her açılışta değişmez; TV'nin tarayıcı
+  geçmişinden tekrar açabilirsiniz. Paneldeki **Yeni kod** düğmesi kodu değiştirir.
+- Bağlantı zaten doğrudandır: bilgisayar ve TV aynı Wi-Fi'de konuşur, internete çıkılmaz.
+
 ### TV'de "Bu web sayfası kullanılamıyor" çıkarsa
 - Adresi **http://** ile başlayarak, panelde yazdığı gibi eksiksiz yazın (ör. `http://192.168.1.16:8780/2391`).
 - LG gibi bazı TV'ler adresi kendiliğinden **https://** ile açar. Uygulama aynı portta https'yi de destekler ama
