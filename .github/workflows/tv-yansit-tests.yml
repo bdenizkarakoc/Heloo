@@ -1,0 +1,22 @@
+# TV Yansıt: her gönderimde hızlı testler (ffmpeg ile uçtan uca akış testi dahil).
+name: tv-yansit-tests
+on:
+  push:
+    paths: ["tv-yansit/**", ".github/workflows/tv-yansit-tests.yml"]
+  pull_request:
+    paths: ["tv-yansit/**"]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: tv-yansit
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+      - run: python -m pip install -q pytest
+      - run: python -m pytest tests -q
