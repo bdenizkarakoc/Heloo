@@ -168,6 +168,7 @@ class MainWindow(QMainWindow):
         st.refresh_requested.connect(lambda sid: self.refresh(sid))
         st.epg_refresh_requested.connect(lambda sid: self.refresh(sid, epg_only=True))
         st.fetch_mpv_requested.connect(self.fetch_mpv)
+        st.vsr_test_requested.connect(self.test_vsr)
         st.clear_history_requested.connect(self._clear_history)
         pl = self.player
         pl.pause_clicked.connect(lambda: self.engine and self.engine.toggle_pause())
@@ -916,6 +917,27 @@ class MainWindow(QMainWindow):
 
         run_task(fm.install, on_done=done, on_error=lambda e: self._status(f"⚠ mpv indirilemedi: {e}"),
                  on_progress=self._status)
+
+    def test_vsr(self) -> None:
+        """Ayrı küçük bir mpv penceresinde d3d11vpp + RTX VSR denemesi; sonucu sürücü günlüğünden okur."""
+        from .. import selftest
+        if not opt.is_windows():
+            QMessageBox.information(self, APP_NAME, "RTX Video Super Resolution yalnızca Windows'ta çalışır.")
+            return
+        self._status("RTX VSR testi çalışıyor (birkaç saniye bir test penceresi açılır)…")
+
+        def done(r):
+            self._status("RTX VSR testi bitti.")
+            box = QMessageBox(self)
+            box.setWindowTitle("RTX VSR testi")
+            box.setIcon(QMessageBox.Information if r.get("vsr") == "enabled" and r.get("scaled") else QMessageBox.Warning)
+            box.setText(selftest.summary(r))
+            if r.get("log"):
+                box.setDetailedText("\n".join(r["log"]))
+            box.exec()
+
+        run_task(selftest.run, hdr=bool(self.settings["video"]["rtx_hdr"]), on_done=done,
+                 on_error=lambda e: QMessageBox.warning(self, APP_NAME, f"Test çalıştırılamadı: {e}"))
 
     def _on_volume(self, value: int) -> None:
         if self.engine:

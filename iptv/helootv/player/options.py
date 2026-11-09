@@ -221,8 +221,14 @@ def play_options(settings: dict, kind: str, url: str, headers: dict | None = Non
     return o
 
 
-def chase_targets(settings: dict) -> tuple[float, float]:
-    return LATENCY_MODES[settings["latency"]["mode"]]["chase"]
+def chase_targets(settings: dict, hls_target_duration: float | None = None) -> tuple[float, float]:
+    """(hedef, üst sınır) sn. HLS'de tampon parça parça dolduğu için eşikler parça süresinin katlarıdır:
+    hedef ≥ 1,2 parça, üst sınır ≥ 2,5 parça (aksi halde her parça arasında arabelleğe alma olurdu)."""
+    target, limit = LATENCY_MODES[settings["latency"]["mode"]]["chase"]
+    if hls_target_duration:
+        target = max(target, 1.2 * hls_target_duration)
+        limit = max(limit, 2.5 * hls_target_duration)
+    return target, limit
 
 
 def _is_hdr_source(vp: dict) -> bool:

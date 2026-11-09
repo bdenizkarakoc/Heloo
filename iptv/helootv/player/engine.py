@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import collections
+import dataclasses
 import logging
 import os
 import re
@@ -21,13 +22,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
-from .. import paths
+from .. import hls, paths
 from . import options as opt
 
 log = logging.getLogger("helootv.player")
 
 MAX_RETRIES = 6
 SPEED_BOOST = 1.08
+PIN_CACHE_SECONDS = 300
 
 
 @dataclass
@@ -150,6 +152,13 @@ class MpvEngine:
         self._unsupported: set[str] = set()
         self.vsr_driver_failed = False
         self.hdr_driver_failed = False
+        self._pin_cache: dict[str, tuple[str, float, str]] = {}
+        self._no_pin: set[str] = set()
+        self._pinned_url: str | None = None
+        self._pin_from_cache = False
+        self._hls_td: float | None = None
+        self.resolver = hls.resolve_variant
+        self.td_prober = hls.probe_target_duration
 
     # ------------------------------------------------------------------ yaşam döngüsü
     @property
@@ -273,9 +282,49 @@ class MpvEngine:
             self._user_paused = False
             self._boost = False
             self._errors.clear()
+            self._vp = None          # önceki kanalın çözünürlüğü/yüklenme anı yeni kanalda görünmesin
+            self._loaded_at = 0.0
+            self._hls_td = None
+            self._start_request(req)
+
+    def _start_request(self, req: PlayRequest) -> None:
+        """HLS ise önbellekteki ya da yeni çözülen tek kalite adresiyle, değilse doğrudan açar (kilit altında)."""
+        self._pin_from_cache = False
+        if self._should_pin(req):
+            cached = self._pin_cache.get(req.url)
+            if cached and time.monotonic() - cached[1] < PIN_CACHE_SECONDS:
+                self._pin_from_cache = True
+                self._load(dataclasses.replace(req, url=cached[0]), pinned_label=cached[2])
+            else:
+                self._emit("loading", {"title": req.title, "kind": req.kind, "subtitle": req.subtitle})
+                threading.Thread(target=self._resolve_and_load, args=(req, self._gen), daemon=True,
+                                 name="hls-resolve").start()
+        else:
             self._load(req)
 
-    def _load(self, req: PlayRequest) -> None:
+    def _should_pin(self, req: PlayRequest) -> bool:
+        return req.kind in ("live", "catchup") and opt.is_hls(req.url) and req.url not in self._no_pin
+
+    def _resolve_and_load(self, req: PlayRequest, gen: int) -> None:
+        """HLS ana listesinden en iyi kaliteyi seç (FFmpeg'in tüm kaliteleri yoklamasını önler → hızlı açılış)."""
+        variant, info = req.url, None
+        try:
+            variant, info = self.resolver(req.url, req.headers, self.settings["network"]["user_agent"], timeout=3.0,
+                                          verify=self.settings["network"]["tls_verify"])
+        except Exception as e:  # okunamadı: mpv özgün adresi açsın
+            log.debug("HLS ana liste çözülemedi (%s): %s", req.url, e)
+        label = f"{info.height}p" if info is not None and info.height else ""
+        with self._lock:
+            if gen != self._gen or self.mpv is None:
+                return
+            if variant != req.url:
+                self._pin_cache[req.url] = (variant, time.monotonic(), label)
+                self._load(dataclasses.replace(req, url=variant), pinned_label=label)
+            else:
+                self._no_pin.add(req.url)  # ana liste değil: bir dahakine doğrudan aç
+                self._load(req)
+
+    def _load(self, req: PlayRequest, pinned_label: str = "") -> None:
         for k, v in opt.play_options(self.settings, req.kind, req.url, req.headers).items():
             self._set(k, v)
         self._set("force-media-title", req.title)
@@ -284,11 +333,27 @@ class MpvEngine:
         file_opts = f"start={int(req.start)}" if req.start and req.start > 5 else ""
         self._loaded_at = 0.0
         self._errors.clear()
+        self._vp = None
+        self._pinned_url = req.url if (self.request and req.url != self.request.url) else None
+        if self._pinned_url:
+            log.info("HLS kalite sabitlendi %s: %s", pinned_label, req.url)
         res = self._loadfile(req.url, file_opts)
+        if req.kind == "live" and opt.is_hls(req.url) and self._hls_td is None:
+            threading.Thread(target=self._probe_td, args=(req, self._gen), daemon=True, name="hls-td").start()
         # loadfile, yeni kaydın kimliğini döndürür; END_FILE yalnız bu kimlikle eşleşirse işlenir (hızlı kanal
         # değiştirmede eski yayının "bitti" olayı yeni kanalı yeniden başlatmasın)
         self._expect_entry = res.get("playlist_entry_id") if isinstance(res, dict) else None
         self._emit("loading", {"title": req.title, "kind": req.kind, "subtitle": req.subtitle})
+
+    def _probe_td(self, req: PlayRequest, gen: int) -> None:
+        """Arka planda HLS parça süresini öğren (oynatmayı bekletmez)."""
+        try:
+            td = self.td_prober(req.url, req.headers, self.settings["network"]["user_agent"], timeout=4.0,
+                                verify=self.settings["network"]["tls_verify"])
+        except Exception:
+            td = None
+        if gen == self._gen and td:
+            self._hls_td = float(td)
 
     def _loadfile(self, url: str, file_opts: str):
         """Adlandırılmış argümanlar: mpv 0.38'de araya giren `index` argümanından etkilenmez."""
@@ -322,7 +387,7 @@ class MpvEngine:
             with self._lock:
                 if gen != self._gen or self.request is None or self.mpv is None:
                     return
-                self._load(self.request)
+                self._start_request(self.request)
 
         self._cancel_retry()
         self._retry_timer = threading.Timer(delay, run)
@@ -370,6 +435,15 @@ class MpvEngine:
             if req is None:
                 return
             msg = describe_mpv_error(list(self._errors))
+            if self._pinned_url and not self._loaded_at:
+                # sabitlenen kalite adresi açılamadı: önbellekteyse jetonu eskimiş olabilir → bir kez yeniden çöz;
+                # yeni çözülen de açılmıyorsa (CDN çerezi ana listeye bağlı vb.) bu kanalda özgün adresi kullan
+                self._pin_cache.pop(req.url, None)
+                if not self._pin_from_cache:
+                    self._no_pin.add(req.url)
+                self._pinned_url = None
+                self._schedule_retry(0.05)
+                return
             if req.kind == "live" and self.settings["network"]["reconnect"]:
                 if self._retry < MAX_RETRIES:
                     delay = min(8.0, 0.5 * (2 ** self._retry))
@@ -426,7 +500,8 @@ class MpvEngine:
         self._user_paused = False
         self._set("pause", "no")
         cache = self._get("demuxer-cache-duration")
-        target, _ = opt.chase_targets(self.settings)
+        is_hls = "hls" in str(self._get("file-format") or "") or bool(self.request and opt.is_hls(self.request.url))
+        target, _ = opt.chase_targets(self.settings, (self._hls_td or 6.0) if is_hls else None)
         if isinstance(cache, (int, float)) and cache > target + 0.5:
             self.command("seek", f"{cache - target:.2f}", "relative+exact")
 
@@ -503,13 +578,14 @@ class MpvEngine:
 
     def _chase(self, st: dict) -> None:
         enabled = self.settings["latency"]["chase"]
-        if (not enabled or self._user_paused or st["paused"] or st["buffering"] or st["seeking"] or st["hls"]
+        hls_unknown = st["hls"] and not self._hls_td
+        if (not enabled or self._user_paused or st["paused"] or st["buffering"] or st["seeking"] or hls_unknown
                 or st["cache"] is None):
             if self._boost:
                 self._set("speed", "1")
                 self._boost = False
             return
-        target, limit = opt.chase_targets(self.settings)
+        target, limit = opt.chase_targets(self.settings, self._hls_td if st["hls"] else None)
         cache = st["cache"]
         now = time.monotonic()
         if cache > limit * 3 and now - self._last_jump > 8:

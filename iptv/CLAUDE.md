@@ -9,7 +9,7 @@ NVIDIA RTX Video Super Resolution (4K), RTX Video HDR, düşük gecikme. Ayrınt
 python -m helootv                      # uygulama (Windows: "Heloo TV.bat")
 python -m helootv --debug              # mpv günlüğü dahil
 python -m helootv.tools.fetch_mpv      # GitHub'dan libmpv-2.dll + mpv.exe (bin/)
-python -m helootv.selftest --warp      # Windows: D3D11 + d3d11vpp duman testi
+python -m helootv.selftest             # Windows + NVIDIA: d3d11vpp 720p→4K ve sürücünün RTX VSR yanıtı
 python -m pytest tests -q              # testler (libmpv2/ffmpeg/7z varsa başsız oynatma + offscreen arayüz)
 ```
 
@@ -19,6 +19,8 @@ python -m pytest tests -q              # testler (libmpv2/ffmpeg/7z varsa başs�
   eski sürümlerde yoksa `Choices((...))` ya da ad demeti kullan; `engine._set` desteklenmeyeni atlar.
 - RTX VSR filtresi `vsr_plan()` ile kaynak çözünürlüğüne göre kurulur; filtre etiketi `@helootv`. Windows dışı
   sistemlerde filtre eklenmez.
+- HLS canlı/geri izlemede `hls.resolve_variant` ana listeden en iyi kaliteyi seçer (FFmpeg tüm kaliteleri yoklamasın);
+  sabitlenen adres açılmazsa motor özgün adrese döner. Yeniden bağlanmalar `_start_request` üzerinden geçer.
 - `player/engine.py` Qt'ye bağımlı değildir; olaylar `on_event(ad, veri)` ile gelir (mpv olay iş parçacığı) ve
   arayüzde `EngineBridge` sinyaliyle ana iş parçacığına aktarılır. mpv çağrılarını arayüzden doğrudan yapma,
   motor yöntemlerini kullan.

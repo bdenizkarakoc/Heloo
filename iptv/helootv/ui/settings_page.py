@@ -208,6 +208,7 @@ class SettingsPage(QScrollArea):
     refresh_requested = Signal(object)       # kaynak kimliği ya da None (hepsi)
     epg_refresh_requested = Signal(object)
     fetch_mpv_requested = Signal()
+    vsr_test_requested = Signal()
     clear_history_requested = Signal()
 
     def __init__(self, ctx, parent=None):
@@ -486,6 +487,11 @@ class SettingsPage(QScrollArea):
         self.sys_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
         lay.addWidget(self.sys_label)
         row = QHBoxLayout()
+        b0 = QPushButton("RTX VSR'yi test et")
+        b0.setObjectName("Primary")
+        b0.setToolTip("Küçük bir test penceresinde 720p → 4K ölçekler ve NVIDIA sürücüsünün VSR'yi açıp açmadığını gösterir")
+        b0.clicked.connect(self.vsr_test_requested.emit)
+        row.addWidget(b0)
         b1 = QPushButton("mpv bileşenlerini indir / güncelle (GitHub)")
         b1.clicked.connect(self.fetch_mpv_requested.emit)
         b2 = QPushButton("NVIDIA ayarlarını aç")

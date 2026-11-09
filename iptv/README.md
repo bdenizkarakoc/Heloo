@@ -51,6 +51,10 @@ Uygulamanın üst çubuğundaki yeşil rozet ("RTX 4070 · RTX VSR hazır") kart
 Oynatma sırasında durum çubuğunda **● RTX VSR 1280×720 → 3840×2160** yazısı görünür. NVIDIA App'te VSR kapalıysa
 "RTX VSR sürücüde kapalı" uyarısı çıkar.
 
+**Doğrulama:** Ayarlar → Sistem → **RTX VSR'yi test et**. Küçük bir test penceresinde 720p görüntü 4K'ya ölçeklenir
+ve mpv günlüğünden NVIDIA sürücüsünün yanıtı okunur: "✔ NVIDIA sürücüsü RTX Video Super Resolution'ı
+ETKİNLEŞTİRDİ" ya da ne yapmanız gerektiği. Komut satırından: `.venv\Scripts\python -m helootv.selftest`.
+
 ## Kullanım
 
 **Kaynak ekleme:** ilk açılışta karşılama ekranından ya da **Ayarlar → Kaynaklar**:
@@ -118,10 +122,17 @@ Hedef "Ekran çözünürlüğü" ya da "1440p" yapılabilir (daha az GPU yükü)
 | **Dengeli** | Daha çok tampon; çoğu bağlantıda takılmasız. |
 | **Kararlı** | Açılışta 3 sn tampon; zayıf/kablosuz bağlantılar için. |
 
-**Canlıya yetişme:** MPEG-TS yayınlarda tampon hedefi aşarsa (ör. bir takılmadan sonra) oynatma %8 hızlanır (ses
-perdesi korunur) ve gecikme kendiliğinden geri alınır; çok büyürse tampon içinde canlıya atlanır. Kanal geçişi tek
-mpv örneğinde `loadfile` ile yapılır (oynatıcı yeniden başlatılmaz), `ytdl` kancası kapalıdır. Xtream'de canlı
-yayınlar varsayılan olarak MPEG-TS (`.ts`) açılır — HLS'den daha düşük gecikme.
+**Canlıya yetişme:** tampon hedefi aşarsa (ör. bir takılmadan sonra) oynatma %8 hızlanır (ses perdesi korunur) ve
+gecikme kendiliğinden geri alınır; çok büyürse tampon içinde canlıya atlanır. HLS'de eşikler listenin parça süresine
+(`#EXT-X-TARGETDURATION`) göre ayarlanır. Kanal geçişi tek mpv örneğinde `loadfile` ile yapılır (oynatıcı yeniden
+başlatılmaz), `ytdl` kancası kapalıdır. Xtream'de canlı yayınlar varsayılan olarak MPEG-TS (`.ts`) açılır — HLS'den
+daha düşük gecikme.
+
+**HLS'de hızlı açılış (kalite sabitleme):** FFmpeg, çok kaliteli bir HLS kanalında açılışta *her* kalitenin
+(1080p/720p/480p/360p) ilk parçalarını indirir. Heloo TV ana listeyi kendisi okuyup en yüksek kaliteyi (çözünürlük,
+kare hızı, bit hızı) doğrudan açar. Gerçek kanallarla ölçüm: Halk TV 10,0 sn → 3,5 sn, 24 TV 8,8 sn → 3,8 sn
+(yavaş bir vekil sunucu üzerinden; ev bağlantısında daha da kısa). Ayrı ses izi olan listelerde ve sabitlenen
+adres açılmazsa (CDN çerezi vb.) özgün adres kullanılır.
 
 ## Sorun giderme
 
@@ -164,10 +175,12 @@ iptv/
     player/engine.py       libmpv denetleyicisi (canlıya yetişme, yeniden bağlanma, tuşlar, harici mpv)
     ui/                    PySide6 arayüz (sayfalar, liste çizimleri, oynatıcı paneli, ayarlar)
     tools/fetch_mpv.py     GitHub'dan mpv indirici
-    selftest.py            Windows D3D11/d3d11vpp duman testi
+    hls.py                 HLS ana liste çözümü (kalite sabitleme), parça süresi
+    selftest.py            RTX VSR testi (d3d11vpp + sürücü yanıtı)
   tests/                   pytest (gerçek libmpv ile başsız oynatma ve offscreen arayüz testleri dahil)
 ```
 
 Testler: `python -m pytest tests -q` (Linux'ta `libmpv2`, `ffmpeg`, `7z` varsa hepsi çalışır). GitHub Actions
-(`.github/workflows/iptv-tests.yml`) her gönderimde Linux'ta testleri, Windows'ta GitHub'dan gerçek mpv indirmeyi,
-`d3d11vpp` RTX seçeneklerinin varlığını ve aynı testleri çalıştırır.
+(`.github/workflows/iptv-tests.yml`) her gönderimde Linux'ta testleri; Windows'ta GitHub'dan gerçek mpv indirmeyi,
+`d3d11vpp` RTX seçeneklerinin (`scaling-mode=nvidia`, `nvidia-true-hdr`) varlığını, aynı testleri ve mpv'nin gerçek
+bir Qt penceresine Direct3D 11 ile gömülerek oynatmasını sınar.

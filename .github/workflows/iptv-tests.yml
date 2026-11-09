@@ -65,6 +65,8 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
         run: python -m pytest tests -q
-      - name: D3D11 + d3d11vpp ölçekleme duman testi (WARP; bilgi amaçlı)
-        continue-on-error: true
-        run: python -m helootv.selftest --warp
+      - name: Gerçek pencereye mpv gömme (wid) + Direct3D 11 (GPU'suz makinede WARP)
+        env:
+          HELOOTV_EMBED_TEST: "1"
+          QT_QPA_PLATFORM: windows
+        run: python -m pytest tests/test_windows_embed.py -q -s
