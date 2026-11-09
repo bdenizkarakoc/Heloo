@@ -98,7 +98,7 @@ def default_settings(preset: str = "duz") -> dict:
 
 
 def default_state() -> dict:
-    return {"active": "z607", "speakers": [
+    return {"active": "z607", "custom": [], "speakers": [
         {"id": "z607", "ad": "Logitech Z607", "kind": "z607", "device": "", "device_ad": "", "settings": default_settings()}]}
 
 
@@ -106,6 +106,7 @@ def load_state() -> dict:
     try:
         st = json.loads(STATE.read_text(encoding="utf-8"))
         if isinstance(st, dict) and st.get("speakers"):
+            st.setdefault("custom", [])
             return st
     except (OSError, ValueError):
         pass
@@ -130,7 +131,8 @@ def _num(v, lo: float = -LIMIT, hi: float = LIMIT) -> float:
 def clean_settings(s: dict | None) -> dict:
     s = dict(s or {})
     out = default_settings(s.get("preset") if s.get("preset") in PRESETS else "duz")
-    out["preset"] = s.get("preset") if s.get("preset") in PRESETS or s.get("preset") == "ozel" else out["preset"]
+    pr = str(s.get("preset") or "")
+    out["preset"] = pr if pr in PRESETS or pr == "ozel" or pr.startswith("my:") else out["preset"]
     out["acik"] = bool(s.get("acik", True))
     b = s.get("bands")
     if isinstance(b, list) and len(b) == len(BANDS):
@@ -419,6 +421,9 @@ def update(data: dict) -> dict:
         for k in ("bas", "orta", "vokal", "tiz", "yukseklik", "guc", "sub", "arka", "acik"):
             new[k] = keep[k]          # sade sürgüler ve kanal düzeyleri hazır değişince korunur
         sp["settings"] = new
+    elif data.get("custom"):
+        if not load_custom(st, sp, str(data["custom"])):
+            raise ValueError("kayıtlı ayar bulunamadı")
     elif isinstance(data.get("settings"), dict):
         sp["settings"] = clean_settings({**sp.get("settings", {}), **data["settings"]})
     if data.get("ad"):
@@ -435,6 +440,49 @@ def update(data: dict) -> dict:
     if data.get("apply", True):
         res["apply"] = apply(st)
     return res
+
+
+# ---------------------------------------------------------------- Benim ayarlarım
+def save_custom(name: str, speaker: str | None = None) -> dict:
+    """Hoparlörün şu anki ayarını adıyla kaydet (aynı ad varsa üzerine yazar). Bütün hoparlörlerde kullanılabilir."""
+    name = (name or "").strip()[:40]
+    if not name:
+        raise ValueError("ayara bir ad ver")
+    st = load_state()
+    sp = find(st, speaker)
+    snap = clean_settings(sp.get("settings"))
+    old = next((c for c in st["custom"] if c["ad"].casefold() == name.casefold()), None)
+    if old:
+        cid = old["id"]
+    else:
+        base, n, ids = _slug(name), 2, {c["id"] for c in st["custom"]}
+        cid = base
+        while cid in ids:
+            cid, n = f"{base}-{n}", n + 1
+    snap["preset"] = "my:" + cid
+    item = {"id": cid, "ad": name, "settings": snap}
+    st["custom"] = [c for c in st["custom"] if c["id"] != cid] + [item]
+    sp["settings"] = dict(snap)
+    save_state(st)
+    return {"custom": item, "state": st, "replaced": bool(old)}
+
+
+def load_custom(st: dict, sp: dict, cid: str) -> bool:
+    c = next((c for c in st.get("custom", []) if c["id"] == cid or c["ad"].casefold() == str(cid).casefold()), None)
+    if not c:
+        return False
+    sp["settings"] = clean_settings({**c["settings"], "preset": "my:" + c["id"]})
+    return True
+
+
+def delete_custom(cid: str) -> dict:
+    st = load_state()
+    st["custom"] = [c for c in st["custom"] if c["id"] != cid]
+    for sp in st["speakers"]:
+        if sp.get("settings", {}).get("preset") == "my:" + cid:
+            sp["settings"]["preset"] = "ozel"     # ayar sesi değişmez, yalnız adı düşer
+    save_state(st)
+    return {"state": st}
 
 
 def remove_speaker(sid: str) -> dict:

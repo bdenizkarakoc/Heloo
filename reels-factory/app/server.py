@@ -869,6 +869,10 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json({"speaker": sp, "state": st, "apply": hoparlor.apply(st)})
                 if act == "remove":
                     return self._json(hoparlor.remove_speaker(str(data.get("speaker") or "")))
+                if act == "kaydet":   # Benim ayarlarım: şu anki ayarı adıyla kaydet
+                    return self._json(hoparlor.save_custom(str(data.get("ad") or ""), data.get("speaker")))
+                if act == "ayar-sil":
+                    return self._json(hoparlor.delete_custom(str(data.get("id") or "")))
                 if act == "izin":
                     return self._json(hoparlor.grant_permission())
             except Exception as exc:  # noqa: BLE001

@@ -18,6 +18,11 @@
   button.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); }
   .chip { background: #0e1424; color: var(--ink); border: 1px solid var(--line); border-radius: 999px; padding: 8px 14px; }
   .chip.on { background: var(--acc); color: #111; border-color: var(--acc); }
+  .mine { display: inline-flex; align-items: stretch; border: 1px solid var(--acc2); border-radius: 999px; overflow: hidden; }
+  .mine button { border-radius: 0; background: #0e1424; color: var(--ink); padding: 8px 12px; }
+  .mine button.x { padding: 8px 10px; color: var(--muted); border-left: 1px solid var(--line); font-weight: 400; }
+  .mine button.x:hover { color: var(--bad); }
+  .mine.on button:first-child { background: var(--acc2); color: #111; }
   .spk { display: flex; flex-direction: column; align-items: flex-start; border-radius: 12px; min-width: 170px; text-align: left; }
   .spk small { font-weight: 400; opacity: .75; }
   .muted { color: var(--muted); font-size: 13px; }
@@ -79,6 +84,13 @@
   <div class="card">
     <h2>Müzik türü</h2>
     <div class="row" id="presets"></div>
+    <h2 style="margin-top:14px">Benim ayarlarım</h2>
+    <div class="row" id="mine"></div>
+    <div class="row" style="margin-top:8px">
+      <input type="text" id="mineName" placeholder="Ayarın adı (ör. Akşam keyfi, Film gecesi)" maxlength="40" style="flex:1;min-width:200px">
+      <button id="mineSave">💾 Şu anki ayarı kaydet</button>
+    </div>
+    <div class="muted" id="mineMsg" style="margin-top:6px">Bas, tiz, 10 bant, ses gücü ve kanal düzeyleri birlikte kaydedilir; her hoparlörde kullanabilirsin. Aynı adla kaydedersen günceller.</div>
   </div>
 
   <div class="two">
@@ -172,6 +184,20 @@ function render() {
     b.onclick = () => send({ speaker: SP.id, preset: p.id }, true);
     return b;
   }), el("button", { className: "chip" + (SP.settings.preset === "ozel" ? " on" : ""), textContent: "Özel", disabled: true }));
+  const mine = ST.custom || [];
+  $("mine").replaceChildren(...(mine.length ? mine.map((c) => {
+    const on = SP.settings.preset === "my:" + c.id;
+    const load = el("button", { textContent: "⭐ " + c.ad, title: "Yükle" });
+    load.onclick = () => { $("mineName").value = c.ad; $("mineMsg").textContent = "✔ '" + c.ad + "' yüklendi."; send({ speaker: SP.id, custom: c.id }, true); };
+    const del = el("button", { className: "x", textContent: "✕", title: "Sil" });
+    del.onclick = async () => {
+      if (!confirm("'" + c.ad + "' silinsin mi? (Şu anki sesin değişmez)")) return;
+      ST = (await post("/api/hoparlor/ayar-sil", { id: c.id })).state; render();
+    };
+    return el("span", { className: "mine" + (on ? " on" : "") }, [load, del]);
+  }) : [el("span", { className: "muted", textContent: "Henüz kayıtlı ayarın yok — beğendiğin sesi ayarla, ad ver, kaydet." })]));
+  const cur = mine.find((c) => SP.settings.preset === "my:" + c.id);
+  if (cur && !$("mineName").value) $("mineName").value = cur.ad;
   $("power").replaceChildren(...INFO.power.map((p) => {
     const b = el("button", { className: "chip" + (SP.settings.guc === p.id ? " on" : ""), textContent: "Ses gücü: " + p.ad });
     b.onclick = () => { SP.settings.guc = p.id; send({ speaker: SP.id, settings: SP.settings }, true); };
@@ -252,6 +278,16 @@ $("tryFile").onchange = () => {
   tryUpdate(); $("tryAudio").play(); ctx.resume();
 };
 
+$("mineSave").onclick = async () => {
+  const ad = $("mineName").value.trim();
+  if (!ad) { $("mineName").focus(); $("mineMsg").textContent = "Önce ayarına bir ad yaz."; return; }
+  clearTimeout(timer);
+  await post("/api/hoparlor/update", { speaker: SP.id, settings: SP.settings, apply: false });
+  const r = await post("/api/hoparlor/kaydet", { speaker: SP.id, ad });
+  ST = r.state; render(); draw();
+  $("mineMsg").textContent = "✔ '" + r.custom.ad + "' " + (r.replaced ? "güncellendi." : "kaydedildi.");
+};
+$("mineName").onkeydown = (e) => { if (e.key === "Enter") $("mineSave").click(); };
 $("acik").onchange = () => { SP.settings.acik = $("acik").checked; send({ speaker: SP.id, settings: SP.settings }, false); };
 $("reset").onclick = () => send({ speaker: SP.id, settings: { preset: "duz", bands: INFO.bands.map(() => 0), bas: 0, orta: 0, vokal: 0, tiz: 0, yukseklik: 0, guc: SP.settings.guc, sub: 0, merkez: 0, arka: 0, acik: true } }, true);
 $("addBtn").onclick = () => $("addBox").classList.toggle("hide");
@@ -282,7 +318,8 @@ $("showCfg").onclick = () => $("cfg").classList.toggle("hide");
   $("addKind").replaceChildren(...INFO.kinds.map((x) => el("option", { value: x.id, textContent: x.ad, selected: x.id === "masaustu" })));
   render();
   const want = new URLSearchParams(location.search).get("preset");
-  await send(INFO.presets.some((p) => p.id === want) ? { speaker: SP.id, preset: want } : { speaker: SP.id }, !!want);
+  const myWant = want && (ST.custom || []).find((c) => c.ad.toLocaleLowerCase("tr") === want.toLocaleLowerCase("tr") || c.id === want);
+  await send(myWant ? { speaker: SP.id, custom: myWant.id } : INFO.presets.some((p) => p.id === want) ? { speaker: SP.id, preset: want } : { speaker: SP.id }, !!want);
   if (INFO.apo.windows) $("devRefresh").click();
 })();
 </script>

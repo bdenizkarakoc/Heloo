@@ -72,3 +72,23 @@ def test_off_writes_flat_block():
     st = h.default_state()
     st["speakers"][0]["settings"]["acik"] = False
     assert "Filter:" not in h.apo_config(st)
+
+
+def test_custom_presets_save_load_delete():
+    h.update({"speaker": "z607", "settings": {"bands": [1, 2, 3, 0, 0, 0, 0, 0, 0, 4], "bas": 2.5, "guc": "yuksek"}, "apply": False})
+    r = h.save_custom("Akşam keyfi")
+    assert r["custom"]["id"] == "aksam-keyfi" and not r["replaced"]
+    h.update({"speaker": "z607", "preset": "pop", "settings": {}, "apply": False})
+    h.update({"speaker": "z607", "settings": {"bas": 0}, "apply": False})
+    st = h.load_state()
+    st["speakers"].append({"id": "masa", "ad": "Masa", "kind": "masaustu", "device": "", "device_ad": "",
+                           "settings": h.default_settings()})
+    h.save_state(st)
+    got = h.update({"speaker": "masa", "custom": "aksam-keyfi"})["speaker"]["settings"]
+    assert got["bands"][:3] == [1, 2, 3] and got["bas"] == 2.5 and got["guc"] == "yuksek" and got["preset"] == "my:aksam-keyfi"
+    assert h.save_custom("AKŞAM keyfi", "masa")["replaced"]      # aynı ad: üzerine yazar
+    assert len(h.load_state()["custom"]) == 1
+    st = h.delete_custom("aksam-keyfi")["state"]
+    assert st["custom"] == [] and h.find(st, "masa")["settings"]["preset"] == "ozel"
+    with pytest.raises(ValueError):
+        h.update({"speaker": "masa", "custom": "yok"})

@@ -222,15 +222,22 @@ def cmd_hoparlor(args, cfg) -> int:
     if args.list:
         for sp in st["speakers"]:
             s = sp["settings"]
-            print(f"{'*' if sp['id'] == st['active'] else ' '} {sp['id']}: {sp['ad']} — {s['preset']} "
+            pr = next(("★ " + c["ad"] for c in st.get("custom", []) if "my:" + c["id"] == s["preset"]), s["preset"])
+            print(f"{'*' if sp['id'] == st['active'] else ' '} {sp['id']}: {sp['ad']} — {pr} "
                   f"(bas {s['bas']:+}, tiz {s['tiz']:+}){'' if s.get('acik', True) else ' [kapalı]'}")
         print("Hazırlar: " + ", ".join(hoparlor.PRESETS))
+        print("Benim ayarlarım: " + (", ".join(c["ad"] for c in st.get("custom", [])) or "(yok — --kaydet AD)"))
         return 0
     data: dict = {"speaker": args.hoparlor or st["active"], "active": args.hoparlor or st["active"]}
+    mine = {c["ad"].casefold(): c["id"] for c in st.get("custom", [])}
     if args.preset:
-        if args.preset not in hoparlor.PRESETS:
-            raise StageError(f"bilinmeyen hazır: {args.preset} ({', '.join(hoparlor.PRESETS)})")
-        data["preset"] = args.preset
+        if args.preset.casefold() in mine:           # Benim ayarlarım
+            data["custom"] = mine[args.preset.casefold()]
+            args.preset = None
+        elif args.preset not in hoparlor.PRESETS:
+            raise StageError(f"bilinmeyen hazır: {args.preset} ({', '.join([*hoparlor.PRESETS, *[c['ad'] for c in st.get('custom', [])]])})")
+        else:
+            data["preset"] = args.preset
     sets = {k: getattr(args, k) for k in ("bas", "orta", "vokal", "tiz") if getattr(args, k) is not None}
     if args.guc:
         sets["guc"] = args.guc
@@ -239,13 +246,18 @@ def cmd_hoparlor(args, cfg) -> int:
     if args.kapat or args.ac:
         sets["acik"] = bool(args.ac)
     if sets:
-        if args.preset:   # önce hazır, sonra sürgüler
+        if args.preset or data.get("custom"):   # önce hazır/kayıtlı ayar, sonra sürgüler
             hoparlor.update({**data, "apply": False})
-            data.pop("preset")
+            data.pop("preset", None); data.pop("custom", None)
         data["settings"] = sets
     r = hoparlor.update(data)
+    if args.kaydet:
+        k = hoparlor.save_custom(args.kaydet, r["speaker"]["id"])
+        print(f"✔ Benim ayarlarım: '{k['custom']['ad']}' {'güncellendi' if k['replaced'] else 'kaydedildi'}")
     a = r.get("apply") or {}
-    print(f"{r['speaker']['ad']}: {r['speaker']['settings']['preset']}, ön kısma {r['analysis']['preamp']} dB")
+    names = {"my:" + c["id"]: "★ " + c["ad"] for c in r["state"].get("custom", [])}
+    pr = r["speaker"]["settings"]["preset"]
+    print(f"{r['speaker']['ad']}: {names.get(pr, pr)}, genel ses {r['analysis']['preamp']} dB")
     print("✔ Uygulandı: " + a["path"] if a.get("ok") else "· " + a.get("msg", ""))
     return 0
 
@@ -447,12 +459,13 @@ def main() -> int:
     p.add_argument("--anlat", help="seslendirmeli, altyazılı video: ne anlatılacağı (uygulama açık olmalı)")
     p.add_argument("--list", action="store_true")
     p = sub.add_parser("hoparlor", help="hoparlör ses ayarı: müzik türü hazırı, bas/tiz (Equalizer APO; sayfa /hoparlor)")
-    p.add_argument("preset", nargs="?", help="pop, rnb, caz, turku, rock, klasik, film, konusma, duz…")
+    p.add_argument("preset", nargs="?", help="pop, rnb, caz, turku, rock, klasik, film, konusma, duz… ya da kendi kaydettiğin ayarın adı")
     p.add_argument("--hoparlor", help="hoparlör kimliği (--list)")
     for k in ("bas", "orta", "vokal", "tiz"):
         p.add_argument(f"--{k}", type=float, help="dB (-12…12)")
     p.add_argument("--guc", choices=["guvenli", "dengeli", "yuksek"], help="ses gücü: cızırtı koruması ne kadar sesi kıssın")
     p.add_argument("--seviye", type=float, help="genel ses seviyesi dB (-20…+10)")
+    p.add_argument("--kaydet", metavar="AD", help="şu anki ayarı 'Benim ayarlarım'a bu adla kaydet (sonra: hoparlor AD)")
     p.add_argument("--kapat", action="store_true", help="ayarı kapat (düz ses)")
     p.add_argument("--ac", action="store_true")
     p.add_argument("--list", action="store_true")

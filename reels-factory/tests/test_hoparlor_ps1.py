@@ -31,3 +31,9 @@ def test_power_modes_match_python():
     for k, (_, pay) in h.POWER.items():
         assert re.search(rf"{k}\s+= @\{{ ad = '[^']*';\s+pay = {pay};", text), k
     assert "GraphicEQ: " in text and f"$LevelMax = {int(h.LEVEL_MAX)}" in text
+
+
+def test_custom_presets_in_app():
+    text = PS1.read_bytes().decode("utf-8-sig")
+    for fn in ("function Save-Custom", "function Load-Custom", "function Remove-Custom", "StartsWith('my:')", "custom = @()"):
+        assert fn in text, fn

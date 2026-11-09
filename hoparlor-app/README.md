@@ -36,6 +36,9 @@ Güncellemek için aynı satırı yeniden çalıştır. Kaldırmak için:
 - Hâlâ kısıksa: **Windows ses ayarları** düğmesi → Hoparlörler → Özellikler → Geliştirmeler → *Ses yüksekliği eşitleme*
   (Loudness Equalization) aç; sesi bozmadan yükseltir.
 - 10 bant, Equalizer APO'nun pürüzsüz **GraphicEQ** süzgeciyle uygulanır.
+- **Benim ayarlarım:** beğendiğin sesi ayarla → *Ayarımı kaydet* → ad ver (ör. "Akşam keyfi"). Bas, tiz, 10 bant, ses gücü
+  ve kanal düzeyleri birlikte kaydedilir; ★ düğmesiyle tek tıkla geri gelir, her hoparlörde kullanılır. Aynı adla
+  kaydedersen güncellenir; *Seçili ayarı sil* ile silinir.
 - Z607'de Subwoofer/Merkez/Arka sürgüleri için Windows'ta *Ses ayarları → Hoparlörler → Yapılandır → 5.1 Surround* seç.
 - Kumandadaki bas düzeyini ortada bırak, ince ayarı buradan yap.
 - Ayar yalnızca bilgisayardan çalan seste geçerli; telefondan Bluetooth ile çalarken uygulanmaz.

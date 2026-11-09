@@ -107,7 +107,7 @@ function Repair-Settings($s) {
   $d.seviye = Clamp $d.seviye -20 $LevelMax
   if (-not $Power.Contains([string]$d.guc)) { $d.guc = 'dengeli' }
   $d.acik = [bool]$d.acik
-  if (-not ($Presets.Contains([string]$d.preset) -or $d.preset -eq 'ozel')) { $d.preset = 'ozel' }
+  if (-not ($Presets.Contains([string]$d.preset) -or $d.preset -eq 'ozel' -or ([string]$d.preset).StartsWith('my:'))) { $d.preset = 'ozel' }
   $d
 }
 
@@ -119,11 +119,13 @@ function Read-State {
         $st.speakers = @($st.speakers | ForEach-Object {
             if (-not $Kinds.Contains([string]$_.kind)) { $_.kind = 'masaustu' }
             $_.settings = Repair-Settings $_.settings; $_ })
+        if (-not $st.PSObject.Properties['custom']) { $st | Add-Member -NotePropertyName custom -NotePropertyValue @() }
+        $st.custom = @($st.custom | Where-Object { $_ -and $_.id -and $_.ad } | ForEach-Object { $_.settings = Repair-Settings $_.settings; $_ })
         return $st
       }
     }
   } catch { }
-  [pscustomobject]@{ active = 'z607'; speakers = @(New-Speaker 'z607' 'Logitech Z607' 'z607') }
+  [pscustomobject]@{ active = 'z607'; custom = @(); speakers = @(New-Speaker 'z607' 'Logitech Z607' 'z607') }
 }
 
 function Save-State($st) {
@@ -471,6 +473,68 @@ function Show-Presets {
     $on = ($id -eq $cur)
     $presetBtns[$id].BackColor = $(if ($on) { $C.acc } else { $C.card }); $presetBtns[$id].ForeColor = $(if ($on) { [Drawing.Color]::Black } else { $C.ink })
   }
+  foreach ($b in $mineFlow.Controls) {
+    if ($b -is [Windows.Forms.Button]) {
+      $on = ("my:$($b.Tag)" -eq $cur)
+      $b.BackColor = $(if ($on) { $C.ok } else { $C.card }); $b.ForeColor = $(if ($on) { [Drawing.Color]::Black } else { $C.ink })
+    }
+  }
+  $btnMineDel.Enabled = ([string]$cur).StartsWith('my:')
+}
+
+# ------------------------------------------------------------------ Benim ayarlarım
+function Copy-Settings($s) { Repair-Settings ($s | ConvertTo-Json -Depth 4 | ConvertFrom-Json) }
+
+function Build-Mine {
+  $mineFlow.Controls.Clear()
+  $list = @($script:st.custom)
+  if (-not $list.Count) {
+    $mineFlow.Controls.Add((L 'Henüz kayıtlı ayarın yok: beğendiğin sesi ayarla, "Ayarımı kaydet"e bas.' 0 0 640 $Font $C.muted))
+    return
+  }
+  foreach ($c in $list) {
+    $b = New-Object Windows.Forms.Button -Property @{ Text = "★ $($c.ad)"; Tag = $c.id; AutoSize = $true; Height = 30; FlatStyle = 'Flat'; ForeColor = $C.ink; BackColor = $C.card }
+    $b.FlatAppearance.BorderColor = $C.ok
+    $b.Add_Click({ Load-Custom $this.Tag })
+    $mineFlow.Controls.Add($b)
+  }
+}
+
+function Load-Custom([string]$id) {
+  $c = @($script:st.custom | Where-Object { $_.id -eq $id })
+  if (-not $c.Count) { return }
+  $sp = Get-Active $script:st
+  $sp.settings = Copy-Settings $c[0].settings; $sp.settings.preset = "my:$id"
+  Load-UI; Request-Apply
+  $status.Text = "'$($c[0].ad)' yüklendi."; $status.ForeColor = $C.ok
+}
+
+function Save-Custom {
+  $sp = Get-Active $script:st
+  $cur = @($script:st.custom | Where-Object { "my:$($_.id)" -eq $sp.settings.preset })
+  $def = $(if ($cur.Count) { $cur[0].ad } else { '' })
+  $ad = [Microsoft.VisualBasic.Interaction]::InputBox("Bu ayara bir ad ver (ör. Akşam keyfi, Film gecesi, Türkü bas).`n`nBas, tiz, 10 bant, ses gücü ve kanal düzeyleri birlikte kaydedilir; her hoparlörde kullanabilirsin.`nAynı adı yazarsan güncellenir.", 'Ayarımı kaydet', $def)
+  $ad = $ad.Trim(); if (-not $ad) { return }
+  if ($ad.Length -gt 40) { $ad = $ad.Substring(0, 40) }
+  $old = @($script:st.custom | Where-Object { $_.ad -ieq $ad })
+  if ($old.Count) { $id = $old[0].id }
+  else { $ids = @($script:st.custom | ForEach-Object { $_.id }); $n = 1; do { $id = "ayar$n"; $n++ } while ($ids -contains $id) }
+  $snap = Copy-Settings $sp.settings; $snap.preset = "my:$id"
+  $script:st.custom = @(@($script:st.custom | Where-Object { $_.id -ne $id }) + [pscustomobject]@{ id = $id; ad = $ad; settings = $snap })
+  $sp.settings.preset = "my:$id"
+  Build-Mine; Show-Presets; Request-Apply
+  $status.Text = "'$ad' " + $(if ($old.Count) { 'güncellendi.' } else { 'kaydedildi.' }); $status.ForeColor = $C.ok
+}
+
+function Remove-Custom {
+  $sp = Get-Active $script:st
+  $c = @($script:st.custom | Where-Object { "my:$($_.id)" -eq $sp.settings.preset })
+  if (-not $c.Count) { return }
+  if ([Windows.Forms.MessageBox]::Show("'$($c[0].ad)' silinsin mi?`n(Şu anki sesin değişmez.)", 'Ayarımı sil', 'YesNo') -ne 'Yes') { return }
+  $script:st.custom = @($script:st.custom | Where-Object { $_.id -ne $c[0].id })
+  foreach ($x in $script:st.speakers) { if ($x.settings.preset -eq "my:$($c[0].id)") { $x.settings.preset = 'ozel' } }
+  Build-Mine; Show-Presets; Save-State $script:st
+  $status.Text = "'$($c[0].ad)' silindi."; $status.ForeColor = $C.muted
 }
 
 function Fill-Devices {
@@ -550,7 +614,20 @@ $btnDel.Add_Click({
     Load-UI; Request-Apply
   })
 
+# --- Benim ayarlarım: müzik türlerinin altına yer aç (alttaki her şey aşağı kayar)
+$shift = 76
+foreach ($c in @($form.Controls)) { if ($c.Top -ge 210) { $c.Top += $shift } }
+$form.Height += $shift
+$form.Controls.Add((L 'BENİM AYARLARIM' 16 212 200 $Bold $C.muted))
+$mineFlow = New-Object Windows.Forms.FlowLayoutPanel -Property @{ Left = 16; Top = 234; Width = 690; Height = 50; BackColor = $C.bg; AutoScroll = $true }
+$btnMineSave = New-Object Windows.Forms.Button -Property @{ Left = 714; Top = 236; Width = 130; Height = 30; Text = 'Ayarımı kaydet'; FlatStyle = 'Flat'; ForeColor = [Drawing.Color]::Black; BackColor = $C.acc }
+$btnMineDel = New-Object Windows.Forms.Button -Property @{ Left = 850; Top = 236; Width = 120; Height = 30; Text = 'Seçili ayarı sil'; FlatStyle = 'Flat'; ForeColor = $C.ink }
+$form.Controls.AddRange(@($mineFlow, $btnMineSave, $btnMineDel))
+$btnMineSave.Add_Click({ Save-Custom })
+$btnMineDel.Add_Click({ Remove-Custom })
+
 $form.Add_Shown({
+    Build-Mine
     $script:devs = Get-Devices
     Load-UI; Request-Apply
     if (-not (Get-ApoDir)) {
