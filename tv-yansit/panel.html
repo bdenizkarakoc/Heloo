@@ -144,13 +144,14 @@ function goster(d) {
   $('kisaAdres').textContent = d.kisa_adres;
   $('otomatik').checked = d.otomatik_kalite;
   const tv = d.tv;
-  $('tvGoruntu').textContent = tv ? tv.fps + ' fps · ~' + tv.ms + ' ms' : 'TV bağlı değil';
+  $('tvGoruntu').textContent = tv ? (tv.mod ? tv.mod + ' · ' : '') + tv.fps + ' fps · ~' + tv.ms + ' ms' : 'TV bağlı değil';
   $('tvSes').textContent = tv ? tv.ses + (tv.sesKB ? ' (' + tv.sesKB + ' KB geldi)' : '') : (d.ses ? 'Bilgisayarda hazır' : '—');
   let ipucu = '';
   if (tv && tv.ses === 'kilitli') ipucu = 'TV\'de ses kilitli: TV kumandasında TAMAM\'a bir kez basın.';
   else if (tv && tv.ses === 'bilgisayarda yok') ipucu = 'Bilgisayarın sesi yakalanamıyor: ' + (d.ses_hata || '') + ' — Windows ses ayarlarında bir hoparlör/kulaklık çıkışının seçili olduğundan emin olun.';
   else if (tv && tv.ses === 'desteklenmiyor') ipucu = 'Bu TV\'nin tarayıcısı ses çalamıyor: sesi TV\'den duymak için Yol 1 (DLNA) kullanın.';
   else if (tv && tv.ses === 'bekleniyor') ipucu = 'Bilgisayarda şu an ses çalmıyor olabilir; "Ses testi"ne basın.';
+  else if (tv && tv.mod === 'JPEG' && !tv.guvenli) ipucu = 'Daha düşük gecikme (gerçek video, H.264) için TV\'de adresi https:// ile açın: https://' + d.kisa_adres + '/' + d.pin + ' — "bağlantı gizli değil" uyarısında Gelişmiş → Devam et.';
   else if (tv && tv.fps && tv.fps < 40) ipucu = 'TV saniyede ' + tv.fps + ' kare gösterebiliyor: Kalite\'den "Ultra düşük gecikme"yi seçin.';
   $('tvIpucu').textContent = ipucu;
   $('kod').textContent = d.pin;

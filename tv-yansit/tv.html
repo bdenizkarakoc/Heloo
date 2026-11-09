@@ -27,7 +27,7 @@
 <div id="kilit">Sesi açmak için kumandada <b>TAMAM</b>'a basın</div>
 <script>
 /* Eski TV tarayıcıları için ES5: var, function, XMLHttpRequest. */
-var AKIS = '__AKIS__', KARE = '__KARE__', SES = '__SES__', GIRDI = '__GIRDI__', KUMANDA = __KUMANDA__, SANAL_KOL = __SANALKOL__;
+var AKIS = '__AKIS__', KARE = '__KARE__', SES = '__SES__', VIDEO = '__VIDEO__', mod = '', GIRDI = '__GIRDI__', KUMANDA = __KUMANDA__, SANAL_KOL = __SANALKOL__;
 var g = document.getElementById('g'), b = document.getElementById('b'), k = document.getElementById('k');
 var tamEkranIstendi = false;
 
@@ -42,7 +42,8 @@ function koptu(sonra) {
    gelir gelmez bir sonraki istenir, bu sırada gelen kare çizilir. Arada kare birikmez (gecikme büyümez). */
 var URLc = window.URL || window.webkitURL, kareW = 16, kareH = 9;
 var istekModu = !!(URLc && window.Blob && ('responseType' in new XMLHttpRequest()));
-if (istekModu) {
+function jpegBaslat() {
+  mod = 'JPEG';
   /* Kareler önce arka planda TAMAMEN çözülür, sonra ekranın yenilenme anında (vsync, requestAnimationFrame)
      tek seferde tuvale çizilir: yarım kare / boş kare görünmez (titreme, yırtılma, dalgalanma olmaz), kareler
      ekranın kendi ritmine oturur (sarsıntı olmaz). */
@@ -123,11 +124,132 @@ if (istekModu) {
     olcum.fps = sayac; olcum.ms = gecikmeler.length ? Math.round(o / gecikmeler.length) : 0;
     sayac = 0; gecikmeler = [];
   }, 1000);
-} else {
+}
+function mjpegBaslat() {
   /* çok eski tarayıcı: sürekli akış (MJPEG) */
+  mod = 'MJPEG';
   g.onload = function () { b.style.display = 'none'; };
   g.onerror = function () { koptu(function () { g.src = AKIS + '?t=' + (+new Date()); }); };
   g.src = AKIS;
+}
+
+/* --- Görüntü, en düşük gecikme: GERÇEK VİDEO (H.264). Bilgisayar kareleri hazır olur olmaz tek bir bağlantıdan
+   iter; TV kendi video donanımıyla çözer (WebCodecs). JPEG'e göre ~5 kat az veri. TV desteklemiyorsa ya da
+   çözemezse kendiliğinden JPEG'e döner. Kayıt biçimi: tür(1) uzunluk(4) no(4) yaş_ms(2) + veri. */
+function videoDene(olmazsa) {
+  var var_ = window.VideoDecoder && window.EncodedVideoChunk && window.fetch && window.ReadableStream &&
+             !/[?&]mod=jpeg/.test(location.search);
+  if (!var_) return olmazsa();
+  try {
+    VideoDecoder.isConfigSupported({ codec: 'avc1.64002a', optimizeForLatency: true }).then(function (r) {
+      if (r && r.supported) videoBaslat(olmazsa); else olmazsa();
+    }, olmazsa);
+  } catch (h) { olmazsa(); }
+}
+function videoBaslat(olmazsa) {
+  mod = 'H.264';
+  var tuval = document.getElementById('c'), c2 = tuval.getContext('2d');
+  g.style.display = 'none'; tuval.style.display = 'block';
+  function boyutla() {
+    var o = Math.min(window.devicePixelRatio || 1, 2);
+    tuval.width = Math.round(window.innerWidth * o); tuval.height = Math.round(window.innerHeight * o);
+    c2.fillStyle = '#000'; c2.fillRect(0, 0, tuval.width, tuval.height);
+    if ('imageSmoothingQuality' in c2) c2.imageSmoothingQuality = 'high';
+  }
+  boyutla();
+  window.addEventListener('resize', boyutla, false);
+  var dec = null, yeniKare = null, sayac = 0, yaslar = [], anahtarBekle = true, cizildi = 0, vazgecildi = false;
+  var okuyucu = null, iptal = null, gelis = {}, gelisSay = 0;
+  function hex(b) { return ('0' + b.toString(16)).slice(-2); }
+  function vazgec() {                         /* TV bu videoyu çözemiyor: JPEG yöntemine dön */
+    if (vazgecildi) return;
+    vazgecildi = true;
+    try { if (iptal) iptal.abort(); } catch (h) {}
+    try { if (dec && dec.state !== 'closed') dec.close(); } catch (h) {}
+    olmazsa();
+  }
+  function yapilandir(avcc) {
+    try { if (dec && dec.state !== 'closed') dec.close(); } catch (h) {}
+    dec = new VideoDecoder({
+      output: function (f) {
+        var g0 = gelis[f.timestamp];
+        if (g0 !== undefined) { yaslar.push(g0.yas + (performance.now() - g0.t)); delete gelis[f.timestamp]; }
+        if (yeniKare) yeniKare.close();
+        yeniKare = f;
+      },
+      error: function () { if (!cizildi) vazgec(); else { anahtarBekle = true; dec = null; } }
+    });
+    dec.configure({ codec: 'avc1.' + hex(avcc[1]) + hex(avcc[2]) + hex(avcc[3]), description: avcc,
+                    optimizeForLatency: true });
+    anahtarBekle = true;
+  }
+  function kayit(tur, no, yas, veri) {
+    if (tur === 0) { yapilandir(veri); return; }
+    if (!dec || dec.state !== 'configured') return;
+    if (anahtarBekle && tur !== 1) return;
+    if (dec.decodeQueueSize > 3) { anahtarBekle = true; return; }   /* TV yetişemiyor: sonraki anahtar kareye atla */
+    anahtarBekle = false;
+    gelis[no * 16667] = { yas: yas, t: performance.now() };   /* bilgisayarda bekleme + TV'de çözme süresi */
+    if (++gelisSay % 300 === 0) gelis = {};
+    dec.decode(new EncodedVideoChunk({ type: tur === 1 ? 'key' : 'delta', timestamp: no * 16667, data: veri }));
+  }
+  function baglan() {
+    if (vazgecildi) return;
+    iptal = window.AbortController ? new AbortController() : null;
+    var tampon = new Uint8Array(0);
+    fetch(VIDEO, iptal ? { cache: 'no-store', signal: iptal.signal } : { cache: 'no-store' }).then(function (r) {
+      if (!r.ok || !r.body) throw new Error('video yok');
+      okuyucu = r.body.getReader();
+      function oku() {
+        return okuyucu.read().then(function (s) {
+          if (s.done) throw new Error('bitti');
+          var yeni = new Uint8Array(tampon.length + s.value.length);
+          yeni.set(tampon, 0); yeni.set(s.value, tampon.length);
+          var dv = new DataView(yeni.buffer), i = 0;
+          while (yeni.length - i >= 11) {
+            var n = dv.getUint32(i + 1);
+            if (yeni.length - i - 11 < n) break;
+            kayit(yeni[i], dv.getUint32(i + 5), dv.getUint16(i + 9), yeni.slice(i + 11, i + 11 + n));
+            i += 11 + n;
+          }
+          tampon = yeni.subarray(i);
+          b.style.display = 'none';
+          return oku();
+        });
+      }
+      return oku();
+    }).catch(function () {
+      if (vazgecildi) return;
+      if (!cizildi) return vazgec();
+      anahtarBekle = true;
+      koptu(baglan);
+    });
+  }
+  var rAF = window.requestAnimationFrame || function (f) { return setTimeout(f, 16); };
+  function ciz() {
+    if (vazgecildi) return;
+    if (yeniKare) {
+      var f = yeniKare, rw = f.displayWidth, rh = f.displayHeight;
+      yeniKare = null;
+      var s = Math.min(tuval.width / rw, tuval.height / rh), w = Math.round(rw * s), h = Math.round(rh * s);
+      if (rw !== kareW || rh !== kareH) { c2.fillStyle = '#000'; c2.fillRect(0, 0, tuval.width, tuval.height); }
+      c2.drawImage(f, (tuval.width - w) >> 1, (tuval.height - h) >> 1, w, h);
+      f.close();
+      kareW = rw; kareH = rh; sayac++; cizildi++;
+    }
+    rAF(ciz);
+  }
+  rAF(ciz);
+  baglan();
+  setTimeout(function () { if (!cizildi) vazgec(); }, 6000);     /* 6 sn'de görüntü yoksa JPEG */
+  setInterval(function () {
+    if (vazgecildi) return;
+    var o = 0;
+    for (var j = 0; j < yaslar.length; j++) o += yaslar[j];
+    olcum.fps = sayac; olcum.ms = yaslar.length ? Math.round(o / yaslar.length) : 0;
+    bilgi.textContent = sayac + ' fps · H.264' + (yaslar.length ? ' · ~' + olcum.ms + ' ms' : '');
+    sayac = 0; yaslar = [];
+  }, 1000);
 }
 /* --- Ses: bilgisayarın sesi küçük parçalar hâlinde gelir, Web Audio ile ~60 ms tamponla çalınır. Tampon
    büyürse (gecikme) ya da boşalırsa (takılma) kendini sıfırlar; böylece ses görüntünün gerisinde kalmaz. */
@@ -198,7 +320,7 @@ setInterval(function () {
   var x = new XMLHttpRequest();
   x.open('POST', SES.replace(/ses$/, 'tvdurum'), true);
   x.setRequestHeader('Content-Type', 'application/json');
-  x.send(JSON.stringify({ fps: olcum.fps, ms: olcum.ms, ses: sesHali(), sesKB: Math.round(sesBayt / 1024),
+  x.send(JSON.stringify({ fps: olcum.fps, ms: olcum.ms, mod: mod, guvenli: !!window.isSecureContext, ses: sesHali(), sesKB: Math.round(sesBayt / 1024),
     tampon: Math.round(HEDEF * 1000), ekran: window.innerWidth + 'x' + window.innerHeight }));
 }, 2000);
 function sesBaslat() {
@@ -402,6 +524,9 @@ if (!KUMANDA) {
     }, false);
   }
 }
+
+/* görüntüyü başlat: önce gerçek video (H.264), olmazsa JPEG, çok eski tarayıcıda MJPEG */
+if (istekModu) videoDene(jpegBaslat); else mjpegBaslat();
 </script>
 </body>
 </html>

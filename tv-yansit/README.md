@@ -96,6 +96,14 @@ kumanda kapatılınca bırakılır. Aynı ağdaki bir cihaz PIN'i 30 kez yanlı�
 
 ## Gecikme
 
+**Gerçek video (H.264):** TV'nin tarayıcısı destekliyorsa (yeni LG, Samsung ve Android TV'lerin çoğu), görüntü JPEG
+resimleri yerine gerçek video olarak gider. Bilgisayarın ekran kartı kodlar, TV kendi video çipiyle çözer. JPEG'e göre
+yaklaşık 5 kat az veri gider ve gecikme düşer. Kareler hazır olur olmaz itilir. TV geride kalırsa bir sonraki anahtar
+kareye atlar (en fazla yarım saniyede bir anahtar kare gelir), böylece gecikme birikmez. Tarayıcılar bunu yalnızca
+**https://** ile açılan sayfada izin verir. TV http:// ile açtıysa panel "https:// ile açın" der. TV'nin sol üstünde
+"H.264" yazıyorsa bu yol çalışıyordur. TV desteklemiyorsa uygulama kendiliğinden JPEG yöntemine döner.
+
+
 Yol 2'de TV tek kare ister, bilgisayar en yeni kareyi gönderir. Kare gelir gelmez bir sonraki istenir ve bu
 sırada gelen kare çizilir. Arada hiç kare birikmediği için ağ yavaşlarsa gecikme büyümez, yalnızca fps düşer.
 Ekran, ffmpeg 6 ve sonrasında **Masaüstü Çoğaltma** (ddagrab) yöntemiyle ekran kartından kopyalanır. Bu yöntem

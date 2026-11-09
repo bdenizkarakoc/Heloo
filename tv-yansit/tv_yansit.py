@@ -634,17 +634,206 @@ def ts_komutu(ffmpeg: str, ayar: dict, enc: str, ses: str | None, kaynak: str = 
     cmd += ["-vf", f"{onek}scale=-2:{h}:flags={olcek},format=yuv420p", "-c:v", enc]
     # Küçük VBV tamponu (~yarım saniye): kod çözücü daha az bekler
     oran = ["-b:v", f"{br}M", "-maxrate", f"{br}M", "-bufsize", f"{max(1, br // 2)}M"]
-    if enc == "h264_nvenc":
-        cmd += ["-preset", "p1", "-tune", "ull", "-zerolatency", "1", "-delay", "0", "-rc", "cbr"] + oran + ["-bf", "0"]
-    elif enc == "h264_qsv":
-        cmd += ["-preset", "veryfast", "-look_ahead", "0", "-async_depth", "1"] + oran + ["-bf", "0"]
-    elif enc == "h264_amf":
-        cmd += ["-usage", "ultralowlatency", "-quality", "speed", "-rc", "cbr"] + oran + ["-bf", "0"]
-    else:
-        cmd += ["-preset", "ultrafast" if fps >= 60 else "superfast", "-tune", "zerolatency"] + oran
+    cmd += kodlayici_ayarlari(enc, fps, oran)
     cmd += ["-profile:v", "high", "-level", "5.1" if h > 1080 else "4.2", "-g", str(g), "-r", str(fps)]
     cmd += (["-map", "0:v", "-map", "1:a", "-c:a", "aac", "-b:a", "192k", "-ar", "48000"] if ses else ["-an"])
     return cmd + ["-f", "mpegts", "-muxdelay", "0", "-muxpreload", "0", "-flush_packets", "1", "pipe:1"]
+
+
+def kodlayici_ayarlari(enc: str, fps: int, oran: list[str]) -> list[str]:
+    """Ultra düşük gecikmeli H.264: B-kare yok, ileri bakma yok, sabit bit hızı."""
+    if enc == "h264_nvenc":
+        return ["-preset", "p1", "-tune", "ull", "-zerolatency", "1", "-delay", "0", "-rc", "cbr"] + oran + ["-bf", "0"]
+    if enc == "h264_qsv":
+        return ["-preset", "veryfast", "-look_ahead", "0", "-async_depth", "1"] + oran + ["-bf", "0"]
+    if enc == "h264_amf":
+        return ["-usage", "ultralowlatency", "-quality", "speed", "-rc", "cbr"] + oran + ["-bf", "0"]
+    return ["-preset", "ultrafast" if fps >= 60 else "superfast", "-tune", "zerolatency"] + oran
+
+
+def video_komutu(ffmpeg: str, ayar: dict, enc: str, kaynak: str = "ana") -> list[str]:
+    """TV tarayıcısı için gerçek video (WebCodecs): H.264, FLV kabında (her kare ayrı paket) → stdout.
+    TV kendi video donanımıyla çözer; JPEG'e göre ~5 kat az veri, daha az gecikme."""
+    fps, br, h = ayar["fps"], ayar["bitrate"], ayar["yukseklik"]
+    giris, onek = yakalama_girdisi(fps, kaynak, ffmpeg)
+    olcek = ayar.get("olcek", "lanczos")
+    oran = ["-b:v", f"{br}M", "-maxrate", f"{br}M", "-bufsize", f"{max(1, br // 4)}M"]   # ~250 ms tampon
+    return ([ffmpeg, "-hide_banner", "-loglevel", "error"] + giris +
+            ["-vf", f"{onek}scale=-2:{h}:flags={olcek},format=yuv420p", "-c:v", enc] +
+            kodlayici_ayarlari(enc, fps, oran) +
+            ["-profile:v", "high", "-level", "5.1" if h > 1080 else "4.2",
+             "-g", str(max(1, fps // 2)),            # yarım saniyede bir anahtar kare: geride kalan hızla yetişir
+             "-r", str(fps), "-an", "-f", "flv", "-flvflags", "no_duration_filesize", "-flush_packets", "1", "pipe:1"])
+
+
+class FlvAyristirici:
+    """ffmpeg'in FLV çıktısından H.264 paketleri: (0, 1, avcC yapılandırması) ya da (1, anahtar_mı, AVCC kare)."""
+
+    def __init__(self):
+        self.t = bytearray()
+        self.basladi = False
+
+    def besle(self, veri: bytes) -> list[tuple[int, int, bytes]]:
+        self.t += veri
+        cikis: list[tuple[int, int, bytes]] = []
+        if not self.basladi:
+            if len(self.t) < 13:
+                return cikis
+            if self.t[:3] != b"FLV":
+                raise ValueError("FLV değil")
+            del self.t[:int.from_bytes(self.t[5:9], "big") + 4]
+            self.basladi = True
+        while len(self.t) >= 11:
+            tip, n = self.t[0], int.from_bytes(self.t[1:4], "big")
+            if len(self.t) < 11 + n + 4:
+                break
+            veri = bytes(self.t[11:11 + n])
+            del self.t[:11 + n + 4]
+            if tip != 9 or len(veri) < 5 or veri[0] & 0x0F != 7:   # yalnız H.264 video
+                continue
+            if veri[1] == 0:
+                cikis.append((0, 1, veri[5:]))
+            elif veri[1] == 1:
+                cikis.append((1, int(veri[0] >> 4 == 1), veri[5:]))
+        return cikis
+
+
+class VideoAbone:
+    SINIR = 10   # ~160 ms'den fazla geride kalırsa: kuyruğu boşalt, sonraki anahtar kareden devam (gecikme birikmez)
+
+    def __init__(self):
+        self.kuyruk: list = []
+        self.anahtar_bekle = True
+
+    def ekle(self, kare: tuple) -> None:
+        if len(self.kuyruk) >= self.SINIR:
+            self.kuyruk.clear()
+            self.anahtar_bekle = True
+        if self.anahtar_bekle:
+            if not kare[1]:
+                return
+            self.anahtar_bekle = False
+            self.kuyruk.append(("cfg",))
+        self.kuyruk.append(kare)
+
+
+class VideoYayin:
+    """Tek H.264 kodlayıcı → birçok TV. Kareler hazır olur olmaz itilir (istek beklenmez)."""
+
+    def __init__(self):
+        self.kilit = threading.Condition()
+        self.surec: subprocess.Popen | None = None
+        self.komut: list[str] = []
+        self.config: bytes | None = None
+        self.gop: list[tuple] = []          # son anahtar kareden beri: yeni bağlanan TV hemen görüntü alır
+        self.no = 0
+        self.aboneler: list[VideoAbone] = []
+        self.hata = ""
+        self.son_izleyici = time.time()
+
+    def calisiyor(self) -> bool:
+        return bool(self.surec and self.surec.poll() is None)
+
+    def baslat(self, komut: list[str]) -> None:
+        with self.kilit:
+            if self.calisiyor() and komut == self.komut:
+                return
+        self.durdur()
+        with self.kilit:
+            self.komut, self.hata, self.config, self.gop = komut, "", None, []
+            for a in self.aboneler:          # yeni ayar: yeni yapılandırma + anahtar kareden başla
+                a.kuyruk.clear()
+                a.anahtar_bekle = True
+        self.surec = subprocess.Popen(komut, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                      stdin=subprocess.DEVNULL, creationflags=PENCERESIZ, bufsize=0)
+        threading.Thread(target=self._oku, args=(self.surec,), daemon=True).start()
+        threading.Thread(target=self._hata_oku, args=(self.surec,), daemon=True).start()
+
+    def durdur(self) -> None:
+        p, self.surec = self.surec, None
+        if p and p.poll() is None:
+            p.terminate()
+            try:
+                p.wait(5)
+            except subprocess.TimeoutExpired:
+                p.kill()
+        with self.kilit:
+            self.kilit.notify_all()
+
+    def _hata_oku(self, p: subprocess.Popen) -> None:
+        for satir in iter(p.stderr.readline, b""):
+            self.hata = satir.decode("utf-8", errors="replace").strip()[-300:]
+
+    def _oku(self, p: subprocess.Popen) -> None:
+        ayr = FlvAyristirici()
+        while True:
+            parca = p.stdout.read(65536)
+            if not parca:
+                break
+            try:
+                paketler = ayr.besle(parca)
+            except ValueError as e:
+                self.hata = str(e)
+                break
+            with self.kilit:
+                for tur, anahtar, veri in paketler:
+                    if tur == 0:
+                        self.config = veri
+                        continue
+                    self.no += 1
+                    kare = (self.no, anahtar, veri, time.time())
+                    if anahtar:
+                        self.gop = []
+                    self.gop.append(kare)
+                    for a in self.aboneler:
+                        a.ekle(kare)
+                if paketler:
+                    self.kilit.notify_all()
+                if self.aboneler:
+                    self.son_izleyici = time.time()
+        with self.kilit:
+            self.kilit.notify_all()
+
+    def abone_ol(self) -> VideoAbone:
+        a = VideoAbone()
+        with self.kilit:
+            if self.config and self.gop and len(self.gop) < VideoAbone.SINIR:
+                a.anahtar_bekle = False
+                a.kuyruk = [("cfg",)] + list(self.gop)
+            self.aboneler.append(a)
+        return a
+
+    def ayril(self, a: VideoAbone) -> None:
+        with self.kilit:
+            if a in self.aboneler:
+                self.aboneler.remove(a)
+        self.son_izleyici = time.time()
+
+    def kayitlar(self, a: VideoAbone, bekle: float = 5.0) -> bytes | None:
+        """Abonenin bekleyen kareleri, TV'ye gidecek ikili biçimde. None: yayın bitti."""
+        with self.kilit:
+            if not a.kuyruk:
+                self.kilit.wait(bekle)
+            if not a.kuyruk:
+                return b"" if self.calisiyor() else None
+            ogeler, a.kuyruk = a.kuyruk, []
+            config = self.config
+        return video_kayitlari(ogeler, config)
+
+
+def video_kayitlari(ogeler: list, config: bytes | None, simdi: float | None = None) -> bytes:
+    """Kayıt: tür(1) uzunluk(4) no(4) yaş_ms(2) + veri.  tür 0 = yapılandırma (avcC), 1 = anahtar, 2 = ara kare."""
+    simdi = simdi or time.time()
+    out = bytearray()
+    for o in ogeler:
+        if o[0] == "cfg":
+            if config:
+                out += struct.pack(">BIIH", 0, len(config), 0, 0) + config
+            continue
+        no, anahtar, veri, t = o
+        out += struct.pack(">BIIH", 1 if anahtar else 2, len(veri), no & 0xFFFFFFFF,
+                           min(65535, int((simdi - t) * 1000))) + veri
+    return bytes(out)
 
 
 def mjpeg_komutu(ffmpeg: str, ayar: dict, kaynak: str = "ana") -> list[str]:
@@ -878,6 +1067,7 @@ class Uygulama:
         self.ffmpeg = ffmpeg_yolu()
         self.ts = Yayin("ts")
         self.mjpeg = Yayin("mjpeg")
+        self.video = VideoYayin()
         self.ayar_adi = "gecikme"
         self.tvler: list[dict] = []
         self.aktif_tv: dict | None = None
@@ -938,6 +1128,13 @@ class Uygulama:
             raise RuntimeError("ffmpeg bulunamadı (README: kurulum).")
         self.mjpeg.baslat(mjpeg_komutu(self.ffmpeg, AYARLAR[self.ayar_adi], self.kaynak))
 
+    def video_baslat(self) -> None:
+        if not self.ffmpeg:
+            raise RuntimeError("ffmpeg bulunamadı (README: kurulum).")
+        if not self.video.calisiyor():
+            self._lossless()
+        self.video.baslat(video_komutu(self.ffmpeg, AYARLAR[self.ayar_adi], kodlayici(self.ffmpeg), self.kaynak))
+
     def dlna_gonder(self, tv: dict) -> None:
         self._lossless()
         self.ts_baslat()
@@ -954,6 +1151,7 @@ class Uygulama:
         self.aktif_tv = None
         self.ts.durdur()
         self.mjpeg.durdur()
+        self.video.durdur()
         if self.ses_y:
             self.ses_y.durdur()
 
@@ -961,7 +1159,7 @@ class Uygulama:
         """TV sayfası 2 sn'de bir fps, gecikme ve ses durumunu bildirir (panelde görünür)."""
         if not isinstance(d, dict):
             return
-        temiz = {k: d.get(k) for k in ("fps", "ms", "ses", "sesKB", "tampon", "ekran")}
+        temiz = {k: d.get(k) for k in ("fps", "ms", "mod", "guvenli", "ses", "sesKB", "tampon", "ekran")}
         temiz.update(ip=ip, zaman=time.time())
         self.tv_durum = temiz
         # Otomatik: TV saniyede 40 kareden azını gösterebiliyorsa (yavaş TV tarayıcısı / zayıf Wi-Fi) daha hafif
@@ -1031,6 +1229,9 @@ class Uygulama:
             for y in (self.ts, self.mjpeg):
                 if y.calisiyor() and not y.izleyiciler and not y.bagli and time.time() - y.son_izleyici > 15:
                     y.durdur()
+            v = self.video
+            if v.calisiyor() and not v.aboneler and time.time() - v.son_izleyici > 15:
+                v.durdur()
             s = self.ses_y
             if s and s.calisiyor and not self.ts.calisiyor() and time.time() - s.son_istek > 20:
                 s.durdur()
@@ -1047,7 +1248,7 @@ class Uygulama:
                 "tvler": [{"ad": t["ad"], "ip": t["ip"]} for t in self.tvler],
                 "aktif_tv": self.aktif_tv["ad"] if self.aktif_tv else None,
                 "dlna_yayin": self.ts.calisiyor(), "tarayici_yayin": self.mjpeg.calisiyor(),
-                "tarayici_izleyici": self.mjpeg.bagli or time.time() - self.kare_istek < 5,
+                "tarayici_izleyici": bool(self.mjpeg.bagli or self.video.aboneler or time.time() - self.kare_istek < 5),
                 "lossless_otomatik": self.lossless_otomatik, "lossless_yuklu": bool(lossless_exe()),
                 "steam": bool(steam_klasoru()), "mesaj": self.mesaj,
                 "hata": self.ts.hata or self.mjpeg.hata, "windows": WINDOWS,
@@ -1060,7 +1261,7 @@ def tv_sayfasi(app: "Uygulama") -> bytes:
     sanal = app.kumanda.sanal_kol if app.kumanda else girdi.vgamepad_var()
     html = (KOK / "tv.html").read_text(encoding="utf-8")
     html = (html.replace("__AKIS__", f"{p}/canli.mjpg").replace("__KARE__", f"{p}/kare.jpg")
-            .replace("__SES__", f"{p}/ses")
+            .replace("__SES__", f"{p}/ses").replace("__VIDEO__", f"{p}/video")
             .replace("__GIRDI__", f"{p}/girdi"))
     return html.replace("__KUMANDA__", "true").replace("__SANALKOL__", "true" if sanal else "false").encode("utf-8")
 
@@ -1117,6 +1318,8 @@ def sunucu_kur(app: Uygulama) -> type[BaseHTTPRequestHandler]:
                 return self._kare()
             if yol == f"{p}/ses":
                 return self._ses()
+            if yol == f"{p}/video":
+                return self._video()
             if yol == f"{p}/canli.mjpg":
                 return self._mjpeg()
             if yol == f"{p}/ekran.ts":
@@ -1160,6 +1363,40 @@ def sunucu_kur(app: Uygulama) -> type[BaseHTTPRequestHandler]:
                     self.wfile.write(parca)
             except (ConnectionError, OSError, RuntimeError):
                 pass
+
+        def _video(self):
+            """H.264 kareleri TV'ye hazır olur olmaz itilir (tek uzun bağlantı)."""
+            try:
+                app.video_baslat()
+            except RuntimeError as e:
+                return self._gonder(503, str(e).encode(), "text/plain; charset=utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/octet-stream")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("Connection", "close")
+            self.end_headers()
+            self.close_connection = True
+            if self.command == "HEAD":
+                return
+            try:
+                self.connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+                self.connection.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 256 * 1024)  # gizli birikme olmasın
+            except OSError:
+                pass
+            a = app.video.abone_ol()
+            try:
+                while True:
+                    veri = app.video.kayitlar(a)
+                    if veri is None:
+                        break
+                    if veri:
+                        self.wfile.write(veri)
+                    app.kare_istek = time.time()
+            except (ConnectionError, OSError):
+                pass
+            finally:
+                app.video.ayril(a)
 
         def _ses(self):
             """Bilgisayar sesi (f32le stereo), istek-yanıt: son istekten bu yana gelen parçalar."""

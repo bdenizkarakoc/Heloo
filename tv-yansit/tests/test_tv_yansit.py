@@ -1,5 +1,6 @@
 """TV Yansıt hızlı testleri: python -m pytest tv-yansit/tests -q"""
 import json
+import time
 import socket
 import shutil
 import sys
@@ -477,3 +478,48 @@ def test_tv_durumu_ve_otomatik_hafif_ayar(monkeypatch, tmp_path):
         assert app.ayar_adi == "gecikme"         # otomatik kapalıysa dokunmaz
     finally:
         srv.shutdown()
+
+
+@pytest.mark.skipif(not shutil.which("ffmpeg"), reason="ffmpeg yok")
+def test_video_flv_ayristirma_ve_akis(monkeypatch, tmp_path):
+    """Gerçek ffmpeg çıktısı: önce yapılandırma (avcC), sonra anahtar kare, sonra ara kareler; TV'ye itilir."""
+    import struct
+    monkeypatch.setattr(tv, "VERI", tmp_path)
+    app = tv.Uygulama(tv.VARSAYILAN_PORT + 400, kaynak="test")
+    app.lossless_otomatik = False
+    srv = tv.sunucu_baslat(app)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        r = urllib.request.urlopen(f"http://127.0.0.1:{app.port}/{app.pin}/video", timeout=20)
+        tampon, kayit, bitis = b"", [], time.time() + 3
+        while time.time() < bitis and len(kayit) < 20:
+            tampon += r.read1(65536)
+            while len(tampon) >= 11:
+                tur, n, no, _ = struct.unpack(">BIIH", tampon[:11])
+                if len(tampon) < 11 + n:
+                    break
+                kayit.append((tur, tampon[11:11 + n]))
+                tampon = tampon[11 + n:]
+        r.close()
+        assert kayit[0][0] == 0 and kayit[0][1][0] == 1            # avcC (configurationVersion 1)
+        assert kayit[1][0] == 1                                     # ilk kare anahtar kare
+        assert any(t == 2 for t, _ in kayit)                        # ara kareler de geliyor
+        assert int.from_bytes(kayit[1][1][:4], "big") > 0           # AVCC (uzunluk önekli NAL)
+    finally:
+        app.durdur()
+        srv.shutdown()
+        srv.server_close()
+
+
+def test_video_abone_geride_kalinca_anahtar_kareye_atlar():
+    a = tv.VideoAbone()
+    a.ekle((1, 0, b"ara", 0))                    # anahtar kare beklerken ara kare atılır
+    assert a.kuyruk == []
+    a.ekle((2, 1, b"anahtar", 0))
+    assert a.kuyruk[0] == ("cfg",) and a.kuyruk[1][0] == 2
+    for i in range(3, 3 + tv.VideoAbone.SINIR):  # TV okumuyor: kuyruk dolar
+        a.ekle((i, 0, b"x", 0))
+    assert a.anahtar_bekle and a.kuyruk == []    # boşaltıldı, sonraki anahtar kare bekleniyor (gecikme birikmez)
+    kayit = tv.video_kayitlari([("cfg",), (7, 1, b"abc", 10.0)], b"\x01cfg", simdi=10.05)
+    assert kayit[:1] == b"\x00" and kayit[11:15] == b"\x01cfg"
+    assert kayit[15:16] == b"\x01" and int.from_bytes(kayit[24:26], "big") == 50
