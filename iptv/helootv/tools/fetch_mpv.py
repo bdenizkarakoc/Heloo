@@ -177,23 +177,37 @@ def install_shaders(dest: Path | None = None, progress: Callable[[str], None] | 
         target = dest / meta["file"]
         if target.is_file() and target.stat().st_size > 1000:
             continue
-        try:
-            if meta.get("url"):
-                download(meta["url"], target, None, say)
-            else:
-                rel = _gh_json(API.format(repo=meta["repo"]))
-                asset = next((a for a in rel.get("assets", []) if a.get("name") == meta["file"]), None)
-                if not asset:
-                    raise FetchError(f"{meta['repo']}: {meta['file']} bulunamadı")
-                download(asset["browser_download_url"], target, asset.get("digest"), say)
-            if "//!HOOK" not in target.read_text(encoding="utf-8", errors="replace")[:20000]:
-                target.unlink()
-                raise FetchError(f"{meta['file']} geçerli bir mpv shader'ı değil")
-            done.append(str(target))
-            say(f"Yapay zekâ büyütücü indirildi: {meta['label']}")
-        except Exception as e:
-            say(f"{meta['file']} indirilemedi: {e}")
+        # sırayla: sürüm API'si (özet doğrulamalı) → sabit sürüm bağlantısı; ağ dalgalanmasına karşı 3 deneme
+        errors: list[str] = []
+        for attempt in range(3):
+            if attempt:
+                time.sleep(2 * attempt)
+            try:
+                _fetch_shader(meta, target, say, use_api=attempt == 0)
+                done.append(str(target))
+                say(f"Yapay zekâ büyütücü indirildi: {meta['label']}")
+                break
+            except Exception as e:  # noqa: BLE001
+                errors.append(str(e))
+        else:
+            say(f"{meta['file']} indirilemedi: {'; '.join(dict.fromkeys(errors))}")
     return done
+
+
+def _fetch_shader(meta: dict, target: Path, say, use_api: bool) -> None:
+    if meta.get("url"):
+        download(meta["url"], target, None, say)
+    elif use_api or not meta.get("fallback"):
+        rel = _gh_json(API.format(repo=meta["repo"]))
+        asset = next((a for a in rel.get("assets", []) if a.get("name") == meta["file"]), None)
+        if not asset:
+            raise FetchError(f"{meta['repo']}: {meta['file']} bulunamadı")
+        download(asset["browser_download_url"], target, asset.get("digest"), say)
+    else:
+        download(meta["fallback"], target, None, say)
+    if "//!HOOK" not in target.read_text(encoding="utf-8", errors="replace")[:20000]:
+        target.unlink()
+        raise FetchError(f"{meta['file']} geçerli bir mpv shader'ı değil")
 
 
 def latest_release(progress: Callable[[str], None] | None = None) -> tuple[str, dict]:

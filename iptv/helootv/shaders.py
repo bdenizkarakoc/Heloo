@@ -9,6 +9,7 @@ from . import paths
 SHADERS = {
     # canlı çekim (TV, film, dizi) — igv/FSRCNN-TensorFlow sürüm dosyası
     "fsrcnnx": {"file": "FSRCNNX_x2_8-0-4-1.glsl", "repo": "igv/FSRCNN-TensorFlow",
+                "fallback": "https://github.com/igv/FSRCNN-TensorFlow/releases/download/1.1/FSRCNNX_x2_8-0-4-1.glsl",
                 "label": "FSRCNNX (canlı çekim: TV, film, dizi)"},
     # çizgi film / anime — Artoriuz/ArtCNN (MIT), gürültü azaltıp keskinleştiren DS modeli
     "artcnn": {"file": "ArtCNN_C4F16_DS.glsl",

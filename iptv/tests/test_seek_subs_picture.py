@@ -177,7 +177,12 @@ def test_player_panel_seek_and_picture_dialog(monkeypatch, tmp_path):
     assert (o.query.text(), o.season.value(), o.episode.value()) == ("Kuruluş Osman", 2, 5)
     a = AiSubsDialog(s)
     assert a.model.currentData() == "small"
-    p.close()
+    # üst öğesiz pencereleri Qt'de sil (yorumlayıcı kapanırken rastgele sırada silinip çökmesin)
+    from PySide6.QtCore import QCoreApplication, QEvent
+    for w in (p, d, o, a):
+        w.close()
+        w.deleteLater()
+    QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
 
 
 @pytest.mark.skipif(not (_qt_ok() and _mpv_ok() and shutil.which("ffmpeg")), reason="PySide6/libmpv/ffmpeg yok")
