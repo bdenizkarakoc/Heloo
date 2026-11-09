@@ -153,17 +153,19 @@ def test_single_instance_forwarding(tmp_path, monkeypatch):
     monkeypatch.setattr(appmod, "_server_name", lambda: f"HelooTV-test-{os.getpid()}")
     server = appmod.start_server(on_items=got.extend, parent=holder)
     assert server is not None
-    import threading
-    result = {}
-    # istemci ayrı iş parçacığında (gerçekte ayrı süreç); sunucu ana döngüde okuyup onaylar
-    t = threading.Thread(target=lambda: result.setdefault("ok", appmod.forward_to_running(["https://youtu.be/abc"])))
-    t.start()
-    end = time.time() + 5
-    while time.time() < end and (t.is_alive() or not got):
+    # istemci gerçek kullanımdaki gibi ayrı süreç ("Gönder → Heloo TV" ikinci bir başlatma)
+    import subprocess
+    import sys
+    root = str(__import__("pathlib").Path(__file__).resolve().parents[1])
+    code = ("import sys; sys.path.insert(0, %r); from PySide6.QtCore import QCoreApplication; "
+            "a = QCoreApplication([]); import helootv.app as m; m._server_name = lambda: %r; "
+            "sys.exit(0 if m.forward_to_running(['https://youtu.be/abc']) else 3)") % (root, appmod._server_name())
+    proc = subprocess.Popen([sys.executable, "-c", code])
+    end = time.time() + 15
+    while time.time() < end and (proc.poll() is None or not got):
         qapp.processEvents()
         time.sleep(0.02)
-    t.join(1)
-    assert result.get("ok")
+    assert proc.wait(5) == 0
     server.close()
     assert got == ["https://youtu.be/abc"]
 
