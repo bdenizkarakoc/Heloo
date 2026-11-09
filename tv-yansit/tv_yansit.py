@@ -25,6 +25,7 @@ import re
 import select
 import shutil
 import socket
+import ssl
 import struct
 import subprocess
 import sys
@@ -42,6 +43,7 @@ KOK = Path(__file__).resolve().parent
 sys.path.insert(0, str(KOK))
 import girdi  # noqa: E402
 import ses as ses_mod  # noqa: E402
+import sertifika  # noqa: E402
 
 UYGULAMA_ADI = "TV Yansıt"
 VARSAYILAN_PORT = 8780  # 8765'i Reels Fabrikası kullanır; çakışmasın
@@ -105,6 +107,7 @@ def ayni_agdaki_ip(hedef: str, ipler: list[str]) -> str:
     return ipler[0]
 
 
+VERI = KOK / "veri"                          # https sertifikası vb. (kaldırınca klasörle birlikte silinir)
 KURULU_EXE = KOK.parent / "TV Yansit.exe"  # kur.ps1 ile kurulmuş uygulama: <klasör>/TV Yansit.exe + app/
 
 
@@ -784,17 +787,28 @@ class Yayin:
                     self.izleyiciler.remove(kuyruk)
             self.son_izleyici = time.time()
 
-    def yeni_kare(self, gorulen: int, bekle: float = 5.0) -> tuple[int, bytes | None, float]:
+    def yeni_kare(self, gorulen: int, bekle: float = 5.0, istemci: str | None = None,
+                  gonderilen: dict | None = None) -> tuple[int, bytes | None, float]:
         """İstek-yanıt modu: TV bir kare ister, 'gorulen'den yeni olan en son kare gelir. Arada hiç kare
-        birikmez; gecikme = yakalama + kodlama + tek karenin aktarımı."""
+        birikmez; gecikme = yakalama + kodlama + tek karenin aktarımı. TV aynı anda iki istek bekletir
+        (kare hazır olur olmaz gider); 'gonderilen' ile aynı kare o TV'ye iki kez gönderilmez."""
         with self.kilit:
             if gorulen > self.kare_no:  # uygulama yeniden başladı: sayaç sıfırlandı
                 gorulen = -1
             bitis = time.time() + bekle
-            while self.kare_no <= gorulen or self.son_kare is None:
+            while True:
+                esik = gorulen
+                if gonderilen is not None and istemci:
+                    esik = max(gorulen, min(gonderilen.get(istemci, -1), self.kare_no))
+                if self.kare_no > esik and self.son_kare is not None:
+                    break
                 kalan = bitis - time.time()
                 if kalan <= 0 or not self.kilit.wait(kalan):
                     return self.kare_no, None, 0.0
+            if gonderilen is not None and istemci:
+                if len(gonderilen) > 50:
+                    gonderilen.clear()
+                gonderilen[istemci] = self.kare_no
             return self.kare_no, self.son_kare, self.kare_zamani
 
     def kare_akisi(self):
@@ -833,6 +847,7 @@ class Uygulama:
         self.kumanda: girdi.Kumanda | None = None
         self.kumanda_son = 0.0
         self.kare_istek = 0.0
+        self.gonderilen_kareler: dict[str, int] = {}
         self.yanlis_pin: dict[str, int] = {}
         threading.Thread(target=self._bekci, daemon=True).start()
 
@@ -1067,7 +1082,8 @@ def sunucu_kur(app: Uygulama) -> type[BaseHTTPRequestHandler]:
             except RuntimeError as e:
                 return self._gonder(503, str(e).encode(), "text/plain; charset=utf-8")
             app.kare_istek = app.mjpeg.son_izleyici = bas = time.time()
-            no, kare, zaman = app.mjpeg.yeni_kare(gorulen)
+            istemci = (urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get("c", [""])[0])[:16]
+            no, kare, zaman = app.mjpeg.yeni_kare(gorulen, istemci=istemci, gonderilen=app.gonderilen_kareler)
             bekleme = int((time.time() - bas) * 1000)
             if kare is None:
                 return self._gonder(204, b"", "image/jpeg", {"X-Kare": str(no)})
@@ -1170,9 +1186,32 @@ class OzelSunucu(ThreadingHTTPServer):
     Reels Fabrikası'na gidiyordu); bu yüzden kapalı ve Windows'ta SO_EXCLUSIVEADDRUSE açık."""
     allow_reuse_address = False
     daemon_threads = True
+    ssl_ctx = None   # https için (aynı port): ilk bayt TLS el sıkışmasıysa bağlantı TLS'e sarılır
+
+    def finish_request(self, request, client_address):
+        if self.ssl_ctx is not None:
+            try:
+                request.settimeout(5)
+                ilk = request.recv(1, socket.MSG_PEEK)
+                request.settimeout(None)
+            except OSError:
+                return
+            if ilk == b"\x16":   # TLS ClientHello → https
+                try:
+                    request = self.ssl_ctx.wrap_socket(request, server_side=True)
+                except (OSError, ssl.SSLError):
+                    return     # TV sertifikayı reddetti (uyarıda "Devam"a basılmadı)
+                try:
+                    return super().finish_request(request, client_address)
+                finally:
+                    try:
+                        request.close()
+                    except OSError:
+                        pass
+        return super().finish_request(request, client_address)
 
     def handle_error(self, request, client_address):
-        if not isinstance(sys.exc_info()[1], (ConnectionError, TimeoutError)):  # TV sayfayı kapattı: sessiz geç
+        if not isinstance(sys.exc_info()[1], (ConnectionError, TimeoutError, ssl.SSLError)):  # TV sayfayı kapattı: sessiz geç
             super().handle_error(request, client_address)
 
     def server_bind(self):
@@ -1198,6 +1237,7 @@ def sunucu_baslat(app: Uygulama) -> ThreadingHTTPServer:
             srv = OzelSunucu(("0.0.0.0", port), sunucu_kur(app))
         except OSError:
             continue
+        srv.ssl_ctx = sertifika.ssl_baglami(VERI, yerel_ipler())
         app.port = port
         return srv
     raise SystemExit("Boş port bulunamadı.")

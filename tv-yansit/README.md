@@ -44,6 +44,13 @@ verirse **Windows ayarlarını aç** ile etkin noktayı elle açın; bunun için
 
 Bilgisayar Miracast destekliyorsa panelde **Yansıt panelini aç (Win+K)** düğmesi de işe yarar.
 
+### TV'de "Bu web sayfası kullanılamıyor" çıkarsa
+- Adresi **http://** ile başlayarak, panelde yazdığı gibi eksiksiz yazın (ör. `http://192.168.1.16:8780/2391`).
+- LG gibi bazı TV'ler adresi kendiliğinden **https://** ile açar. Uygulama aynı portta https'yi de destekler ama
+  sertifika bu bilgisayarın kendisine ait olduğu için TV "bağlantı gizli değil" uyarısı gösterebilir. Böyle olursa
+  **Gelişmiş → Devam et**'i seçin; bu bir kez yeterlidir.
+- Bilgisayar ile TV aynı Wi-Fi'de olmalı. Panelin açık olduğundan emin olun (TV Yansıt penceresi).
+
 ### Ses
 Bilgisayarın sesi, Windows'un ses çıkışından doğrudan yakalanır (WASAPI). Stereo Karışımı ya da ek sürücü
 gerekmez. Yakalanamazsa Stereo Karışımı ya da VB-Audio "CABLE Output" denenir. Ses iki yolda da TV'den çıkar. TV

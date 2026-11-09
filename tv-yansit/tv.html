@@ -37,7 +37,8 @@ function koptu(sonra) {
 var URLc = window.URL || window.webkitURL;
 var istekModu = !!(URLc && window.Blob && ('responseType' in new XMLHttpRequest()));
 if (istekModu) {
-  var n = 0, cizilen = null, cizimde = false, bekleyen = null, sayac = 0, gecikmeler = [];
+  var n = 0, cizilen = null, cizimde = false, bekleyen = null, sayac = 0, gecikmeler = [], sonGelen = 0;
+  var istemci = Math.floor(Math.random() * 1e9).toString(36);   /* bu TV'nin kimliği: aynı kare iki kez gelmesin */
   g.onload = function () {
     b.style.display = 'none';
     if (cizilen) URLc.revokeObjectURL(cizilen);
@@ -51,16 +52,18 @@ if (istekModu) {
   };
   var kareIste = function () {
     var x = new XMLHttpRequest(), t0 = +new Date();
-    x.open('GET', KARE + '?n=' + n, true);
+    x.open('GET', KARE + '?n=' + n + '&c=' + istemci, true);
     x.responseType = 'blob';
     x.timeout = 10000;
     x.onload = function () {
       var no = +x.getResponseHeader('X-Kare');
       if (x.status === 200) {
-        n = no || n + 1;
+        n = Math.max(n, no || n + 1);
+        kareIste();                                   /* önce yeni isteği yolla, sonra çiz */
+        if (no && no <= sonGelen && sonGelen - no < 1000) return;   /* daha yenisi zaten geldi */
+        sonGelen = no;
         var ag = Math.max(0, (+new Date()) - t0 - (+x.getResponseHeader('X-Bekleme') || 0));
         ciz({ url: URLc.createObjectURL(x.response), ms: (+x.getResponseHeader('X-Yas') || 0) + ag });
-        kareIste();
       } else if (x.status === 204) {
         if (no < n) n = 0;
         kareIste();
@@ -70,6 +73,7 @@ if (istekModu) {
     x.send();
   };
   kareIste();
+  kareIste();                                     /* iki istek beklesin: kare hazır olur olmaz gider */
   setInterval(function () {
     var o = 0;
     for (var j = 0; j < gecikmeler.length; j++) o += gecikmeler[j];
@@ -86,7 +90,7 @@ if (istekModu) {
    büyürse (gecikme) ya da boşalırsa (takılma) kendini sıfırlar; böylece ses görüntünün gerisinde kalmaz. */
 var sesBilgi = document.getElementById('s');
 var AC = window.AudioContext || window.webkitAudioContext, ctx = null, sesNo = 0, sonraki = 0, sesBasladi = false;
-var HEDEF = 0.06, EN_COK = 0.2;
+var HEDEF = 0.04, EN_COK = 0.15, sonKesinti = 0;   /* ses tamponu: takılırsa kendiliğinden büyür, düzelince küçülür */
 function sesCal(ab, oran) {
   if (!ctx || ctx.state === 'suspended' || !ab.byteLength) return;
   var f = new Float32Array(ab), n = f.length >> 1;
@@ -97,7 +101,14 @@ function sesCal(ab, oran) {
   src.buffer = buf;
   src.connect(ctx.destination);
   var simdi = ctx.currentTime;
-  if (sonraki < simdi + 0.01 || sonraki > simdi + EN_COK) sonraki = simdi + HEDEF;
+  if (sonraki < simdi + 0.005) {                   /* tampon boşaldı: Wi-Fi dalgalı, biraz büyüt */
+    if (sonraki) { HEDEF = Math.min(HEDEF + 0.02, 0.12); sonKesinti = +new Date(); }
+    sonraki = simdi + HEDEF;
+  } else if (sonraki > simdi + Math.max(EN_COK, HEDEF * 2)) {
+    sonraki = simdi + HEDEF;                        /* gecikme birikti: atla, gerçek zamana dön */
+  } else if (HEDEF > 0.03 && (+new Date()) - sonKesinti > 10000) {
+    HEDEF -= 0.01; sonKesinti = +new Date();        /* 10 sn sorunsuz: tamponu küçült */
+  }
   (src.start || src.noteOn).call(src, sonraki);
   sonraki += n / oran;
 }

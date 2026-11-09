@@ -266,7 +266,7 @@ def test_kurulum_parcalari():
     assert kur.startswith(b"\xef\xbb\xbf")                   # PowerShell 5.1 Türkçe için UTF-8 BOM
     assert kur.count(b"\r\n") == kur.count(b"\n")              # Windows satır sonu (CRLF)
     assert not kur.startswith(b"\xef\xbb\xbf" * 2)           # çift BOM: ilk satır yorum sayılmaz, hata verir
-    for dosya in ("tv_yansit.py", "girdi.py", "ses.py", "panel.html", "tv.html", "tv-yansit.ico"):
+    for dosya in ("tv_yansit.py", "girdi.py", "ses.py", "sertifika.py", "panel.html", "tv.html", "tv-yansit.ico"):
         assert dosya.encode() in kur and (kok / dosya).exists()
     assert isinstance(tv.kurulum_ayari(), dict)
 
@@ -343,3 +343,44 @@ def test_stereo_f32_donusum():
     s16 = array.array("h", [16384, -16384]).tobytes()
     out = array.array("f"); out.frombytes(ses.stereo_f32(s16, 2, "s16"))
     assert [round(v, 2) for v in out] == [0.5, -0.5]
+
+
+def test_ayni_portta_http_ve_https(monkeypatch, tmp_path):
+    """LG webOS gibi tarayıcılar adresi https:// ile açar: aynı port ikisine de yanıt vermeli."""
+    import ssl
+    monkeypatch.setattr(tv, "VERI", tmp_path)
+    app = tv.Uygulama(tv.VARSAYILAN_PORT + 300, kaynak="test")
+    srv = tv.sunucu_baslat(app)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        assert srv.ssl_ctx is not None and (tmp_path / "sertifika.pem").exists()
+        duz = urllib.request.urlopen(f"http://127.0.0.1:{app.port}/{app.pin}", timeout=10).read()
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE               # kendinden imzalı (TV'de "Devam et")
+        guvenli = urllib.request.urlopen(f"https://127.0.0.1:{app.port}/{app.pin}", timeout=10, context=ctx).read()
+        assert duz == guvenli and b"canli.mjpg" in guvenli
+        # sertifika ikinci açılışta yeniden üretilmez (TV'nin "Devam et" kararı geçerli kalsın)
+        ilk = (tmp_path / "sertifika.pem").read_bytes()
+        assert tv.sertifika.ssl_baglami(tmp_path, []) is not None
+        assert (tmp_path / "sertifika.pem").read_bytes() == ilk
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
+def test_iki_istek_ayni_kareyi_almaz():
+    y = tv.Yayin("mjpeg")
+    gonderilen: dict = {}
+    with y.kilit:
+        y.son_kare, y.kare_no = b"k1", 1
+    assert y.yeni_kare(0, istemci="tv", gonderilen=gonderilen)[0] == 1
+    # aynı TV'nin ikinci isteği (n=0 ile) aynı kareyi almaz, yenisini bekler
+    assert y.yeni_kare(0, bekle=0.05, istemci="tv", gonderilen=gonderilen)[1] is None
+    assert y.yeni_kare(0, bekle=0.05, istemci="baska-tv", gonderilen=gonderilen)[0] == 1   # başka TV alır
+    def yeni():
+        with y.kilit:
+            y.son_kare, y.kare_no = b"k2", 2
+            y.kilit.notify_all()
+    threading.Timer(0.05, yeni).start()
+    assert y.yeni_kare(0, bekle=2, istemci="tv", gonderilen=gonderilen)[:2] == (2, b"k2")
