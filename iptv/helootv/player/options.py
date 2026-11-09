@@ -408,3 +408,30 @@ def apply_preset(settings: dict, name: str) -> None:
         else:
             pic[k] = v
     pic["preset"] = name
+
+
+def enhancement_summary(settings: dict, plan: dict | None, vsr_active: bool, vp: dict | None,
+                        platform: str = sys.platform, framegen: bool = False) -> list[str]:
+    """Şu an görüntüye uygulanan iyileştirmeler (oynatıcı çubuğunda her zaman gösterilir; canlı yayın dahil)."""
+    v = settings["video"]
+    plan = plan or {}
+    h = int((vp or {}).get("h") or 0)
+    out: list[str] = []
+    if vsr_active and plan.get("out"):
+        out.append(f"RTX VSR {h}p→{plan['out'][1]}p" if h else "RTX VSR")
+    elif h and h < 1440:
+        shader = shaders.resolve(v.get("ai_upscaler", "fsrcnnx"))
+        name = {"fsrcnnx": "FSRCNNX", "artcnn": "ArtCNN"}.get(v.get("ai_upscaler"), "")
+        out.append(f"Yapay zekâ büyütme ({name})" if shader and name else "Yüksek kaliteli büyütme")
+    if plan.get("hdr"):
+        out.append("RTX HDR")
+    if plan.get("denoise"):
+        out.append("Gürültü azaltma")
+    sharp = shaders.SHARPNESS.get(v.get("sharpen", "light"), 0.3)
+    if sharp > 0:
+        out.append("Keskinlik")
+    if int(settings.get("picture", {}).get("deband", 1)) > 0 or (h and h <= 576 and v.get("low_boost", True)):
+        out.append("Bant yumuşatma")
+    if framegen:
+        out.append("Lossless Scaling kare üretimi")
+    return out

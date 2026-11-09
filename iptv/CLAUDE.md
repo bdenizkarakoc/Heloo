@@ -35,7 +35,10 @@ python -m pytest tests -q              # testler (libmpv2/ffmpeg/7z varsa başs�
   isteğe bağlı kurulur; ffmpeg ile 40 sn'lik parçalar, `on_update` → arayüzde `sub_add`/`sub_reload`).
 - Lossless Scaling (Steam 993090, ücretli, kapalı kaynak) asla pakete eklenmez/indirilmez: `lossless.py` yalnız
   kurulu programı bulur, başlatır ve kısayolunu gönderir. Açıkken `engine.set_external_framegen(True)` →
-  `play_options(external_framegen=True)` mpv interpolasyonunu kapatır.
+  `play_options(external_framegen=True)` mpv interpolasyonunu kapatır. Varsayılan kip `always`: oynatma başlayınca
+  (canlı dahil) açılır; kısayol yalnız Heloo TV penceresi öndeyken gönderilir.
+- İyileştirme her kaynakta (canlı dahil) çalışır; çubuktaki etiket `opt.enhancement_summary` (engine.status
+  `enhance`). Canlı yayına gecikme ekleyen bir iyileştirme (çok kareli filtre, interpolasyon) ekleme.
 - Veritabanı: `store.py` (iş parçacığı başına bağlantı, WAL). EPG ayrı dosyada (`*-epg.db`); uzun EPG içe aktarımı
   katalog/geçmiş yazmalarını bekletmez. Arayüzden uzun sorguları `ui/workers.run_task` ile arka planda çalıştır.
 - Kullanıcı metinleri Türkçe. `.ps1`/`.bat` dosyaları yalnız ASCII (Windows kod sayfası sorunları).

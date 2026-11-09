@@ -57,7 +57,7 @@ DEFAULTS: dict[str, Any] = {
     },
     # Lossless Scaling (Steam, ücretli; kuruluysa): kare üretimi ile akıcılık. Ölçekleme RTX VSR'de kalır.
     "lossless": {
-        "auto_fullscreen": False,  # tam ekrana geçince otomatik aç, çıkınca kapat
+        "mode": "always",         # always: oynatma başlayınca (canlı dahil) her zaman | fullscreen | manual
         "hotkey": "Ctrl+Alt+S",   # Lossless Scaling'deki "Ölçekle" kısayolu
         "exe": "",                # boş: Steam kütüphanelerinde aranır
         "tips_shown": False,
@@ -96,6 +96,7 @@ CHOICES: dict[tuple[str, str], tuple] = {
     ("video", "hwdec"): ("auto", "d3d11va", "nvdec", "auto-copy", "no"),
     ("latency", "mode"): ("ultra", "low", "balanced", "stable"),
     ("latency", "live_format"): ("ts", "m3u8"),
+    ("lossless", "mode"): ("always", "fullscreen", "manual"),
     ("audio", "prefer"): ("tr", "original"),
     ("subtitles", "prefer"): ("tr", "off"),
 }

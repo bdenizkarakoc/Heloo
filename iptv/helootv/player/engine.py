@@ -639,6 +639,8 @@ class MpvEngine:
             "boost": self._boost,
             "vsr": plan,
             "vsr_active": vsr_active,
+            "enhance": opt.enhancement_summary(self.settings, plan, vsr_active, vp, self.platform,
+                                               getattr(self, "external_framegen", False)) if vp else [],
             "vsr_driver_failed": self.vsr_driver_failed,
             "hdr_driver_failed": self.hdr_driver_failed,
             "retry": self._retry,

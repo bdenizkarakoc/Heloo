@@ -237,9 +237,12 @@ class PlayerPanel(QWidget):
             self.pos_label.setText(_clock(pos))
             self.dur_label.setText(_clock(dur))
         plan = st.get("vsr") or {}
-        if st.get("vsr_active") and plan.get("out"):
-            self.vsr_badge.setText(f"RTX VSR {st.get('h')}p → {plan['out'][1]}p" + (" · HDR" if plan.get("hdr") else ""))
-            self.vsr_badge.setToolTip(plan.get("reason", ""))
+        enh = st.get("enhance") or []
+        if enh:
+            # her zaman görünür: canlı yayında da hangi iyileştirmelerin çalıştığı
+            self.vsr_badge.setText("✦ " + " · ".join(enh))
+            self.vsr_badge.setToolTip("Görüntü iyileştirme açık (canlı yayın dahil her kaynakta).\n"
+                                      + (plan.get("reason") or ""))
             self.vsr_badge.show()
         else:
             self.vsr_badge.hide()

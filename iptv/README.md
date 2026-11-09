@@ -131,6 +131,15 @@ Alt çubuktaki **💬 Altyazı** menüsü:
 **🔈 Ses** menüsü ses izlerini (dublaj/özgün, kanal sayısı) listeler ve ses gecikmesini ayarlar. Altyazılar kalın,
 3 px kenarlı ve gölgeli yazılır (4K'da ve açık sahnelerde okunaklı); ekran yazıları (OSD) de büyütüldü.
 
+## Her zaman iyileştirme (canlı yayın dahil)
+
+Görüntü iyileştirme kaynak türüne bakmaz: canlı yayın, geri izleme, film, dizi, kendi dosyalarınız ve bağlantılar
+aynı zincirden geçer — gürültü azaltma → RTX VSR ile 4K (yoksa yapay zekâ büyütücü) → keskinlik → bant yumuşatma
+(+ isteğe bağlı RTX HDR ve Lossless Scaling kare üretimi). Hepsi gecikme eklemeyen GPU/tek kare işlemleridir, bu yüzden
+canlı yayının düşük gecikmesi korunur. Oynatıcı çubuğundaki yeşil **✦** etiketi o anda çalışan iyileştirmeleri her
+zaman gösterir (ör. `✦ RTX VSR 576p→2160p · Gürültü azaltma · Keskinlik · Bant yumuşatma`). RTX VSR sürücüde
+kapalıysa ya da kart desteklemiyorsa Heloo TV kendiliğinden yapay zekâ büyütücüye geçer; iyileştirme kesilmez.
+
 ## Görüntü ayarları ve karıncalanma
 
 **🎨 Görüntü** menüsü / **Ctrl+P** penceresi oynayan görüntüye anında uygulanır ve kaydedilir:
@@ -154,11 +163,13 @@ işlemcide sorunsuzdur. "Kapalı"da sıfır kopya `d3d11va`'ya döner.
 kaynaklı bir Windows uygulamasıdır; GitHub'da resmi deposu yoktur ve Heloo TV onu içermez. Bilgisayarınızda
 kuruluysa Heloo TV onunla birlikte çalışır:
 
-- **Görüntü menüsü → ⚡ Lossless Scaling** ya da **Ctrl+G**: program kapalıysa Steam üzerinden başlatılır,
-  Heloo TV penceresi öne alınır ve Lossless Scaling'in "Ölçekle" kısayolu (varsayılan **Ctrl+Alt+S**) gönderilir.
-  Tekrar basınca kapanır.
-- **Ayarlar → Lossless Scaling**: tam ekrana geçince otomatik aç/kapat, kısayol, program yolu (boşsa bütün Steam
-  kütüphaneleri `libraryfolders.vdf` üzerinden aranır).
+- **Her zaman (varsayılan)**: bir yayın/film/dizi/dosya oynamaya başlayınca (canlı yayın dahil) kare üretimi
+  kendiliğinden açılır ve açık kalır. Program kapalıysa Steam üzerinden başlatılır; kısayol yalnız Heloo TV
+  penceresi öndeyken gönderilir (başka pencere öndeyse Heloo TV öne gelene kadar bekler).
+- **Görüntü menüsü → ⚡ Lossless Scaling** ya da **Ctrl+G**: elle aç/kapat.
+- **Ayarlar → Lossless Scaling**: kip (Her zaman / Yalnız tam ekranda / Elle), kısayol, program yolu (boşsa bütün
+  Steam kütüphaneleri `libraryfolders.vdf` üzerinden aranır). Lossless Scaling'in kendi "Auto scale" profilini
+  kullanıyorsanız kipi **Elle** yapın (iki taraf aynı anda kısayola basarsa birbirini kapatır).
 - Açıkken mpv'nin kendi interpolasyonu (film/dizide "akıcı oynatma") kapatılır; iki kare üretimi üst üste
   titreme yapar. Kapanınca geri gelir.
 

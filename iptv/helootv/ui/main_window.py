@@ -64,6 +64,8 @@ class MainWindow(QMainWindow):
         self._file_index = 0
         self._ai_task: dict | None = None
         self._ls_active = False
+        self._ls_pending = False
+        self._ls_tries = 0
         self._picture_dlg = None
         self._build_ui()
         self._wire()
@@ -273,6 +275,7 @@ class MainWindow(QMainWindow):
         elif name in ("file-loaded", "playing"):
             if req:
                 self._status(f"Oynatılıyor: {req.title}")
+                QTimer.singleShot(1200, self._lossless_auto)
         elif name == "reconnecting":
             msg = f"Bağlantı koptu — yeniden bağlanılıyor ({data['attempt']}/{data['max']})…"
             if data.get("error"):
@@ -902,8 +905,8 @@ class MainWindow(QMainWindow):
             self._update_layout()
         if self.engine:
             self.engine.sync_fullscreen(on)
-        if self.settings["lossless"]["auto_fullscreen"] and on != self._ls_active and self.current_req:
-            QTimer.singleShot(700 if on else 0, lambda: self.toggle_lossless(quiet=True))
+        if self.settings["lossless"].get("mode") == "fullscreen" and self.current_req:
+            QTimer.singleShot(700 if on else 0, lambda: self.toggle_lossless(quiet=True, want=on))
 
     def _focus_search(self) -> None:
         if self._fs:
@@ -1232,10 +1235,13 @@ class MainWindow(QMainWindow):
                               self.settings["video"]["sharpen"] == val)
 
     # ------------------------------------------------------------------ Lossless Scaling
-    def toggle_lossless(self, quiet: bool = False) -> None:
-        """Lossless Scaling'i (kuruluysa) çalıştırır ve Heloo TV penceresini öne alıp "Ölçekle" kısayolunu gönderir.
-        Kısayol aç/kapa çalışır; durum burada izlenir ve açıkken mpv interpolasyonu kapanır."""
+    def toggle_lossless(self, quiet: bool = False, want: bool | None = None) -> None:
+        """Lossless Scaling'i (kuruluysa) çalıştırır ve Heloo TV penceresi öndeyken "Ölçekle" kısayolunu gönderir.
+        Kısayol aç/kapa çalışır; durum burada izlenir ve açıkken mpv interpolasyonu kapanır.
+        want: True/False istenen durum (zaten öyleyse bir şey yapılmaz); None: tersine çevir."""
         from .. import lossless
+        if want is not None and want == self._ls_active:
+            return
         cfg = self.settings["lossless"]
         if os.name != "nt":
             if not quiet:
@@ -1247,15 +1253,17 @@ class MainWindow(QMainWindow):
                     self, "Lossless Scaling bulunamadı",
                     "Lossless Scaling (Steam'de ücretli) bu bilgisayarda bulunamadı.\n\n"
                     "Kare üretimiyle 25/30 fps yayınları 50/60 fps akıcılığında gösterir. Steam sayfası açılsın mı?\n"
-                    "(Başka bir klasöre kurduysanız: Ayarlar → Görüntü → Lossless Scaling yolu)") == QMessageBox.Yes:
-                from PySide6.QtGui import QDesktopServices
+                    "(Başka bir klasöre kurduysanız: Ayarlar → Lossless Scaling → Program yolu)") == QMessageBox.Yes:
                 from PySide6.QtCore import QUrl
+                from PySide6.QtGui import QDesktopServices
                 QDesktopServices.openUrl(QUrl(lossless.STORE_URL))
             return
         try:
             lossless.parse_hotkey(cfg.get("hotkey") or lossless.DEFAULT_HOTKEY)
         except ValueError as e:
             self._status(f"⚠ Lossless Scaling kısayolu geçersiz: {e}")
+            return
+        if self._ls_pending:
             return
         started = False
         if not lossless.is_running():
@@ -1266,13 +1274,25 @@ class MainWindow(QMainWindow):
                 cfg["tips_shown"] = True
                 self._save_timer.start()
                 QMessageBox.information(self, "Lossless Scaling", lossless.TIPS)
+        self._ls_pending = True
+        self._ls_tries = 0
         # pencere önde olmalı: kısayol öndeki pencereyi ölçekler
-        QTimer.singleShot(4000 if started else 150, self._send_lossless_hotkey)
+        QTimer.singleShot(5000 if started else 150, lambda: self._send_lossless_hotkey(force=not quiet))
 
-    def _send_lossless_hotkey(self) -> None:
+    def _send_lossless_hotkey(self, force: bool = False) -> None:
         from .. import lossless
-        self.raise_()
-        self.activateWindow()
+        if force:
+            self.raise_()
+            self.activateWindow()
+        if not self.isActiveWindow() or self.isMinimized():
+            # otomatik açılışta başka bir pencere öndeyse onu ölçeklemeyelim: Heloo TV öne gelince yeniden dene
+            self._ls_tries += 1
+            if self._ls_tries < 120:
+                QTimer.singleShot(1000, lambda: self._send_lossless_hotkey(force))
+            else:
+                self._ls_pending = False
+            return
+        self._ls_pending = False
         self.player.host.setFocus()
         try:
             lossless.send_hotkey(self.settings["lossless"].get("hotkey") or lossless.DEFAULT_HOTKEY)
@@ -1284,6 +1304,13 @@ class MainWindow(QMainWindow):
             self.engine.set_external_framegen(self._ls_active)
             self.engine.show_text("Lossless Scaling kare üretimi " + ("açık" if self._ls_active else "kapalı"), 1800)
         self._status("Lossless Scaling " + ("açıldı (mpv interpolasyonu kapatıldı)" if self._ls_active else "kapatıldı"))
+
+    def _lossless_auto(self) -> None:
+        """'Her zaman' kipinde oynatma başlayınca (canlı yayın, film, dizi, dosya) kare üretimini açar."""
+        mode = self.settings["lossless"].get("mode", "always")
+        if (mode == "always" or (mode == "fullscreen" and self._fs)) and not self._ls_active \
+                and self.current_req and self.current_req.kind != "image":
+            self.toggle_lossless(quiet=True, want=True)
 
     def _nudge(self, prop: str, delta: float, label: str) -> None:
         if not self.engine:

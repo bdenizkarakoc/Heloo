@@ -421,7 +421,10 @@ class SettingsPage(QScrollArea):
                                 "kısayolunu gönderir; programı içermez.")
         self.ls_status.setWordWrap(True)
         self.ls_status.setObjectName("Muted")
-        self.ls_auto = QCheckBox("Tam ekrana geçince kare üretimini otomatik aç, çıkınca kapat")
+        self.ls_mode = QComboBox()
+        for label, val in (("Her zaman — oynatma başlayınca otomatik (canlı yayın dahil)", "always"),
+                           ("Yalnız tam ekranda", "fullscreen"), ("Elle (Ctrl+G)", "manual")):
+            self.ls_mode.addItem(label, val)
         self.ls_hotkey = QLineEdit()
         self.ls_hotkey.setPlaceholderText(lossless.DEFAULT_HOTKEY)
         self.ls_hotkey.setToolTip("Lossless Scaling'deki 'Ölçekle' kısayolu ile aynı olmalı (örn. Ctrl+Alt+S)")
@@ -432,12 +435,12 @@ class SettingsPage(QScrollArea):
         note.setObjectName("Muted")
         r = 0
         lay.addWidget(self.ls_status, r, 0, 1, 2); r += 1
-        lay.addWidget(self.ls_auto, r, 0, 1, 2); r += 1
+        lay.addWidget(QLabel("Kare üretimi"), r, 0); lay.addWidget(self.ls_mode, r, 1); r += 1
         lay.addWidget(QLabel("Kısayol"), r, 0); lay.addWidget(self.ls_hotkey, r, 1); r += 1
         lay.addWidget(QLabel("Program yolu"), r, 0); lay.addWidget(self.ls_exe, r, 1); r += 1
         lay.addWidget(note, r, 0, 1, 2)
         lay.setColumnStretch(1, 1)
-        self.ls_auto.toggled.connect(self._changed)
+        self.ls_mode.currentIndexChanged.connect(self._changed)
         self.ls_hotkey.editingFinished.connect(self._changed)
         self.ls_exe.editingFinished.connect(self._changed)
         self.body.addWidget(g)
@@ -616,7 +619,7 @@ class SettingsPage(QScrollArea):
         self.denoise.setCurrentIndex(max(0, self.denoise.findData(s["picture"]["denoise"])))
         self.low_boost.setChecked(bool(v["low_boost"]))
         ls = s["lossless"]
-        self.ls_auto.setChecked(bool(ls["auto_fullscreen"]))
+        self.ls_mode.setCurrentIndex(max(0, self.ls_mode.findData(ls["mode"])))
         self.ls_hotkey.setText(ls["hotkey"])
         self.ls_exe.setText(ls["exe"])
         i = self.ua.findData(n["user_agent"])
@@ -670,7 +673,7 @@ class SettingsPage(QScrollArea):
         v["low_boost"] = self.low_boost.isChecked()
         from .. import lossless
         ls = s["lossless"]
-        ls["auto_fullscreen"] = self.ls_auto.isChecked()
+        ls["mode"] = self.ls_mode.currentData()
         hk = self.ls_hotkey.text().strip() or lossless.DEFAULT_HOTKEY
         try:
             lossless.parse_hotkey(hk)

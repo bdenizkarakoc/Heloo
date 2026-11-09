@@ -35,14 +35,14 @@ def test_find_exe_in_steam_libraries(tmp_path):
 
 def test_external_framegen_disables_mpv_interpolation():
     s = settings_mod.merged_defaults()
-    assert s["lossless"] == {"auto_fullscreen": False, "hotkey": "Ctrl+Alt+S", "exe": "", "tips_shown": False}
+    assert s["lossless"] == {"mode": "always", "hotkey": "Ctrl+Alt+S", "exe": "", "tips_shown": False}
     vod = opt.play_options(s, "movie", "http://x/film.mkv")
     assert vod["interpolation"] == "yes" and vod["video-sync"] == "display-resample"
     ls = opt.play_options(s, "movie", "http://x/film.mkv", external_framegen=True)
     assert ls["interpolation"] == "no" and ls["video-sync"] == "audio"
     # bozuk değerler varsayılana döner
-    bad = settings_mod._sanitize({"lossless": {"auto_fullscreen": "evet", "hotkey": 5}})
-    assert bad["lossless"]["auto_fullscreen"] is False and bad["lossless"]["hotkey"] == "Ctrl+Alt+S"
+    bad = settings_mod._sanitize({"lossless": {"mode": "evet", "hotkey": 5}})
+    assert bad["lossless"]["mode"] == "always" and bad["lossless"]["hotkey"] == "Ctrl+Alt+S"
 
 
 def test_send_hotkey_requires_windows(monkeypatch):
@@ -66,12 +66,25 @@ def test_settings_page_lossless(tmp_path, monkeypatch):
     QApplication.instance() or QApplication([])
     s = settings_mod.merged_defaults()
     page = SettingsPage(AppContext(Store(tmp_path / "s.db"), s, ImageLoader()))
-    page.ls_auto.setChecked(True)
+    page.ls_mode.setCurrentIndex(page.ls_mode.findData("fullscreen"))
     page.ls_hotkey.setText("Ctrl+Shift+L")
     page.ls_hotkey.editingFinished.emit()
-    assert s["lossless"]["auto_fullscreen"] is True and s["lossless"]["hotkey"] == "Ctrl+Shift+L"
+    assert s["lossless"]["mode"] == "fullscreen" and s["lossless"]["hotkey"] == "Ctrl+Shift+L"
     page.ls_hotkey.setText("Bozuk+++")
     page.ls_hotkey.editingFinished.emit()
     assert s["lossless"]["hotkey"] == "Ctrl+Shift+L"   # geçersiz kısayol kaydedilmez
     page.deleteLater()
     QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+
+
+def test_enhancement_summary_live_and_vod():
+    s = settings_mod.merged_defaults()
+    # canlı SD yayın, RTX VSR çalışıyor
+    plan = opt.vsr_plan(s, {"w": 720, "h": 576, "dw": 1024, "dh": 576}, platform="win32", kind="live")
+    enh = opt.enhancement_summary(s, plan, True, {"w": 720, "h": 576}, "win32", framegen=True)
+    assert enh[0] == "RTX VSR 576p→2160p" and "Gürültü azaltma" in enh and "Keskinlik" in enh
+    assert "Bant yumuşatma" in enh and enh[-1] == "Lossless Scaling kare üretimi"
+    # VSR yoksa (NVIDIA olmayan kart / Linux) yine iyileştirme var
+    plan = opt.vsr_plan(s, {"w": 1280, "h": 720}, platform="linux", kind="live")
+    enh = opt.enhancement_summary(s, plan, False, {"w": 1280, "h": 720}, "linux")
+    assert enh and "Gürültü azaltma" in enh and "Keskinlik" in enh

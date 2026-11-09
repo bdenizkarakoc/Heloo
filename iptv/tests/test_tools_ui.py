@@ -142,6 +142,9 @@ def test_ui_end_to_end(tmp_path, monkeypatch):
         first = win.live_page.model.items[0]
         win.play_live(first)
         assert pump(10, lambda: "1280×720" in win.status_stats.text()), win.status_stats.text()
+        # canlı yayında da görüntü iyileştirme çalışır ve gösterilir
+        assert pump(5, lambda: "Keskinlik" in win.player.vsr_badge.text()), win.player.vsr_badge.text()
+        assert "Gürültü azaltma" in win.player.vsr_badge.text()
         assert win.live_page.model.playing_key == first.key
         # kanal geçişi (Aşağı ok mpv'den gelir) ve numara ile kanal açma
         win._on_key("down", [])

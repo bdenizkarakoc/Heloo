@@ -229,6 +229,9 @@ def test_vod_seek_tracks_subs_picture(monkeypatch, tmp_path):
         win.play_file(str(vid))
         assert pump(10, lambda: not win.player.seek_box.isHidden()), "ilerleme çubuğu görünmedi"
         assert win.player.dur_label.text() == "1:00"
+        # iyileştirme etiketi her zaman görünür (720×576 kaynak: gürültü azaltma + keskinlik + bant yumuşatma)
+        assert pump(5, lambda: "Gürültü azaltma" in win.player.vsr_badge.text()), win.player.vsr_badge.text()
+        assert not win.player.vsr_badge.isHidden() and "Keskinlik" in win.player.vsr_badge.text()
         win.player.seek_to.emit(30.0)
         assert pump(5, lambda: 29 <= (eng.status().get("pos") or 0) <= 33)
         win.player.seek_by.emit(-10.0)
