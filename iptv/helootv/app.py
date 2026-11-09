@@ -28,6 +28,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--reset-settings", action="store_true", help="ayarları en iyi varsayılanlara döndür")
     ap.add_argument("--write-icon", metavar="YOL", help="uygulama simgesini .ico/.png olarak yaz ve çık")
     ap.add_argument("--screenshot", metavar="YOL", help="(test) pencereyi çizip PNG kaydet ve çık")
+    ap.add_argument("paths", nargs="*", help="açılacak video/fotoğraf dosyaları ya da bağlantılar (4K'ya yükseltilir)")
     args = ap.parse_args(argv)
 
     if args.write_icon:
@@ -58,6 +59,8 @@ def main(argv: list[str] | None = None) -> int:
     app.setApplicationName(APP_NAME)
     app.setOrganizationName("Heloo")
     app.setApplicationVersion(__version__)
+    if not args.screenshot and forward_to_running(args.paths):
+        return 0  # uygulama zaten açık: dosyalar ona gönderildi
     if os.name != "nt":
         import locale
         locale.setlocale(locale.LC_NUMERIC, "C")  # libmpv şartı (Qt yereli değiştirir)
@@ -87,7 +90,67 @@ def main(argv: list[str] | None = None) -> int:
 
         QTimer.singleShot(2500, shot)
         return app.exec()
+    server = start_server(win)
     win.show()
+    if args.paths:
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(800, lambda: win.open_paths(args.paths))
     code = app.exec()
+    if server is not None:
+        server.close()
     store.close()
     return code
+
+
+def _server_name() -> str:
+    import getpass
+    try:
+        user = getpass.getuser()
+    except Exception:
+        user = "user"
+    return f"HelooTV-{user}"
+
+
+def forward_to_running(items: list[str]) -> bool:
+    """Açık bir Heloo TV varsa dosyaları ona iletir (Gönder/Birlikte aç ile ikinci pencere açılmaz)."""
+    import json
+    from PySide6.QtNetwork import QLocalSocket
+    sock = QLocalSocket()
+    sock.connectToServer(_server_name())
+    if not sock.waitForConnected(400):
+        return False
+    full = [str(os.path.abspath(p)) if os.path.exists(p) else p for p in items]
+    sock.write(json.dumps(full).encode("utf-8"))
+    sock.waitForBytesWritten(2000)
+    sock.disconnectFromServer()
+    return True
+
+
+def start_server(win):
+    import json
+    from PySide6.QtNetwork import QLocalServer
+    server = QLocalServer(win)
+    QLocalServer.removeServer(_server_name())
+    if not server.listen(_server_name()):
+        return None
+
+    def on_conn():
+        sock = server.nextPendingConnection()
+
+        def read():
+            try:
+                items = json.loads(bytes(sock.readAll()).decode("utf-8") or "[]")
+            except ValueError:
+                items = []
+            if win.isMinimized():
+                win.showNormal()
+            win.raise_()
+            win.activateWindow()
+            if items:
+                win.open_paths(items)
+
+        sock.readyRead.connect(read)
+        sock.disconnected.connect(sock.deleteLater)
+
+    server.newConnection.connect(on_conn)
+    return server

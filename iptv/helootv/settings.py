@@ -19,6 +19,13 @@ DEFAULTS: dict[str, Any] = {
         "hq_scaling": True,       # VSR'nin yetmediği yerde ewa_lanczossharp
         "smooth_vod": True,       # film/dizide display-resample + interpolasyon (takılmasız akış)
         "hwdec": "auto",          # auto: Windows'ta d3d11va (VSR için şart), diğerlerinde auto
+        "ai_upscaler": "fsrcnnx",  # RTX VSR yokken yapay zekâ büyütücü: fsrcnnx | artcnn | off
+    },
+    "export": {
+        "target": "2160",         # 4K olarak kaydet: 2160 | 1440
+        "model": "fsrcnnx",       # fsrcnnx | artcnn | off
+        "quality": "high",        # fast | high | max
+        "folder": "",             # boş: kaynağın yanına
     },
     "latency": {
         "mode": "low",            # ultra | low | balanced | stable
@@ -56,6 +63,10 @@ DEFAULTS: dict[str, Any] = {
 CHOICES: dict[tuple[str, str], tuple] = {
     ("video", "vsr_target"): ("2160", "1440", "screen"),
     ("video", "deinterlace"): ("auto", "yes", "no"),
+    ("video", "ai_upscaler"): ("fsrcnnx", "artcnn", "off"),
+    ("export", "target"): ("2160", "1440"),
+    ("export", "model"): ("fsrcnnx", "artcnn", "off"),
+    ("export", "quality"): ("fast", "high", "max"),
     ("video", "hwdec"): ("auto", "d3d11va", "nvdec", "auto-copy", "no"),
     ("latency", "mode"): ("ultra", "low", "balanced", "stable"),
     ("latency", "live_format"): ("ts", "m3u8"),

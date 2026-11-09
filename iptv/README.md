@@ -20,6 +20,27 @@ canlı yayın **en düşük gecikmeyle** oynatılır.
 | **Gecikme** | 4 kip (Ultra / Düşük / Dengeli / Kararlı), **canlıya yetişme**, HLS'de canlı kenara yakın başlama, MPEG-TS önceliği, en hızlı kanal geçişi |
 | **Dayanıklılık** | Yayın koparsa otomatik yeniden bağlanma, anlaşılır Türkçe hata iletileri (403 bağlantı sınırı, 404, zaman aşımı…) |
 
+## Her görüntü 4K: kendi videolarınız, fotoğraflar, bağlantılar
+
+Yalnız IPTV değil, **her görüntü** aynı zincirden geçer (RTX VSR ile 4K; olmadığı yerde yapay zekâ büyütücü):
+
+- **📂 Aç → Video ya da fotoğraf aç** (Ctrl+O), klasör seçerseniz içindekiler sırayla (Sonraki/Önceki tuşları).
+- **Sürükle-bırak:** dosyayı, klasörü ya da bağlantıyı pencereye (video alanı dahil) bırakın.
+- **Sağ tık → Gönder → Heloo TV (4K)** ya da **Birlikte aç → Heloo TV (4K)** (kurulum ekler). Uygulama açıksa
+  dosya aynı pencerede açılır.
+- **Bağlantı aç** (Ctrl+U): YouTube, Instagram, TikTok, Vimeo … (yt-dlp en yüksek kaliteyi seçer), m3u8/mp4/ts.
+- Kaldığınız yer hatırlanır; son açılanlar 📂 menüsünde ve Favoriler → Geçmiş'te.
+
+**Görüntü iyileştirme sırası:** RTX VSR (NVIDIA, 4K'ya; dikey video ekranın yüksekliğine) → VSR'nin büyütmediği her
+durumda (fotoğraf, sürücüde VSR kapalı, RTX olmayan kart) **yapay zekâ büyütücü**: FSRCNNX (canlı çekim) ya da ArtCNN
+(çizgi film), GitHub'dan indirilir → ewa_lanczossharp + deband. Sürücü VSR'yi reddederse uygulama bunu günlükten
+anlayıp kendiliğinden yapay zekâ büyütücüye geçer.
+
+**📂 Aç → 4K olarak kaydet** (Ctrl+E): videoyu/fotoğrafı dosya olarak 4K'ya çıkarır (dikey video 2160×3840).
+RTX VSR yalnız oynatırken çalıştığı için kayıtta FFmpeg + libplacebo (Vulkan, ekran kartında) + yapay zekâ modeli +
+ewa_lanczossharp + deband kullanılır, video NVIDIA NVENC (HEVC) ile kodlanır; ses korunur. Çıktı:
+`<ad> (4K).mp4` / `.png`, kaynağın yanına ya da seçtiğiniz klasöre.
+
 ## Kurulum (Windows 10/11)
 
 1. Bu depoyu indirin (ya da güncelleyin).
@@ -156,6 +177,7 @@ Günlük: `%LOCALAPPDATA%\HelooTV\helootv.log` (`python -m helootv --debug` ile 
 | mpv `etc/builtin.conf` `[low-latency]` | Ultra düşük gecikme kipinin temeli |
 | [zhongfly/mpv-winbuild](https://github.com/zhongfly/mpv-winbuild) (yedek: [shinchiro/mpv-winbuild-cmake](https://github.com/shinchiro/mpv-winbuild-cmake)) | mpv master'ın günlük Windows derlemeleri; AVX2'li işlemcide x86-64-v3 seçilir |
 | [ip7z/7zip](https://github.com/ip7z/7zip) | `7zr.exe`: mpv arşivleri LZMA2+BCJ2 (Python'un 7z kitaplığı açamıyor) |
+| [igv/FSRCNN-TensorFlow](https://github.com/igv/FSRCNN-TensorFlow) (FSRCNNX), [Artoriuz/ArtCNN](https://github.com/Artoriuz/ArtCNN) (MIT) | Yapay zekâ büyütücü shader'ları (oynatma yedeği + 4K kayıt) |
 | [jaseg/python-mpv](https://github.com/jaseg/python-mpv) | libmpv bağlayıcısı (pencereye gömme `wid`, olaylar, `script-message`) |
 | [iptv-org/iptv](https://github.com/iptv-org/iptv) | İsteğe bağlı ücretsiz Türk kanalları listesi |
 | [linuxmint/hypnotix](https://github.com/linuxmint/hypnotix), [Fredolx/open-tv](https://github.com/Fredolx/open-tv), [4gray/iptvnator](https://github.com/4gray/iptvnator) | Xtream/M3U sınıflandırma ve mpv kullanımı için incelendi (kod kopyalanmadı) |
@@ -176,6 +198,7 @@ iptv/
     ui/                    PySide6 arayüz (sayfalar, liste çizimleri, oynatıcı paneli, ayarlar)
     tools/fetch_mpv.py     GitHub'dan mpv indirici
     hls.py                 HLS ana liste çözümü (kalite sabitleme), parça süresi
+    weburl.py              bağlantı aç (yt-dlp), shaders.py yapay zekâ modelleri, upscale.py 4K kayıt
     selftest.py            RTX VSR testi (d3d11vpp + sürücü yanıtı)
   tests/                   pytest (gerçek libmpv ile başsız oynatma ve offscreen arayüz testleri dahil)
 ```

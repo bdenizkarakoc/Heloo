@@ -410,7 +410,7 @@ class Store:
         return out
 
     def continue_watching(self, limit: int = 40) -> list[dict]:
-        rows = self.history(("movie", "episode"), limit=limit * 3)
+        rows = self.history(("movie", "episode", "file", "url"), limit=limit * 3)
         return [r for r in rows if r["position"] > 60 and (not r["duration"] or r["position"] < r["duration"] * 0.94)][:limit]
 
     def clear_history(self) -> None:

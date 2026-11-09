@@ -91,16 +91,38 @@ if (-not $NoShortcut) {
     (Join-Path ([Environment]::GetFolderPath("Desktop")) "Heloo TV.lnk"),
     (Join-Path ([Environment]::GetFolderPath("Programs")) "Heloo TV.lnk")
   )
+  $pyw = Join-Path $root ".venv\Scripts\pythonw.exe"
+  $launcher = Join-Path $root "HelooTV.pyw"
+  $targets += (Join-Path ([Environment]::GetFolderPath("SendTo")) "Heloo TV (4K).lnk")
   foreach ($t in $targets) {
     $lnk = $ws.CreateShortcut($t)
-    $lnk.TargetPath = Join-Path $root ".venv\Scripts\pythonw.exe"
-    $lnk.Arguments = "-m helootv"
+    $lnk.TargetPath = $pyw
+    $lnk.Arguments = "`"$launcher`""
     $lnk.WorkingDirectory = $root
     if (Test-Path $ico) { $lnk.IconLocation = $ico }
-    $lnk.Description = "Heloo TV - NVIDIA RTX 4K IPTV oynatici"
+    $lnk.Description = "Heloo TV - NVIDIA RTX 4K oynatici"
     $lnk.Save()
   }
-  Ok "Masaustu ve Baslat menusu kisayolu: Heloo TV"
+  Ok "Masaustu, Baslat menusu ve sag tik > Gonder > 'Heloo TV (4K)' kisayolu"
+
+  # Sag tik > Birlikte ac > Heloo TV (yalniz bu kullanici; varsayilan oynaticiyi degistirmez)
+  $prog = "HKCU:\Software\Classes\HelooTV.Media"
+  New-Item -Path "$prog\shell\open\command" -Force | Out-Null
+  Set-ItemProperty -Path $prog -Name "(default)" -Value "Heloo TV (4K)"
+  Set-ItemProperty -Path $prog -Name "FriendlyTypeName" -Value "Heloo TV (4K)"
+  if (Test-Path $ico) {
+    New-Item -Path "$prog\DefaultIcon" -Force | Out-Null
+    Set-ItemProperty -Path "$prog\DefaultIcon" -Name "(default)" -Value "`"$ico`""
+  }
+  Set-ItemProperty -Path "$prog\shell\open" -Name "FriendlyAppName" -Value "Heloo TV (4K)"
+  Set-ItemProperty -Path "$prog\shell\open\command" -Name "(default)" -Value "`"$pyw`" `"$launcher`" `"%1`""
+  $exts = @(".mp4", ".mkv", ".mov", ".m4v", ".avi", ".wmv", ".webm", ".flv", ".ts", ".m2ts", ".mts", ".mpg",
+            ".mpeg", ".3gp", ".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".m3u", ".m3u8")
+  foreach ($e in $exts) {
+    New-Item -Path "HKCU:\Software\Classes\$e\OpenWithProgids" -Force | Out-Null
+    New-ItemProperty -Path "HKCU:\Software\Classes\$e\OpenWithProgids" -Name "HelooTV.Media" -Value ([byte[]]@()) -PropertyType None -Force | Out-Null
+  }
+  Ok "Sag tik > Birlikte ac > Heloo TV (4K)"
 }
 
 # 5) NVIDIA denetimi

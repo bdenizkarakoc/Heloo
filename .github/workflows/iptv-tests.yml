@@ -61,6 +61,17 @@ jobs:
             if ($out -notmatch [regex]::Escape($k)) { throw "d3d11vpp seçeneği bulunamadı: $k" }
           }
           & .\bin\mpv.com --version
+      - name: 4K dışa aktarma ve yapay zekâ büyütücü bileşenleri (ffmpeg libplacebo + NVENC, FSRCNNX, ArtCNN)
+        shell: pwsh
+        run: |
+          $f = (& .\bin\ffmpeg.exe -hide_banner -h filter=libplacebo 2>&1 | Out-String)
+          if ($f -notmatch "custom_shader_path") { throw "ffmpeg libplacebo/custom_shader_path yok" }
+          $e = (& .\bin\ffmpeg.exe -hide_banner -encoders 2>&1 | Out-String)
+          if ($e -notmatch "hevc_nvenc") { throw "ffmpeg hevc_nvenc yok" }
+          foreach ($s in @("FSRCNNX_x2_8-0-4-1.glsl", "ArtCNN_C4F16_DS.glsl")) {
+            if (-not (Test-Path ".\bin\shaders\$s")) { throw "shader indirilmedi: $s" }
+            Write-Host "$s : $((Get-Item ".\bin\shaders\$s").Length) bayt"
+          }
       # -p no:faulthandler: mpv kapanırken LuaJIT'in kendi yakaladığı SEH istisnalarını (0xE24C4A02) yazdırmasın
       - name: Testler (libmpv-2.dll ile başsız oynatma dahil)
         env:

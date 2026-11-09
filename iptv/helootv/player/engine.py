@@ -156,6 +156,7 @@ class MpvEngine:
         self._no_pin: set[str] = set()
         self._pinned_url: str | None = None
         self._pin_from_cache = False
+        self._vsr_ok = True
         self._hls_td: float | None = None
         self.resolver = hls.resolve_variant
         self.td_prober = hls.probe_target_duration
@@ -194,6 +195,10 @@ class MpvEngine:
         # OSC'nin tam ekran düğmesi gömülü pencerede işe yaramaz; değişikliği arayüze iletip pencereyi biz büyütürüz
         self.mpv.observe_property("fullscreen", lambda _n, v: self._emit("fullscreen", {"value": bool(v)}))
         self.mpv.register_message_handler("helootv", self._on_script_message)
+        try:  # mpv ≥ 0.42: video alanına bırakılan dosyalar
+            self.mpv.observe_property("dropped-files", self._on_dropped)
+        except Exception:
+            pass
         self.apply_settings(self.settings)
 
     def shutdown(self) -> None:
@@ -265,6 +270,18 @@ class MpvEngine:
             self._set(k, v)
         self._update_vf(force=True)
 
+    def set_vsr_available(self, ok: bool) -> None:
+        """Ekran kartı RTX değilse VSR denenmez (video işlemcisinin sıradan ölçeklemesi yapay zekâdan kötü)."""
+        ok = bool(ok) and not self.vsr_driver_failed
+        if ok != self._vsr_ok:
+            self._vsr_ok = ok
+            self._update_vf(force=True)
+
+    def _on_dropped(self, _name: str, value) -> None:
+        files = (value or {}).get("files") if isinstance(value, dict) else None
+        if files:
+            self._emit("dropped", {"files": [str(f) for f in files]})
+
     def set_screen(self, width: int, height: int) -> None:
         if width > 0 and height > 0 and self._screen != (width, height):
             self._screen = (width, height)
@@ -328,6 +345,7 @@ class MpvEngine:
         for k, v in opt.play_options(self.settings, req.kind, req.url, req.headers).items():
             self._set(k, v)
         self._set("force-media-title", req.title)
+        self._set("audio-files", [req.meta["audio"]] if req.meta.get("audio") else [])
         self._set("speed", "1")
         self._set("pause", "no")
         file_opts = f"start={int(req.start)}" if req.start and req.start > 5 else ""
@@ -400,8 +418,11 @@ class MpvEngine:
 
     def _on_log(self, level: str, prefix: str, text: str) -> None:
         line = f"[{prefix}] {text.strip()}"
-        if "Failed to enable NVIDIA RTX Super Resolution" in text:
+        if "Failed to enable NVIDIA RTX Super Resolution" in text and not self.vsr_driver_failed:
+            # sürücü VSR'yi reddetti: video işlemcisinin sıradan ölçeklemesi yerine mpv + yapay zekâ büyütsün
             self.vsr_driver_failed = True
+            self._vsr_ok = False
+            self._update_vf(force=True)
         if "NVIDIA RTX Video HDR not supported" in text or "Failed to enable NVIDIA RTX Video HDR" in text:
             self.hdr_driver_failed = True
         if level in ("error", "fatal", "warn") and not self._NOISE.search(line):
@@ -464,7 +485,8 @@ class MpvEngine:
         self._update_vf()
 
     def _update_vf(self, force: bool = False) -> None:
-        plan = opt.vsr_plan(self.settings, self._vp, self._screen, self.platform)
+        plan = opt.vsr_plan(self.settings, self._vp, self._screen, self.platform, vsr_available=self._vsr_ok,
+                            kind=self.request.kind if self.request else None)
         self._plan = plan
         if self.mpv is None:
             return

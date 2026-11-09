@@ -21,6 +21,9 @@ python -m pytest tests -q              # testler (libmpv2/ffmpeg/7z varsa başs�
   sistemlerde filtre eklenmez.
 - HLS canlı/geri izlemede `hls.resolve_variant` ana listeden en iyi kaliteyi seçer (FFmpeg tüm kaliteleri yoklamasın);
   sabitlenen adres açılmazsa motor özgün adrese döner. Yeniden bağlanmalar `_start_request` üzerinden geçer.
+- Her kaynak aynı zincirden geçer: `MainWindow.open_paths` (dosya/klasör/fotoğraf/bağlantı/M3U), türler
+  `file | image | url`. VSR büyütmediğinde (`vsr_plan(vsr_available=False)` ya da `kind="image"`) mpv + `glsl-shaders`
+  (shaders.py) büyütür. 4K kayıt `upscale.py` (libplacebo + shader + NVENC); kayıtta RTX VSR kullanılamaz.
 - `player/engine.py` Qt'ye bağımlı değildir; olaylar `on_event(ad, veri)` ile gelir (mpv olay iş parçacığı) ve
   arayüzde `EngineBridge` sinyaliyle ana iş parçacığına aktarılır. mpv çağrılarını arayüzden doğrudan yapma,
   motor yöntemlerini kullan.

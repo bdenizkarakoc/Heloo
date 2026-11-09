@@ -12,6 +12,8 @@ from __future__ import annotations
 import sys
 from urllib.parse import urlsplit
 
+from .. import shaders
+
 TARGET_BOXES = {"2160": (3840, 2160), "1440": (2560, 1440)}
 MAX_VSR_SCALE = 6.0      # 360p → 2160p
 MIN_VSR_SCALE = 1.1      # bundan küçük büyütmede VSR anlamsız
@@ -137,6 +139,12 @@ def quality_options(settings: dict, platform: str = sys.platform) -> dict:
         "script-opts": ("osc-layout=bottombar,osc-seekbarstyle=bar,osc-hidetimeout=1600,osc-deadzonesize=0.5,"
                         "osc-idlescreen=no,osc-windowcontrols=no"),
     }
+    # RTX VSR'nin büyütmediği her durumda (fotoğraf, sürücüde VSR kapalı, NVIDIA olmayan kart) yapay zekâ ile
+    # 2 kat büyütme; shader yalnız mpv'nin kendisi ≥1,3 kat büyüttüğünde devreye girer (VSR 4K verince çalışmaz)
+    shader = shaders.resolve(v.get("ai_upscaler", "fsrcnnx"))
+    o["glsl-shaders"] = [str(shader)] if shader else []
+    # video alanına bırakılan dosyaları mpv kendisi açmasın; dropped-files ile uygulama açar (aynı 4K zinciri)
+    o[("input-builtin-drag-and-drop", "drag-and-drop")] = "no"
     if v["deband"]:
         o.update({"deband-iterations": "2", "deband-threshold": "35", "deband-range": "16", "deband-grain": "5"})
     if v["hq_scaling"]:
@@ -155,7 +163,7 @@ def quality_options(settings: dict, platform: str = sys.platform) -> dict:
 
 
 def play_options(settings: dict, kind: str, url: str, headers: dict | None = None) -> dict:
-    """Her loadfile'dan hemen önce ayarlanır. kind: live | catchup | movie | episode."""
+    """Her loadfile'dan hemen önce ayarlanır. kind: live | catchup | movie | episode | file | image | url."""
     headers = headers or {}
     net = settings["network"]
     fields = []
@@ -169,6 +177,7 @@ def play_options(settings: dict, kind: str, url: str, headers: dict | None = Non
         "referrer": headers.get("referrer") or "",
         "http-header-fields": fields,
         "hls-bitrate": "max",            # 4K/1080p varyantı varsa en yükseğini seç
+        "image-display-duration": "inf" if kind == "image" else "5",
         "cache": "yes",
         "demuxer-seekable-cache": "yes",  # canlıda duraklat/geri sar (tampon içinde)
     }
@@ -237,7 +246,7 @@ def _is_hdr_source(vp: dict) -> bool:
 
 
 def vsr_plan(settings: dict, vp: dict | None, screen: tuple[int, int] | None = None,
-             platform: str = sys.platform) -> dict:
+             platform: str = sys.platform, vsr_available: bool = True, kind: str | None = None) -> dict:
     """Kaynak çözünürlüğüne göre d3d11vpp filtresi: RTX VSR ile hedef kutuya (4K) büyütme + GPU deinterlace + RTX HDR.
 
     vp: mpv `video-params` (w, h, dw, dh, gamma ...). Dönüş: {"vf", "scale", "out", "deint", "hdr", "reason"}.
@@ -253,7 +262,11 @@ def vsr_plan(settings: dict, vp: dict | None, screen: tuple[int, int] | None = N
     w, h = int(vp["w"]), int(vp["h"])
     dw, dh = int(vp.get("dw") or w), int(vp.get("dh") or h)
     parts: list[str] = []
-    if v["rtx_vsr"]:
+    if v["rtx_vsr"] and (not vsr_available or kind == "image"):
+        # VSR yok/fotoğraf: video işlemcisinin sıradan ölçeklemesi yerine mpv + yapay zekâ shader'ı büyütür
+        plan["reason"] = ("Fotoğraf: yapay zekâ büyütücü + ewa_lanczossharp" if kind == "image" else
+                          "RTX VSR kullanılamıyor: yapay zekâ büyütücü + ewa_lanczossharp")
+    elif v["rtx_vsr"]:
         box = TARGET_BOXES.get(v["vsr_target"])
         if v["vsr_target"] == "screen" or box is None:
             box = screen if (screen and screen[0] > 0 and screen[1] > 0) else TARGET_BOXES["2160"]

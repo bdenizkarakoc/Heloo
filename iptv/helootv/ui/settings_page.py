@@ -359,6 +359,13 @@ class SettingsPage(QScrollArea):
         self.deband = QCheckBox("Renk bantlarını yumuşat (deband) — sıkıştırılmış IPTV'de gökyüzü/gölge geçişleri")
         self.hq = QCheckBox("Yüksek kaliteli ölçekleyici (ewa_lanczossharp) — VSR'nin olmadığı durumlar için")
         self.smooth = QCheckBox("Film/dizide akıcı oynatma (ekrana eşitleme + interpolasyon)")
+        self.ai = QComboBox()
+        from .. import shaders as _sh
+        for key, meta in _sh.SHADERS.items():
+            self.ai.addItem(meta["label"], key)
+        self.ai.addItem("Kapalı", "off")
+        self.ai.setToolTip("RTX VSR'nin büyütmediği durumlarda (fotoğraf, VSR kapalı, NVIDIA olmayan kart) 2 kat "
+                           "yapay zekâ büyütmesi. GitHub'dan 'mpv bileşenlerini indir' ile gelir.")
         self.hwdec = QComboBox()
         for label, val in (("Otomatik (Windows: d3d11va — VSR için gerekli)", "auto"), ("d3d11va", "d3d11va"),
                            ("nvdec (CUDA)", "nvdec"), ("auto-copy", "auto-copy"), ("Kapalı (yazılım)", "no")):
@@ -371,6 +378,7 @@ class SettingsPage(QScrollArea):
         lay.addWidget(self.deband, r, 0, 1, 2); r += 1
         lay.addWidget(self.hq, r, 0, 1, 2); r += 1
         lay.addWidget(self.smooth, r, 0, 1, 2); r += 1
+        lay.addWidget(QLabel("Yapay zekâ büyütücü"), r, 0); lay.addWidget(self.ai, r, 1); r += 1
         lay.addWidget(QLabel("Donanım çözme"), r, 0); lay.addWidget(self.hwdec, r, 1); r += 1
         note = QLabel("RTX VSR'nin çalışması için NVIDIA App → Sistem → Video → RTX Video Enhancement → "
                       "'Super Resolution' açık olmalı (kalite: Otomatik ya da 4). Heloo TV, mpv'nin d3d11vpp "
@@ -381,7 +389,7 @@ class SettingsPage(QScrollArea):
         lay.setColumnStretch(1, 1)
         for w in (self.vsr, self.hdr, self.deband, self.hq, self.smooth):
             w.toggled.connect(self._changed)
-        for w in (self.target, self.deint, self.hwdec):
+        for w in (self.target, self.deint, self.hwdec, self.ai):
             w.currentIndexChanged.connect(self._changed)
         self.body.addWidget(g)
 
@@ -524,6 +532,7 @@ class SettingsPage(QScrollArea):
         self.hq.setChecked(v["hq_scaling"])
         self.smooth.setChecked(v["smooth_vod"])
         self.hwdec.setCurrentIndex(max(0, self.hwdec.findData(v["hwdec"])))
+        self.ai.setCurrentIndex(max(0, self.ai.findData(v.get("ai_upscaler", "fsrcnnx"))))
         self.lat_buttons.get(la["mode"], self.lat_buttons["low"]).setChecked(True)
         self.chase.setChecked(la["chase"])
         self.live_fmt.setCurrentIndex(max(0, self.live_fmt.findData(la["live_format"])))
@@ -562,6 +571,7 @@ class SettingsPage(QScrollArea):
         v["hq_scaling"] = self.hq.isChecked()
         v["smooth_vod"] = self.smooth.isChecked()
         v["hwdec"] = self.hwdec.currentData()
+        v["ai_upscaler"] = self.ai.currentData()
         la["mode"] = next((k for k, b in self.lat_buttons.items() if b.isChecked()), "low")
         la["chase"] = self.chase.isChecked()
         la["live_format"] = self.live_fmt.currentData()

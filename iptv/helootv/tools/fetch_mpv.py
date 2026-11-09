@@ -27,7 +27,7 @@ import urllib.request
 from pathlib import Path
 from typing import Callable
 
-from .. import gpu, paths
+from .. import gpu, paths, shaders
 
 MPV_REPOS = ("zhongfly/mpv-winbuild", "shinchiro/mpv-winbuild-cmake")
 SEVENZIP_REPO = "ip7z/7zip"
@@ -59,9 +59,13 @@ def arch_name(machine: str | None = None) -> str:
 
 
 def pick_asset(assets: list[dict], kind: str, avx2: bool, arch: str = "x86_64") -> dict | None:
-    """kind: dev (libmpv-2.dll) | player (mpv.exe). LGPL ve hata ayıklama paketleri seçilmez."""
-    prefix = "mpv-dev" if kind == "dev" else "mpv"
-    rx = re.compile(rf"^{prefix}-{re.escape(arch)}-(v3-)?(\d{{8}})-git-([0-9a-f]+)\.7z$")
+    """kind: dev (libmpv-2.dll) | player (mpv.exe) | ffmpeg (ffmpeg.exe: 4K dışa aktarma, libplacebo + NVENC).
+    LGPL ve hata ayıklama paketleri seçilmez."""
+    if kind == "ffmpeg":
+        rx = re.compile(rf"^ffmpeg-{re.escape(arch)}-(v3-)?()git-([0-9a-f]+)\.7z$")
+    else:
+        prefix = "mpv-dev" if kind == "dev" else "mpv"
+        rx = re.compile(rf"^{prefix}-{re.escape(arch)}-(v3-)?(\d{{8}})-git-([0-9a-f]+)\.7z$")
     cands = []
     for a in assets:
         m = rx.match(a.get("name", ""))
@@ -163,6 +167,35 @@ def _install_file(src: Path, dest_dir: Path) -> Path:
     return target
 
 
+def install_shaders(dest: Path | None = None, progress: Callable[[str], None] | None = None) -> list[str]:
+    """FSRCNNX (igv/FSRCNN-TensorFlow sürüm dosyası) ve ArtCNN (Artoriuz/ArtCNN, MIT) shader'larını indirir."""
+    say = progress or (lambda m: None)
+    dest = Path(dest or shaders.shader_dir())
+    dest.mkdir(parents=True, exist_ok=True)
+    done: list[str] = []
+    for key, meta in shaders.SHADERS.items():
+        target = dest / meta["file"]
+        if target.is_file() and target.stat().st_size > 1000:
+            continue
+        try:
+            if meta.get("url"):
+                download(meta["url"], target, None, say)
+            else:
+                rel = _gh_json(API.format(repo=meta["repo"]))
+                asset = next((a for a in rel.get("assets", []) if a.get("name") == meta["file"]), None)
+                if not asset:
+                    raise FetchError(f"{meta['repo']}: {meta['file']} bulunamadı")
+                download(asset["browser_download_url"], target, asset.get("digest"), say)
+            if "//!HOOK" not in target.read_text(encoding="utf-8", errors="replace")[:20000]:
+                target.unlink()
+                raise FetchError(f"{meta['file']} geçerli bir mpv shader'ı değil")
+            done.append(str(target))
+            say(f"Yapay zekâ büyütücü indirildi: {meta['label']}")
+        except Exception as e:
+            say(f"{meta['file']} indirilemedi: {e}")
+    return done
+
+
 def latest_release(progress: Callable[[str], None] | None = None) -> tuple[str, dict]:
     last: Exception | None = None
     for repo in MPV_REPOS:
@@ -204,6 +237,9 @@ def install(dest: str | Path | None = None, want_player: bool = True, force: boo
         player = pick_asset(assets, "player", avx2, arch)
         if player:
             jobs.append((player, ["mpv.exe", "mpv.com"]))
+        ff = pick_asset(assets, "ffmpeg", avx2, arch)
+        if ff:
+            jobs.append((ff, ["ffmpeg.exe"]))
     installed: list[str] = []
     with tempfile.TemporaryDirectory(prefix="helootv-mpv-") as td:
         sevenzip = find_7z(dest, say)
@@ -217,6 +253,10 @@ def install(dest: str | Path | None = None, want_player: bool = True, force: boo
             for f in files:
                 installed.append(str(_install_file(f, dest)))
     marker.write_text(f"{repo}@{tag}", encoding="utf-8")
+    try:
+        installed += install_shaders(dest / "shaders", say)
+    except Exception as e:  # shader'lar isteğe bağlı: oynatma onlarsız da çalışır
+        say(f"Yapay zekâ büyütücü indirilemedi: {e}")
     say(f"mpv kuruldu: {repo} {tag} ({'x86-64-v3/AVX2' if avx2 else 'x86-64'})")
     return {"repo": repo, "tag": tag, "files": installed, "avx2": avx2}
 
@@ -228,12 +268,16 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--force", action="store_true", help="güncel olsa da yeniden indir")
     ap.add_argument("--no-player", action="store_true", help="mpv.exe'yi indirme (yalnız libmpv)")
     ap.add_argument("--check", action="store_true", help="yalnız seçilecek dosyaları göster")
+    ap.add_argument("--shaders-only", action="store_true", help="yalnız yapay zekâ büyütücü shader'larını indir")
     args = ap.parse_args(argv)
     try:
+        if args.shaders_only:
+            print("\n".join(install_shaders(Path(args.dest) / "shaders" if args.dest else None, print)) or "güncel")
+            return 0
         if args.check:
             repo, rel = latest_release(print)
             avx2 = gpu.cpu_has_avx2()
-            for kind in ("dev", "player"):
+            for kind in ("dev", "player", "ffmpeg"):
                 a = pick_asset(rel.get("assets", []), kind, avx2, arch_name())
                 print(f"{repo} {rel.get('tag_name')} {kind}: {a['name'] if a else '—'}"
                       + (f"  {a.get('digest', '')}" if a else ""))

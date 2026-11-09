@@ -1,16 +1,19 @@
 """Ana pencere: sekmeler, oynatma akışı, kanal geçişi, tam ekran/sinema modu, yenileme ve durum çubuğu."""
 from __future__ import annotations
 
+import hashlib
 import logging
 import math
+import os
 import time
+from pathlib import Path
 
 from PySide6.QtCore import QObject, Qt, QTimer, Signal
 from PySide6.QtGui import QGuiApplication, QKeySequence, QShortcut
-from PySide6.QtWidgets import (QButtonGroup, QFrame, QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMessageBox,
+from PySide6.QtWidgets import (QFileDialog, QInputDialog, QMenu, QButtonGroup, QFrame, QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMessageBox,
                                QPushButton, QSplitter, QStackedWidget, QVBoxLayout, QWidget)
 
-from .. import APP_NAME, __version__, catalog, epg, gpu, paths
+from .. import APP_NAME, __version__, catalog, epg, gpu, paths, upscale, weburl
 from ..player import options as opt
 from ..player.engine import EngineError, MpvEngine, PlayRequest, launch_external
 from ..settings import save_settings
@@ -57,8 +60,11 @@ class MainWindow(QMainWindow):
         self._refreshing = False
         self._gpu: dict | None = None
         self._gpu_assess: dict = {}
+        self._file_queue: list[str] = []
+        self._file_index = 0
         self._build_ui()
         self._wire()
+        self.setAcceptDrops(True)
         self._save_timer = QTimer(self, singleShot=True, interval=600, timeout=self._save_settings)
         self._search_timer = QTimer(self, singleShot=True, interval=280, timeout=self._apply_search)
         self._digit_timer = QTimer(self, singleShot=True, interval=1600, timeout=self._commit_digits)
@@ -105,6 +111,13 @@ class MainWindow(QMainWindow):
         self.search.setPlaceholderText("Ara: kanal, film, dizi…  (Ctrl+F)")
         self.search.setClearButtonEnabled(True)
         h.addWidget(self.search)
+        self.open_btn = QPushButton("📂  Aç")
+        self.open_btn.setObjectName("Nav")
+        self.open_btn.setToolTip("Kendi videonuzu, fotoğrafınızı ya da bir bağlantıyı 4K'ya yükselterek açın")
+        self.open_menu = QMenu(self.open_btn)
+        self.open_btn.setMenu(self.open_menu)
+        self.open_menu.aboutToShow.connect(self._fill_open_menu)
+        h.addWidget(self.open_btn)
         self.refresh_btn = QPushButton("⟳")
         self.refresh_btn.setObjectName("Flat")
         self.refresh_btn.setToolTip("Listeleri ve yayın akışını yenile (F5)")
@@ -193,6 +206,8 @@ class MainWindow(QMainWindow):
             ("Ctrl+T", lambda: self._set_theater(not self._theater)),
             ("Ctrl+D", lambda: self.current_item and self.toggle_favorite(self.current_item)),
         ]
+        shortcuts += [("Ctrl+O", self.open_file_dialog), ("Ctrl+U", self.open_url_dialog),
+                      ("Ctrl+E", lambda: self.export_dialog())]
         shortcuts += [(f"Ctrl+{i + 1}", (lambda i=i: self._select_tab(i))) for i in range(len(TABS))]
         for keys, fn in shortcuts:
             sc = QShortcut(QKeySequence(keys), self)
@@ -264,6 +279,8 @@ class MainWindow(QMainWindow):
             self._on_ended()
         elif name == "stopped":
             self.player.set_idle()
+        elif name == "dropped":
+            self.open_paths(data.get("files") or [])
         elif name == "key":
             self._on_key(data.get("action", ""), data.get("args", []))
         elif name == "fullscreen":
@@ -286,7 +303,7 @@ class MainWindow(QMainWindow):
         self.status_stats.setText(self._stats_text(st))
         req = self.current_req
         now = time.time()
-        if req.kind in ("movie", "episode") and st.get("pos") and now - self._last_save > 10:
+        if req.kind in ("movie", "episode", "file", "url") and st.get("pos") and now - self._last_save > 10:
             self._last_save = now
             self.store.save_progress(req.key, req.title, req.logo, st["pos"], st.get("duration") or 0, req.meta)
 
@@ -460,6 +477,18 @@ class MainWindow(QMainWindow):
         sid, kind, item_id = h["source_id"], h["kind"], h["item_id"]
         finished = h.get("duration") and h["position"] >= h["duration"] * 0.94
         start = 0 if finished else h.get("position") or 0
+        extra = h.get("extra") or {}
+        if kind in ("file", "image"):
+            path = extra.get("path", "")
+            if not os.path.exists(path):
+                self._status(f"⚠ Dosya bulunamadı: {path}")
+                return
+            self._file_queue = [path]
+            self.play_file(path, start=start, index=0)
+            return
+        if kind == "url":
+            self.open_url(extra.get("source_url", ""))
+            return
         if kind == "live":
             self.play_live(self.store.item(sid, "live", item_id))
         elif kind == "movie":
@@ -477,6 +506,134 @@ class MainWindow(QMainWindow):
             ep = next((e for e in episodes if e["id"] == item_id), ep)
             self.play_episode(series, ep, episodes if ep in episodes else [ep], start)
 
+    # ================================================================== kendi dosyalarım / bağlantılar
+    def _fill_open_menu(self) -> None:
+        m = self.open_menu
+        m.clear()
+        m.addAction("🎞  Video ya da fotoğraf aç…   (Ctrl+O)", self.open_file_dialog)
+        m.addAction("🔗  Bağlantı aç (YouTube, m3u8, mp4 …)…   (Ctrl+U)", self.open_url_dialog)
+        m.addAction("⇪  4K olarak kaydet (yapay zekâ)…   (Ctrl+E)", lambda: self.export_dialog())
+        recent = [h for h in self.store.history(("file", "image", "url"), limit=10)]
+        if recent:
+            m.addSeparator()
+            for h in recent[:8]:
+                m.addAction(f"🕘  {h['title']}", lambda h=h: self.play_history(h))
+
+    def open_file_dialog(self) -> None:
+        exts = " ".join(f"*{e}" for e in sorted(upscale.VIDEO_EXTS | upscale.IMAGE_EXTS))
+        files, _ = QFileDialog.getOpenFileNames(self, "Video ya da fotoğraf aç (4K'ya yükseltilir)",
+                                                self.settings["ui"].get("last_dir", ""),
+                                                f"Video ve fotoğraflar ({exts});;Tüm dosyalar (*)")
+        if files:
+            self.settings["ui"]["last_dir"] = str(Path(files[0]).parent)
+            self._save_timer.start()
+            self.open_paths(files)
+
+    def open_url_dialog(self) -> None:
+        text, ok = QInputDialog.getText(self, "Bağlantı aç", "Video bağlantısı (YouTube, Instagram, m3u8, mp4 …):")
+        if ok and text.strip():
+            self.open_paths([text.strip()])
+
+    def open_paths(self, items: list[str]) -> None:
+        """Dosya, fotoğraf, klasör, M3U listesi ya da bağlantı: hepsi aynı 4K (RTX VSR / yapay zekâ) zincirinden."""
+        files: list[str] = []
+        for raw in items:
+            item = str(raw).strip().strip('"')
+            if item.startswith("file://"):
+                from urllib.parse import unquote, urlsplit
+                item = unquote(urlsplit(item).path.lstrip("/") if os.name == "nt" else urlsplit(item).path)
+            if weburl.is_url(item):
+                self.open_url(item)
+                return
+            p = Path(item)
+            if p.is_dir():
+                files += sorted(str(f) for f in p.iterdir()
+                                if f.suffix.lower() in upscale.VIDEO_EXTS | upscale.IMAGE_EXTS)
+            elif p.suffix.lower() in (".m3u", ".m3u8") and p.is_file():
+                sid = self.store.add_source(name=p.stem, kind="m3u", url=str(p))
+                self._on_sources_changed()
+                self.refresh(sid)
+                self._status(f"Liste kaynak olarak eklendi: {p.name}")
+            elif p.is_file():
+                files.append(str(p))
+        if files:
+            self._file_queue = files
+            self.play_file(files[0], index=0)
+
+    def _file_key(self, path: str) -> tuple:
+        return (0, "file", hashlib.sha1(os.path.abspath(path).encode("utf-8")).hexdigest()[:16])
+
+    def play_file(self, path: str, start=None, index: int | None = None) -> None:
+        image = upscale.kind_of(path) == "image"
+        key = self._file_key(path)
+        if start is None and not image:
+            prog = self.store.get_progress(key)
+            start = prog[0] if prog and prog[0] > 60 and (not prog[1] or prog[0] < prog[1] * 0.94) else 0
+        if index is not None:
+            self._file_index = index
+        queue = getattr(self, "_file_queue", [])
+        sub = f"{(self._file_index or 0) + 1}/{len(queue)}" if len(queue) > 1 else ("Fotoğraf" if image else "Video")
+        req = PlayRequest(url=path, title=Path(path).name, kind="image" if image else "file", key=key,
+                          start=float(start or 0), subtitle=sub, meta={"path": path})
+        self.current_item = None
+        self._episode_ctx = None
+        self.live_page.model.set_playing(None)
+        if self._start(req):
+            self._set_theater(True)
+            self.store.save_progress(key, req.title, "", float(start or 0), 0, {"path": path})
+
+    def _step_file(self, delta: int) -> bool:
+        queue = getattr(self, "_file_queue", [])
+        i = getattr(self, "_file_index", 0) + delta
+        if 0 <= i < len(queue):
+            self.play_file(queue[i], index=i)
+            return True
+        return False
+
+    def open_url(self, url: str) -> None:
+        self._status(f"Bağlantı çözülüyor: {url}")
+
+        def done(r):
+            kind = "live" if r.get("live") else "url"
+            title = r.get("title") or url
+            key = (0, "url", hashlib.sha1(url.encode("utf-8")).hexdigest()[:16])
+            prog = self.store.get_progress(key) if kind == "url" else None
+            start = prog[0] if prog and prog[0] > 60 and (not prog[1] or prog[0] < prog[1] * 0.94) else 0
+            req = PlayRequest(url=r["url"], title=title, kind=kind, key=key, headers=r.get("headers") or {},
+                              start=start, subtitle="Bağlantı" + (f" · {r['height']}p kaynak" if r.get("height") else ""),
+                              meta={"audio": r.get("audio"), "source_url": url})
+            self.current_item = None
+            self._episode_ctx = None
+            if self._start(req):
+                self._set_theater(True)
+                self.store.save_progress(key, title, "", start, 0, {"source_url": url})
+
+        run_task(weburl.resolve, url, on_done=done,
+                 on_error=lambda e: self._status(f"⚠ Bağlantı açılamadı: {e}"))
+
+    def export_dialog(self, files: list[str] | None = None) -> None:
+        from .export_dialog import ExportDialog
+        if files is None and self.current_req and self.current_req.kind in ("file", "image"):
+            files = [self.current_req.meta.get("path")]
+        dlg = ExportDialog(self.settings, files or [], self)
+        dlg.finished_file.connect(lambda path: self._status(f"✔ 4K kaydedildi: {path}"))
+        dlg.exec()
+        self._save_timer.start()
+
+    def dragEnterEvent(self, event) -> None:
+        md = event.mimeData()
+        if md.hasUrls() or md.hasText():
+            event.acceptProposedAction()
+
+    def dropEvent(self, event) -> None:
+        md = event.mimeData()
+        items = [u.toLocalFile() if u.isLocalFile() else u.toString() for u in md.urls()] if md.hasUrls() \
+            else [md.text()]
+        event.acceptProposedAction()
+        self.open_paths([i for i in items if i])
+        self.raise_()
+        self.activateWindow()
+
     def open_series(self, item: Item | None) -> None:
         if item is None:
             return
@@ -488,12 +645,14 @@ class MainWindow(QMainWindow):
         req = self.current_req
         if not req:
             return
-        if req.kind in ("movie", "episode"):
+        if req.kind in ("movie", "episode", "file", "url"):
             st_dur = self.engine.status().get("duration") if self.engine else None
             dur = st_dur or 1
             self.store.save_progress(req.key, req.title, req.logo, dur, dur, req.meta)
         if req.kind == "episode" and self.settings["ui"]["auto_next_episode"] and self._step_episode(1):
             self._status("Sonraki bölüm oynatılıyor…")
+            return
+        if req.kind == "file" and self._step_file(1):
             return
         self.current_req = None
         self.player.set_idle("Bitti", f"{req.title}")
@@ -552,6 +711,10 @@ class MainWindow(QMainWindow):
         req = self.current_req
         live = bool(req and req.kind == "live")
         eng = self.engine
+        if req and req.kind in ("file", "image") and action in ("next", "prev", "up", "down", "pgup", "pgdn") and (
+                action in ("next", "prev") or req.kind == "image"):
+            self._step_file(1 if action in ("next", "down", "pgdn") else -1)
+            return
         if action in ("up", "down"):
             if live:
                 self.zap(-1 if action == "up" else 1)
@@ -864,6 +1027,9 @@ class MainWindow(QMainWindow):
     def _on_gpu(self, gpus: list) -> None:
         self._gpu = gpus[0] if gpus else None
         self._gpu_assess = gpu.assess(self._gpu)
+        if self.engine and opt.is_windows():
+            # RTX değilse d3d11vpp'nin sıradan ölçeklemesi yerine mpv + yapay zekâ büyütücü kullanılır
+            self.engine.set_vsr_available(bool(self._gpu_assess.get("vsr")))
         if self._gpu:
             ok = self._gpu_assess.get("vsr")
             self.gpu_badge.setObjectName("BadgeNv" if ok else "Badge")
@@ -953,7 +1119,7 @@ class MainWindow(QMainWindow):
         log.info(text)
 
     def closeEvent(self, event) -> None:
-        if self.engine and self.current_req and self.current_req.kind in ("movie", "episode"):
+        if self.engine and self.current_req and self.current_req.kind in ("movie", "episode", "file", "url"):
             st = self.engine.status()
             if st.get("pos"):
                 self.store.save_progress(self.current_req.key, self.current_req.title, self.current_req.logo,

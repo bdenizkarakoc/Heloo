@@ -884,7 +884,7 @@ class FavoritesPage(QWidget):
             self.cont.addItem("Yarım kalan film ya da bölüm yok.")
         self.hist.clear()
         for h in st.history(limit=120):
-            icon = {"live": "📺", "movie": "🎬", "episode": "🎞", "catchup": "⟲"}.get(h["kind"], "•")
+            icon = {"live": "📺", "movie": "🎬", "episode": "🎞", "catchup": "⟲", "file": "📁", "image": "🖼", "url": "🔗"}.get(h["kind"], "•")
             when = time.strftime("%d.%m %H:%M", time.localtime(h["updated"]))
             it = QListWidgetItem(f"{icon}  {h['title']}   ·  {when}")
             it.setData(Qt.UserRole, h)
