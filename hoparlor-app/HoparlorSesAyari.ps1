@@ -343,7 +343,8 @@ if (-not $isAdmin -and -not $NoElevate -and $PSCommandPath) {
 # ------------------------------------------------------------------ pencere
 [Windows.Forms.Application]::EnableVisualStyles()
 
-$C = @{ bg = [Drawing.Color]::FromArgb(11, 15, 26); card = [Drawing.Color]::FromArgb(20, 27, 45); ink = [Drawing.Color]::FromArgb(238, 242, 251)
+# renkler (PowerShell değişken adlarında büyük/küçük harf ayırmaz: başka yerde $renk adı kullanma)
+$Renk = @{ bg = [Drawing.Color]::FromArgb(11, 15, 26); card = [Drawing.Color]::FromArgb(20, 27, 45); ink = [Drawing.Color]::FromArgb(238, 242, 251)
   muted = [Drawing.Color]::FromArgb(154, 166, 194); acc = [Drawing.Color]::FromArgb(255, 210, 63); line = [Drawing.Color]::FromArgb(37, 48, 73)
   ok = [Drawing.Color]::FromArgb(79, 209, 197); bad = [Drawing.Color]::FromArgb(255, 107, 107) }
 $Font = New-Object Drawing.Font('Segoe UI', 9.5)
@@ -355,64 +356,64 @@ $script:an = $null
 $script:devs = @()
 
 function L([string]$text, $x, $y, $w = 150, $fnt = $null, $color = $null) {
-  if (-not $fnt) { $fnt = $Font }; if (-not $color) { $color = $C.ink }
+  if (-not $fnt) { $fnt = $Font }; if (-not $color) { $color = $Renk.ink }
   $l = New-Object Windows.Forms.Label -Property @{ Text = $text; Left = $x; Top = $y; Width = $w; Height = 22; Font = $fnt; ForeColor = $color; BackColor = [Drawing.Color]::Transparent }
   $l
 }
 
-$form = New-Object Windows.Forms.Form -Property @{ Text = 'Hoparlör Ses Ayarı'; Width = 1000; Height = 790; BackColor = $C.bg; ForeColor = $C.ink
+$form = New-Object Windows.Forms.Form -Property @{ Text = 'Hoparlör Ses Ayarı'; Width = 1000; Height = 790; BackColor = $Renk.bg; ForeColor = $Renk.ink
   Font = $Font; StartPosition = 'CenterScreen'; FormBorderStyle = 'FixedSingle'; MaximizeBox = $false }
 
 # --- üst: hoparlör
-$form.Controls.Add((L 'HOPARLÖR' 16 12 200 $Bold $C.muted))
+$form.Controls.Add((L 'HOPARLÖR' 16 12 200 $Bold $Renk.muted))
 $cbSpk = New-Object Windows.Forms.ComboBox -Property @{ Left = 16; Top = 36; Width = 260; DropDownStyle = 'DropDownList'; Font = $Bold }
-$btnAdd = New-Object Windows.Forms.Button -Property @{ Left = 284; Top = 35; Width = 110; Height = 28; Text = '+ Hoparlör ekle'; FlatStyle = 'Flat'; ForeColor = $C.ink }
-$btnDel = New-Object Windows.Forms.Button -Property @{ Left = 400; Top = 35; Width = 60; Height = 28; Text = 'Sil'; FlatStyle = 'Flat'; ForeColor = $C.ink }
-$chkOn = New-Object Windows.Forms.CheckBox -Property @{ Left = 476; Top = 38; Width = 140; Text = 'Ses ayarı açık'; ForeColor = $C.ink }
-$btnApo = New-Object Windows.Forms.Button -Property @{ Left = 820; Top = 35; Width = 150; Height = 28; Text = 'Equalizer APO indir'; FlatStyle = 'Flat'; ForeColor = $C.acc }
+$btnAdd = New-Object Windows.Forms.Button -Property @{ Left = 284; Top = 35; Width = 110; Height = 28; Text = '+ Hoparlör ekle'; FlatStyle = 'Flat'; ForeColor = $Renk.ink }
+$btnDel = New-Object Windows.Forms.Button -Property @{ Left = 400; Top = 35; Width = 60; Height = 28; Text = 'Sil'; FlatStyle = 'Flat'; ForeColor = $Renk.ink }
+$chkOn = New-Object Windows.Forms.CheckBox -Property @{ Left = 476; Top = 38; Width = 140; Text = 'Ses ayarı açık'; ForeColor = $Renk.ink }
+$btnApo = New-Object Windows.Forms.Button -Property @{ Left = 820; Top = 35; Width = 150; Height = 28; Text = 'Equalizer APO indir'; FlatStyle = 'Flat'; ForeColor = $Renk.acc }
 $form.Controls.AddRange(@($cbSpk, $btnAdd, $btnDel, $chkOn, $btnApo))
 $form.Controls.Add((L 'Tür:' 16 72 40))
 $cbKind = New-Object Windows.Forms.ComboBox -Property @{ Left = 56; Top = 69; Width = 220; DropDownStyle = 'DropDownList' }
 $form.Controls.Add((L 'Windows çıkışı:' 290 72 100))
 $cbDev = New-Object Windows.Forms.ComboBox -Property @{ Left = 392; Top = 69; Width = 420; DropDownStyle = 'DropDownList' }
-$btnDev = New-Object Windows.Forms.Button -Property @{ Left = 820; Top = 68; Width = 150; Height = 28; Text = 'Çıkışları yenile'; FlatStyle = 'Flat'; ForeColor = $C.ink }
+$btnDev = New-Object Windows.Forms.Button -Property @{ Left = 820; Top = 68; Width = 150; Height = 28; Text = 'Çıkışları yenile'; FlatStyle = 'Flat'; ForeColor = $Renk.ink }
 $form.Controls.AddRange(@($cbKind, $cbDev, $btnDev))
 foreach ($k in $Kinds.Keys) { [void]$cbKind.Items.Add($Kinds[$k].ad) }
 
 # --- müzik türü
-$form.Controls.Add((L 'MÜZİK TÜRÜ' 16 108 200 $Bold $C.muted))
-$flow = New-Object Windows.Forms.FlowLayoutPanel -Property @{ Left = 16; Top = 130; Width = 955; Height = 78; BackColor = $C.bg }
+$form.Controls.Add((L 'MÜZİK TÜRÜ' 16 108 200 $Bold $Renk.muted))
+$flow = New-Object Windows.Forms.FlowLayoutPanel -Property @{ Left = 16; Top = 130; Width = 955; Height = 78; BackColor = $Renk.bg }
 $form.Controls.Add($flow)
 $presetBtns = @{}
 foreach ($id in $Presets.Keys) {
-  $b = New-Object Windows.Forms.Button -Property @{ Text = $Presets[$id].ad; Tag = $id; AutoSize = $true; Height = 30; FlatStyle = 'Flat'; ForeColor = $C.ink; BackColor = $C.card }
-  $b.FlatAppearance.BorderColor = $C.line
+  $b = New-Object Windows.Forms.Button -Property @{ Text = $Presets[$id].ad; Tag = $id; AutoSize = $true; Height = 30; FlatStyle = 'Flat'; ForeColor = $Renk.ink; BackColor = $Renk.card }
+  $b.FlatAppearance.BorderColor = $Renk.line
   $b.Add_Click({ Set-Preset $this.Tag })
   $flow.Controls.Add($b); $presetBtns[$id] = $b
 }
 
 # --- sade sürgüler
-$form.Controls.Add((L 'SESİNİ KENDİN AYARLA' 16 216 300 $Bold $C.muted))
+$form.Controls.Add((L 'SESİNİ KENDİN AYARLA' 16 216 300 $Bold $Renk.muted))
 $form.Controls.Add((L 'Ses gücü:' 16 245 140))
 $powerBtns = @{}; $px0 = 156
 foreach ($id in $Power.Keys) {
-  $b = New-Object Windows.Forms.Button -Property @{ Left = $px0; Top = 240; Width = 92; Height = 28; Text = $Power[$id].ad; Tag = $id; FlatStyle = 'Flat'; ForeColor = $C.ink; BackColor = $C.card }
+  $b = New-Object Windows.Forms.Button -Property @{ Left = $px0; Top = 240; Width = 92; Height = 28; Text = $Power[$id].ad; Tag = $id; FlatStyle = 'Flat'; ForeColor = $Renk.ink; BackColor = $Renk.card }
   $b.Add_Click({ (Get-Active $script:st).settings.guc = $this.Tag; Show-Power; Request-Apply })
   $form.Controls.Add($b); $powerBtns[$id] = $b; $px0 += 98
 }
-$lblPower = L '' 16 272 470 $Font $C.muted; $form.Controls.Add($lblPower)
+$lblPower = L '' 16 272 470 $Font $Renk.muted; $form.Controls.Add($lblPower)
 
 # Her sürgü 0,5 dB adımla oynar (ok tuşları / fare tekerleği / sürükleme); yanındaki kutuya değer elle yazılabilir.
 $tracks = @{}; $nums = @{}; $script:syncing = $false
 function New-Num($x, $y, $w, [double]$lo, [double]$hi, $tag) {
   New-Object Windows.Forms.NumericUpDown -Property @{ Left = $x; Top = $y; Width = $w; Minimum = [decimal]$lo; Maximum = [decimal]$hi; DecimalPlaces = 1
-    Increment = [decimal]0.5; Tag = $tag; BackColor = $C.card; ForeColor = $C.acc; Font = $Bold; TextAlign = 'Center' }
+    Increment = [decimal]0.5; Tag = $tag; BackColor = $Renk.card; ForeColor = $Renk.acc; Font = $Bold; TextAlign = 'Center' }
 }
 function Set-Num($num, [double]$v) { $num.Value = [decimal][math]::Max([double]$num.Minimum, [math]::Min([double]$num.Maximum, $v)) }
 function Add-Slider([string]$key, [string]$label, $y, [int]$lo = -12, [int]$hi = 12) {
   $form.Controls.Add((L $label 16 ($y + 6) 140))
   $tb = New-Object Windows.Forms.TrackBar -Property @{ Left = 156; Top = $y; Width = 250; Minimum = $lo * 2; Maximum = $hi * 2; TickFrequency = 2
-    SmallChange = 1; LargeChange = 2; Tag = $key; BackColor = $C.bg }
+    SmallChange = 1; LargeChange = 2; Tag = $key; BackColor = $Renk.bg }
   $num = New-Num 412 ($y + 3) 70 $lo $hi $key
   $tb.Add_ValueChanged({
       if ($script:loading -or $script:syncing) { return }
@@ -427,32 +428,32 @@ function Add-Slider([string]$key, [string]$label, $y, [int]$lo = -12, [int]$hi =
 $y = 296
 foreach ($x in $Simple) { Add-Slider $x.k $x.ad $y; $y += 40 }
 Add-Slider 'seviye' 'Ses seviyesi' $y -20 $LevelMax; $y += 48
-$lbl51 = L '5.1 kanal düzeyleri (Z607)' 16 $y 300 $Font $C.muted; $form.Controls.Add($lbl51); $y += 24
+$lbl51 = L '5.1 kanal düzeyleri (Z607)' 16 $y 300 $Font $Renk.muted; $form.Controls.Add($lbl51); $y += 24
 foreach ($x in $Chans) { Add-Slider $x.k $x.ad $y; $y += 40 }
 
 # --- eğri
-$form.Controls.Add((L 'SES EĞRİSİ' 500 216 200 $Bold $C.muted))
+$form.Controls.Add((L 'SES EĞRİSİ' 500 216 200 $Bold $Renk.muted))
 $pic = New-Object Windows.Forms.PictureBox -Property @{ Left = 500; Top = 240; Width = 470; Height = 230; BackColor = [Drawing.Color]::FromArgb(14, 20, 36) }
-$lblPre = L '' 500 476 470 $Font $C.muted
+$lblPre = L '' 500 476 470 $Font $Renk.muted
 $form.Controls.AddRange(@($pic, $lblPre))
 $pic.Add_Paint({
     param($s, $e)
-    $g = $e.Graphics; $g.SmoothingMode = 'AntiAlias'; $W = $pic.Width; $H = $pic.Height; $R = 15.0
-    $px = { param($f) [float]([math]::Log($f / 20) / [math]::Log(1000) * $W) }
-    $py = { param($d) [float]($H / 2 - $d / $R * ($H / 2 - 10)) }
-    $pen = New-Object Drawing.Pen($C.line, 1); $br = New-Object Drawing.SolidBrush($C.muted); $sf = New-Object Drawing.Font('Segoe UI', 7.5)
-    foreach ($f in 50, 100, 200, 500, 1000, 2000, 5000, 10000) { $xx = & $px $f; $g.DrawLine($pen, $xx, 0, $xx, $H); $g.DrawString($(if ($f -ge 1000) { "$($f / 1000)k" } else { "$f" }), $sf, $br, $xx + 2, $H - 14) }
-    foreach ($d in -12, -6, 0, 6, 12) { $yy = & $py $d; $g.DrawLine($pen, 0, $yy, $W, $yy); $g.DrawString("$d", $sf, $br, 2, $yy - 13) }
+    $g = $e.Graphics; $g.SmoothingMode = 'AntiAlias'; $picW = $pic.Width; $picH = $pic.Height; $dbRange = 15.0
+    $px = { param($f) [float]([math]::Log($f / 20) / [math]::Log(1000) * $picW) }
+    $py = { param($d) [float]($picH / 2 - $d / $dbRange * ($picH / 2 - 10)) }
+    $pen = New-Object Drawing.Pen($Renk.line, 1); $br = New-Object Drawing.SolidBrush($Renk.muted); $sf = New-Object Drawing.Font('Segoe UI', 7.5)
+    foreach ($f in 50, 100, 200, 500, 1000, 2000, 5000, 10000) { $xx = & $px $f; $g.DrawLine($pen, $xx, 0, $xx, $picH); $g.DrawString($(if ($f -ge 1000) { "$($f / 1000)k" } else { "$f" }), $sf, $br, $xx + 2, $picH - 14) }
+    foreach ($d in -12, -6, 0, 6, 12) { $yy = & $py $d; $g.DrawLine($pen, 0, $yy, $picW, $yy); $g.DrawString("$d", $sf, $br, 2, $yy - 13) }
     if (-not $script:an) { return }
     $on = (Get-Active $script:st).settings.acik
     $pts = New-Object 'System.Collections.Generic.List[System.Drawing.PointF]'
     for ($i = 0; $i -lt $CurveFreqs.Count; $i++) { $pts.Add([Drawing.PointF]::new((& $px $CurveFreqs[$i]), (& $py $(if ($on) { $script:an.curve[$i] } else { 0 })))) }
-    $cp = New-Object Drawing.Pen($(if ($on) { $C.acc } else { $C.muted }), 2.5)
+    $cp = New-Object Drawing.Pen($(if ($on) { $Renk.acc } else { $Renk.muted }), 2.5)
     $g.DrawLines($cp, $pts.ToArray())
   })
 
 # --- 10 bant
-$form.Controls.Add((L 'GELİŞMİŞ EKOLAYZIR (10 BANT)' 500 506 300 $Bold $C.muted))
+$form.Controls.Add((L 'GELİŞMİŞ EKOLAYZIR (10 BANT)' 500 506 300 $Bold $Renk.muted))
 $bandTracks = @(); $bandNums = @()
 function Set-Band([int]$i, [double]$v) {
   $sp = Get-Active $script:st; $sp.settings.bands[$i] = $v; $sp.settings.preset = 'ozel'; Show-Presets; Request-Apply
@@ -460,9 +461,9 @@ function Set-Band([int]$i, [double]$v) {
 for ($i = 0; $i -lt $Bands.Count; $i++) {
   $x0 = 500 + $i * 47
   $num = New-Num $x0 528 45 -12 12 $i; $num.Font = $Font
-  $tb = New-Object Windows.Forms.TrackBar -Property @{ Minimum = -24; Maximum = 24; TickFrequency = 2; SmallChange = 1; LargeChange = 2; Tag = $i; BackColor = $C.bg }
+  $tb = New-Object Windows.Forms.TrackBar -Property @{ Minimum = -24; Maximum = 24; TickFrequency = 2; SmallChange = 1; LargeChange = 2; Tag = $i; BackColor = $Renk.bg }
   $tb.Orientation = 'Vertical'; $tb.AutoSize = $false; $tb.SetBounds($x0, 554, 44, 144)   # sıra önemli: önce dikey, sonra boyut
-  $f = $Bands[$i]; $fl = L $(if ($f -ge 1000) { "$($f / 1000)k" } else { "$f" }) $x0 700 44 $Font $C.muted; $fl.TextAlign = 'MiddleCenter'
+  $f = $Bands[$i]; $fl = L $(if ($f -ge 1000) { "$($f / 1000)k" } else { "$f" }) $x0 700 44 $Font $Renk.muted; $fl.TextAlign = 'MiddleCenter'
   $tb.Add_ValueChanged({
       if ($script:loading -or $script:syncing) { return }
       $v = $this.Value / 2.0
@@ -473,13 +474,13 @@ for ($i = 0; $i -lt $Bands.Count; $i++) {
       $script:syncing = $true; $script:bandTracks[$this.Tag].Value = [int]($v * 2); $script:syncing = $false; Set-Band $this.Tag $v })
   $form.Controls.AddRange(@($num, $tb, $fl)); $bandTracks += $tb; $bandNums += $num
 }
-$btnReset = New-Object Windows.Forms.Button -Property @{ Left = 16; Top = $y + 6; Width = 100; Height = 28; Text = 'Sıfırla'; FlatStyle = 'Flat'; ForeColor = $C.ink }
-$btnWin = New-Object Windows.Forms.Button -Property @{ Left = 124; Top = $y + 6; Width = 200; Height = 28; Text = 'Windows ses ayarları'; FlatStyle = 'Flat'; ForeColor = $C.ink }
+$btnReset = New-Object Windows.Forms.Button -Property @{ Left = 16; Top = $y + 6; Width = 100; Height = 28; Text = 'Sıfırla'; FlatStyle = 'Flat'; ForeColor = $Renk.ink }
+$btnWin = New-Object Windows.Forms.Button -Property @{ Left = 124; Top = $y + 6; Width = 200; Height = 28; Text = 'Windows ses ayarları'; FlatStyle = 'Flat'; ForeColor = $Renk.ink }
 $form.Controls.AddRange(@($btnReset, $btnWin))
 
-$status = L '' 16 724 955 $Bold $C.muted
+$status = L '' 16 724 955 $Bold $Renk.muted
 $form.Controls.Add($status)
-$tip = L "Daha yüksek ses: Windows ses ayarları → Hoparlörler → Özellikler → Geliştirmeler → 'Ses yüksekliği eşitleme' aç (sesi bozmadan yükseltir)." 16 690 470 $Font $C.muted
+$tip = L "Daha yüksek ses: Windows ses ayarları → Hoparlörler → Özellikler → Geliştirmeler → 'Ses yüksekliği eşitleme' aç (sesi bozmadan yükseltir)." 16 690 470 $Font $Renk.muted
 $tip.Height = 34; $form.Controls.Add($tip)
 
 # ------------------------------------------------------------------ davranış
@@ -487,7 +488,7 @@ function Show-Power {
   $cur = [string](Get-Active $script:st).settings.guc
   foreach ($id in $powerBtns.Keys) {
     $on = ($id -eq $cur)
-    $powerBtns[$id].BackColor = $(if ($on) { $C.acc } else { $C.card }); $powerBtns[$id].ForeColor = $(if ($on) { [Drawing.Color]::Black } else { $C.ink })
+    $powerBtns[$id].BackColor = $(if ($on) { $Renk.acc } else { $Renk.card }); $powerBtns[$id].ForeColor = $(if ($on) { [Drawing.Color]::Black } else { $Renk.ink })
   }
   $lblPower.Text = $Power[$cur].ipucu
 }
@@ -496,12 +497,12 @@ function Show-Presets {
   $cur = (Get-Active $script:st).settings.preset
   foreach ($id in $presetBtns.Keys) {
     $on = ($id -eq $cur)
-    $presetBtns[$id].BackColor = $(if ($on) { $C.acc } else { $C.card }); $presetBtns[$id].ForeColor = $(if ($on) { [Drawing.Color]::Black } else { $C.ink })
+    $presetBtns[$id].BackColor = $(if ($on) { $Renk.acc } else { $Renk.card }); $presetBtns[$id].ForeColor = $(if ($on) { [Drawing.Color]::Black } else { $Renk.ink })
   }
   foreach ($b in $mineFlow.Controls) {
     if ($b -is [Windows.Forms.Button]) {
       $on = ("my:$($b.Tag)" -eq $cur)
-      $b.BackColor = $(if ($on) { $C.ok } else { $C.card }); $b.ForeColor = $(if ($on) { [Drawing.Color]::Black } else { $C.ink })
+      $b.BackColor = $(if ($on) { $Renk.ok } else { $Renk.card }); $b.ForeColor = $(if ($on) { [Drawing.Color]::Black } else { $Renk.ink })
     }
   }
   $btnMineDel.Enabled = ([string]$cur).StartsWith('my:')
@@ -514,12 +515,12 @@ function Build-Mine {
   $mineFlow.Controls.Clear()
   $list = @($script:st.custom)
   if (-not $list.Count) {
-    $mineFlow.Controls.Add((L 'Henüz kayıtlı ayarın yok: beğendiğin sesi ayarla, "Ayarımı kaydet"e bas.' 0 0 640 $Font $C.muted))
+    $mineFlow.Controls.Add((L 'Henüz kayıtlı ayarın yok: beğendiğin sesi ayarla, "Ayarımı kaydet"e bas.' 0 0 640 $Font $Renk.muted))
     return
   }
   foreach ($c in $list) {
-    $b = New-Object Windows.Forms.Button -Property @{ Text = "★ $($c.ad)"; Tag = $c.id; AutoSize = $true; Height = 30; FlatStyle = 'Flat'; ForeColor = $C.ink; BackColor = $C.card }
-    $b.FlatAppearance.BorderColor = $C.ok
+    $b = New-Object Windows.Forms.Button -Property @{ Text = "★ $($c.ad)"; Tag = $c.id; AutoSize = $true; Height = 30; FlatStyle = 'Flat'; ForeColor = $Renk.ink; BackColor = $Renk.card }
+    $b.FlatAppearance.BorderColor = $Renk.ok
     $b.Add_Click({ Load-Custom $this.Tag })
     $mineFlow.Controls.Add($b)
   }
@@ -531,7 +532,7 @@ function Load-Custom([string]$id) {
   $sp = Get-Active $script:st
   $sp.settings = Copy-Settings $c[0].settings; $sp.settings.preset = "my:$id"
   Load-UI; Request-Apply
-  $status.Text = "'$($c[0].ad)' yüklendi."; $status.ForeColor = $C.ok
+  $status.Text = "'$($c[0].ad)' yüklendi."; $status.ForeColor = $Renk.ok
 }
 
 function Save-Custom {
@@ -548,7 +549,7 @@ function Save-Custom {
   $script:st.custom = @(@($script:st.custom | Where-Object { $_.id -ne $id }) + [pscustomobject]@{ id = $id; ad = $ad; settings = $snap })
   $sp.settings.preset = "my:$id"
   Build-Mine; Show-Presets; Request-Apply
-  $status.Text = "'$ad' " + $(if ($old.Count) { 'güncellendi.' } else { 'kaydedildi.' }); $status.ForeColor = $C.ok
+  $status.Text = "'$ad' " + $(if ($old.Count) { 'güncellendi.' } else { 'kaydedildi.' }); $status.ForeColor = $Renk.ok
 }
 
 function Remove-Custom {
@@ -559,7 +560,7 @@ function Remove-Custom {
   $script:st.custom = @($script:st.custom | Where-Object { $_.id -ne $c[0].id })
   foreach ($x in $script:st.speakers) { if ($x.settings.preset -eq "my:$($c[0].id)") { $x.settings.preset = 'ozel' } }
   Build-Mine; Show-Presets; Save-State $script:st
-  $status.Text = "'$($c[0].ad)' silindi."; $status.ForeColor = $C.muted
+  $status.Text = "'$($c[0].ad)' silindi."; $status.ForeColor = $Renk.muted
 }
 
 function Fill-Devices {
@@ -600,7 +601,7 @@ $timer.Add_Tick({
     $lblPre.Text = "Genel ses: $(N $script:an.preamp) dB" + $(if ($script:an.preamp -lt 0) { "  (cızırtı koruması; daha yüksek ses için 'Ses gücü: Yüksek' ya da 'Ses seviyesi')" } else { '' })
     $pic.Invalidate()
     $r = Write-Apo $script:st
-    $status.Text = $r.msg; $status.ForeColor = $(if ($r.ok) { $C.ok } else { $C.bad })
+    $status.Text = $r.msg; $status.ForeColor = $(if ($r.ok) { $Renk.ok } else { $Renk.bad })
     $btnApo.Visible = -not (Get-ApoDir)
   })
 
@@ -621,7 +622,7 @@ $chkOn.Add_CheckedChanged({ if ($script:loading) { return }; (Get-Active $script
 $btnReset.Add_Click({ $sp = Get-Active $script:st; $g = $sp.settings.guc; $sp.settings = New-Settings 'duz'; $sp.settings.guc = $g; Load-UI; Request-Apply })
 $btnWin.Add_Click({ Start-Process control.exe -ArgumentList 'mmsys.cpl' })
 $btnApo.Add_Click({ Start-Process $ApoUrl })
-$btnDev.Add_Click({ $script:devs = Get-Devices; $script:loading = $true; Fill-Devices; $script:loading = $false; $status.Text = "$(@($script:devs).Count) ses çıkışı bulundu"; $status.ForeColor = $C.muted })
+$btnDev.Add_Click({ $script:devs = Get-Devices; $script:loading = $true; Fill-Devices; $script:loading = $false; $status.Text = "$(@($script:devs).Count) ses çıkışı bulundu"; $status.ForeColor = $Renk.muted })
 $btnAdd.Add_Click({
     $ad = [Microsoft.VisualBasic.Interaction]::InputBox('Hoparlörün adı (ör. Masa hoparlörü, Soundbar):', 'Hoparlör ekle', '')
     if (-not $ad.Trim()) { return }
@@ -629,7 +630,7 @@ $btnAdd.Add_Click({
     do { $id = "hoparlor$n"; $n++ } while ($ids -contains $id)
     $script:st.speakers = @($script:st.speakers) + (New-Speaker $id $ad.Trim() 'masaustu')
     $script:st.active = $id; Load-UI; Request-Apply
-    $status.Text = 'Eklendi: türünü ve Windows çıkışını seç.'; $status.ForeColor = $C.ok
+    $status.Text = 'Eklendi: türünü ve Windows çıkışını seç.'; $status.ForeColor = $Renk.ok
   })
 $btnDel.Add_Click({
     if (@($script:st.speakers).Count -lt 2) { return }
@@ -641,12 +642,12 @@ $btnDel.Add_Click({
 
 # --- Benim ayarlarım: müzik türlerinin altına yer aç (alttaki her şey aşağı kayar)
 $shift = 76
-foreach ($c in @($form.Controls)) { if ($c.Top -ge 210) { $c.Top += $shift } }
+foreach ($ctl in @($form.Controls)) { if ($ctl.Top -ge 210) { $ctl.Top += $shift } }
 $form.Height += $shift
-$form.Controls.Add((L 'BENİM AYARLARIM' 16 212 200 $Bold $C.muted))
-$mineFlow = New-Object Windows.Forms.FlowLayoutPanel -Property @{ Left = 16; Top = 234; Width = 690; Height = 50; BackColor = $C.bg; AutoScroll = $true }
-$btnMineSave = New-Object Windows.Forms.Button -Property @{ Left = 714; Top = 236; Width = 130; Height = 30; Text = 'Ayarımı kaydet'; FlatStyle = 'Flat'; ForeColor = [Drawing.Color]::Black; BackColor = $C.acc }
-$btnMineDel = New-Object Windows.Forms.Button -Property @{ Left = 850; Top = 236; Width = 120; Height = 30; Text = 'Seçili ayarı sil'; FlatStyle = 'Flat'; ForeColor = $C.ink }
+$form.Controls.Add((L 'BENİM AYARLARIM' 16 212 200 $Bold $Renk.muted))
+$mineFlow = New-Object Windows.Forms.FlowLayoutPanel -Property @{ Left = 16; Top = 234; Width = 690; Height = 50; BackColor = $Renk.bg; AutoScroll = $true }
+$btnMineSave = New-Object Windows.Forms.Button -Property @{ Left = 714; Top = 236; Width = 130; Height = 30; Text = 'Ayarımı kaydet'; FlatStyle = 'Flat'; ForeColor = [Drawing.Color]::Black; BackColor = $Renk.acc }
+$btnMineDel = New-Object Windows.Forms.Button -Property @{ Left = 850; Top = 236; Width = 120; Height = 30; Text = 'Seçili ayarı sil'; FlatStyle = 'Flat'; ForeColor = $Renk.ink }
 $form.Controls.AddRange(@($mineFlow, $btnMineSave, $btnMineDel))
 $btnMineSave.Add_Click({ Save-Custom })
 $btnMineDel.Add_Click({ Remove-Custom })

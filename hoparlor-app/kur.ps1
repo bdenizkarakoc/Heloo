@@ -14,6 +14,7 @@ param([switch]$Kaldir, [switch]$Acma)
 $ErrorActionPreference = "Stop"
 $Branch = if ($env:HOPARLOR_BRANCH) { $env:HOPARLOR_BRANCH } else { "claude/dazzling-fermi-49dzwq" }
 $Raw = "https://raw.githubusercontent.com/bdenizkarakoc/Heloo/$Branch/hoparlor-app"
+$Bust = Get-Random   # GitHub onbellegi eski surumu vermesin
 $Dir = Join-Path $env:LOCALAPPDATA "HoparlorSesAyari"
 $App = Join-Path $Dir "HoparlorSesAyari.ps1"
 $Name = "Hoparlor Ses Ayari"
@@ -43,12 +44,12 @@ if ($Kaldir) {
 Step "Program indiriliyor"
 New-Item -ItemType Directory -Force -Path $Dir | Out-Null
 $tmp = "$App.yeni"
-Invoke-WebRequest -UseBasicParsing -Uri "$Raw/HoparlorSesAyari.ps1" -OutFile $tmp
+Invoke-WebRequest -UseBasicParsing -Uri "$Raw/HoparlorSesAyari.ps1?v=$Bust" -OutFile $tmp
 $bytes = [IO.File]::ReadAllBytes($tmp)
 if ($bytes.Length -lt 2000 -or $bytes[0] -ne 0xEF -or $bytes[1] -ne 0xBB) { Remove-Item $tmp -Force; throw "Indirilen dosya bozuk gorunuyor, tekrar dene." }
 Move-Item $tmp $App -Force
 Unblock-File $App
-try { Invoke-WebRequest -UseBasicParsing -Uri "$Raw/kur.ps1" -OutFile (Join-Path $Dir "kur.ps1"); Unblock-File (Join-Path $Dir "kur.ps1") } catch { }
+try { Invoke-WebRequest -UseBasicParsing -Uri "$Raw/kur.ps1?v=$Bust" -OutFile (Join-Path $Dir "kur.ps1"); Unblock-File (Join-Path $Dir "kur.ps1") } catch { }
 Ok $App
 
 Step "Kisayollar"

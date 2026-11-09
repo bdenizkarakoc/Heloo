@@ -47,3 +47,15 @@ def test_window_is_never_started_hidden():
         assert "-WindowStyle Hidden" not in text and '"-WindowStyle", "Hidden"' not in text
     assert app.index("ShowWindow($hw, 0)") < app.index("Start-Process powershell -Verb RunAs")
     assert "trap {" in app and "Set-StrictMode" not in app
+
+
+def test_no_variables_differing_only_in_case():
+    """PowerShell değişken adlarında büyük/küçük harf ayırmaz: `$c` döngüsü `$C` renk tablosunu ezmişti
+    ("The property 'muted' cannot be found")."""
+    import collections
+    code = "\n".join(line.split(" #")[0] for line in PS1.read_bytes().decode("utf-8-sig").splitlines()
+                     if not line.lstrip().startswith("#"))
+    names = collections.defaultdict(set)
+    for m in re.findall(r"\$(?:script:)?([A-Za-z_]\w*)", code):
+        names[m.lower()].add(m)
+    assert {k: v for k, v in names.items() if len(v) > 1} == {}
