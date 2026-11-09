@@ -21,6 +21,13 @@ Panel tarayıcıda açılır (`http://127.0.0.1:8765/`).
 | Gecikme | 2-5 sn (film ve dizi için uygun) | Yaklaşık 0,2-0,5 sn (masaüstü ve oyun için) |
 | Görüntü | H.264, ekran kartının donanım kodlayıcısıyla (NVIDIA, Intel, AMD) | MJPEG. Bağlantı zayıflayınca kare atlar, gecikme birikmez |
 
+### Modem yoksa: bilgisayarın kendi Wi-Fi'si
+Panelde **Bilgisayarın Wi-Fi'sini aç**'a basın. Windows "Mobil etkin nokta" açılır ve bilgisayar kendi Wi-Fi
+ağını yayınlar. Panelde gösterilen ağ adını ve şifreyi TV'nin Wi-Fi ayarlarına girin, ardından Yol 1 ya da Yol 2'yi
+kullanın. Bu ağda bilgisayarın adresi `192.168.137.1` olur ve TV tarayıcısı adresi panelde ayrıca gösterilir.
+Bant seçimi: **2,4 GHz** daha uzağa ulaşır (önerilen), **5 GHz** daha hızlıdır ama menzili kısadır. Düğme hata
+verirse **Windows ayarlarını aç** ile etkin noktayı elle açın; bunun için bilgisayarda Wi-Fi kartı olmalı.
+
 Bilgisayar Miracast destekliyorsa panelde **Yansıt panelini aç (Win+K)** düğmesi de işe yarar.
 
 ### TV'den ses almak için (Yol 1)

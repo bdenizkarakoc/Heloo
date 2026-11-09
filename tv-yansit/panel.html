@@ -43,8 +43,24 @@
   </section>
 
   <section class="kart">
+    <h2>Modem yoksa: bilgisayarın kendi Wi-Fi'si</h2>
+    <p>Bilgisayar kendi Wi-Fi ağını açar, TV doğrudan ona bağlanır; modem gerekmez. Sonra Yol 1 veya Yol 2 aynen çalışır.</p>
+    <select id="bant">
+      <option value="uzak">2,4 GHz — daha uzak menzil (önerilen)</option>
+      <option value="hizli">5 GHz — daha hızlı, kısa menzil</option>
+      <option value="">Otomatik</option>
+    </select>
+    <br>
+    <button id="btnWifiAc">Bilgisayarın Wi-Fi'sini aç</button>
+    <button class="dur" id="btnWifiKapat">Kapat</button>
+    <button class="ikincil" id="btnWifiAyar">Windows ayarlarını aç</button>
+    <div class="adres" id="wifiBilgi" hidden></div>
+    <p>TV'de: Ayarlar → Ağ → Kablosuz → bu ağı seçip şifreyi girin.</p>
+  </section>
+
+  <section class="kart">
     <h2>Yol 1 — DLNA (sesli, TV kendisi açar)</h2>
-    <p>TV ile bilgisayar aynı modeme bağlı olmalı. TV'yi bulun, seçin, gönderin.</p>
+    <p>TV ile bilgisayar aynı Wi-Fi'de olmalı (modemin ya da bilgisayarın kendi Wi-Fi'si). TV'yi bulun, seçin, gönderin.</p>
     <button id="btnAra">TV'leri ara</button>
     <select id="tvler"><option value="">— önce arayın —</option></select>
     <br>
@@ -54,7 +70,7 @@
 
   <section class="kart">
     <h2>Yol 2 — TV tarayıcısı (en düşük gecikme)</h2>
-    <p>TV'nin internet tarayıcısını açın ve bu adresi yazın (sonundaki 4 haneli sayı sizin şifrenizdir):</p>
+    <p>TV'nin internet tarayıcısını açın ve bu adresi yazın (sonundaki 4 haneli sayı sizin şifrenizdir). Birden çok adres varsa TV'nin bağlı olduğu ağdakini kullanın (bilgisayarın Wi-Fi'sinde: 192.168.137.1):</p>
     <div class="adres" id="tvAdresi">…</div>
     <ol>
       <li>Görüntü gelince ekrana bir kez tıklayın → tam ekran.</li>
@@ -87,7 +103,12 @@ function etiket(metin, sinif) {
 
 function goster(d) {
   $('mesaj').textContent = d.hata ? (d.mesaj ? d.mesaj + ' — ' : '') + 'ffmpeg: ' + d.hata : (d.mesaj || '');
-  $('tvAdresi').textContent = d.tv_adresi;
+  $('tvAdresi').textContent = (d.tv_adresleri && d.tv_adresleri.length ? d.tv_adresleri : [d.tv_adresi]).join('\n');
+  $('tvAdresi').style.whiteSpace = 'pre-line';
+  const h = d.hotspot || {};
+  $('wifiBilgi').hidden = !h.acik;
+  $('wifiBilgi').textContent = h.acik ? 'Ağ: ' + h.ag + '\nŞifre: ' + h.sifre + (h.bagli ? '\nBağlı cihaz: ' + h.bagli : '') : '';
+  $('wifiBilgi').style.whiteSpace = 'pre-line';
   if (ilk) {
     for (const [k, ad] of Object.entries(d.ayarlar)) {
       const o = document.createElement('option'); o.value = k; o.textContent = ad; $('ayar').appendChild(o);
@@ -146,6 +167,9 @@ $('btnAra').onclick = () => istek('/api/ara');
 $('btnGonder').onclick = () => istek('/api/gonder', { tv: Number($('tvler').value || 0) });
 $('btnDurdur').onclick = () => istek('/api/durdur');
 $('btnMiracast').onclick = () => istek('/api/miracast');
+$('btnWifiAc').onclick = () => istek('/api/wifi', { islem: 'baslat', bant: $('bant').value });
+$('btnWifiKapat').onclick = () => istek('/api/wifi', { islem: 'durdur' });
+$('btnWifiAyar').onclick = () => istek('/api/wifi', { islem: 'ayarlar' });
 $('btnLossless').onclick = () => istek('/api/lossless');
 $('btnSteam').onclick = () => istek('/api/steam');
 $('ayar').onchange = () => istek('/api/ayar');

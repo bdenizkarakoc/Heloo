@@ -74,6 +74,25 @@ def test_ts_komutu_ayarlar():
     assert "-an" in tv.ts_komutu("ffmpeg", tv.AYARLAR["uzak"], "libx264", None, kaynak="test")
 
 
+def test_ayni_agdaki_ip():
+    ipler = ["192.168.1.20", "192.168.137.1"]
+    assert tv.ayni_agdaki_ip("192.168.137.45", ipler) == "192.168.137.1"
+    assert tv.ayni_agdaki_ip("192.168.1.40", ipler) == "192.168.1.20"
+    assert tv.ayni_agdaki_ip("10.0.0.5", ipler) == "192.168.1.20"
+
+
+def test_hotspot_cozumle():
+    d = tv.hotspot_cozumle('uyarı\n{"acik":true,"ag":"MASAUSTU 1234","sifre":"abc12345","bant":"TwoPointFourGigahertz","bagli":1}\n')
+    assert d["acik"] is True and d["ag"] == "MASAUSTU 1234"
+    assert "hata" in tv.hotspot_cozumle("")
+    assert "__ISLEM__" in tv.HOTSPOT_PS and tv.HOTSPOT_BANTLARI["uzak"] == "TwoPointFourGigahertz"
+
+
+def test_yerel_ipler():
+    ipler = tv.yerel_ipler()
+    assert ipler and all(not ip.startswith("127.") for ip in ipler if ip != "127.0.0.1")
+
+
 class SahteTV(BaseHTTPRequestHandler):
     eylemler: list = []
 

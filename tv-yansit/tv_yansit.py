@@ -22,6 +22,7 @@ import json
 import os
 import random
 import re
+import select
 import shutil
 import socket
 import struct
@@ -70,6 +71,29 @@ def yerel_ip() -> str:
         return "127.0.0.1"
     finally:
         s.close()
+
+
+def yerel_ipler() -> list[str]:
+    """Bilgisayarın bütün IPv4 adresleri (modem ağı, kendi Wi-Fi erişim noktası 192.168.137.1 …)."""
+    ipler = [yerel_ip()]
+    try:
+        ipler += socket.gethostbyname_ex(socket.gethostname())[2]
+    except OSError:
+        pass
+    sonuc = []
+    for ip in ipler:
+        if ip not in sonuc and not ip.startswith(("127.", "169.254.")):
+            sonuc.append(ip)
+    return sonuc or ["127.0.0.1"]
+
+
+def ayni_agdaki_ip(hedef: str, ipler: list[str]) -> str:
+    """TV'nin ulaşabileceği yerel IP: TV ile aynı /24 ağdaki adres, yoksa ilk adres."""
+    onek = hedef.rsplit(".", 1)[0] + "."
+    for ip in ipler:
+        if ip.startswith(onek):
+            return ip
+    return ipler[0]
 
 
 def ffmpeg_yolu() -> str | None:
@@ -285,6 +309,76 @@ def steame_ekle() -> str:
     return f"Steam kütüphanesine '{UYGULAMA_ADI}' eklendi. Steam'i açınca Kütüphane'de görünür."
 
 
+# ---------------------------------------------------------------------------- Wi-Fi erişim noktası (modemsiz)
+
+# Windows "Mobil etkin nokta": bilgisayar kendi Wi-Fi ağını açar, TV ona bağlanır (modem gerekmez).
+# Bilgisayarın adresi bu ağda 192.168.137.1 olur; DLNA ve TV tarayıcısı aynen çalışır.
+HOTSPOT_PS = r"""
+$ErrorActionPreference = 'Stop'
+$islem = '__ISLEM__'; $bant = '__BANT__'
+function Cik($d) { $d | ConvertTo-Json -Compress; exit 0 }
+try {
+  Add-Type -AssemblyName System.Runtime.WindowsRuntime
+  $m1 = [System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object { $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 }
+  $asOp = ($m1 | Where-Object { $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1' })[0]
+  $asAct = ($m1 | Where-Object { $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncAction' })[0]
+  function Bekle($op, $tip) { $t = $asOp.MakeGenericMethod($tip).Invoke($null, @($op)); $t.Wait(-1) | Out-Null; $t.Result }
+  function BekleE($op) { $t = $asAct.Invoke($null, @($op)); $t.Wait(-1) | Out-Null }
+  $NI = [Windows.Networking.Connectivity.NetworkInformation, Windows.Networking.Connectivity, ContentType = WindowsRuntime]
+  $TM = [Windows.Networking.NetworkOperators.NetworkOperatorTetheringManager, Windows.Networking.NetworkOperators, ContentType = WindowsRuntime]
+  $sonuc = [Windows.Networking.NetworkOperators.NetworkOperatorTetheringOperationResult, Windows.Networking.NetworkOperators, ContentType = WindowsRuntime]
+  $prof = $NI::GetInternetConnectionProfile()
+  if ($null -eq $prof) { $prof = @($NI::GetConnectionProfiles())[0] }
+  if ($null -eq $prof) { Cik @{ hata = 'Ağ bağlantısı yok' } }
+  $m = $TM::CreateFromConnectionProfile($prof)
+  if ($islem -eq 'baslat') {
+    if ($bant -ne '') {
+      try { $c = $m.GetCurrentAccessPointConfiguration(); $c.Band = $bant; BekleE ($m.ConfigureAccessPointAsync($c)) } catch { }
+    }
+    if ($m.TetheringOperationalState -ne 'On') {
+      $r = Bekle ($m.StartTetheringAsync()) $sonuc
+      if ($r.Status -ne 'Success') { Cik @{ hata = [string]$r.Status + ' ' + $r.AdditionalErrorMessage } }
+    }
+  } elseif ($islem -eq 'durdur') {
+    if ($m.TetheringOperationalState -eq 'On') { $null = Bekle ($m.StopTetheringAsync()) $sonuc }
+  }
+  $c = $m.GetCurrentAccessPointConfiguration()
+  $b = ''; try { $b = [string]$c.Band } catch { }
+  Cik @{ acik = ([string]$m.TetheringOperationalState -eq 'On'); ag = $c.Ssid; sifre = $c.Passphrase; bant = $b;
+         bagli = $m.ClientCount }
+} catch { Cik @{ hata = $_.Exception.Message } }
+"""
+
+HOTSPOT_BANTLARI = {"": "", "uzak": "TwoPointFourGigahertz", "hizli": "FiveGigahertz"}
+
+
+def hotspot(islem: str = "durum", bant: str = "") -> dict:
+    """islem: durum | baslat | durdur. bant: '' (otomatik), 'uzak' (2,4 GHz, daha uzağa), 'hizli' (5 GHz)."""
+    if not WINDOWS:
+        return {"hata": "Yalnızca Windows'ta"}
+    betik = HOTSPOT_PS.replace("__ISLEM__", islem).replace("__BANT__", HOTSPOT_BANTLARI.get(bant, ""))
+    try:
+        p = calistir(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", betik], zaman=40)
+    except (OSError, subprocess.SubprocessError) as e:
+        return {"hata": str(e)}
+    return hotspot_cozumle(p.stdout)
+
+
+def hotspot_cozumle(cikti: str) -> dict:
+    for satir in reversed(cikti.strip().splitlines()):
+        satir = satir.strip()
+        if satir.startswith("{"):
+            try:
+                return json.loads(satir)
+            except ValueError:
+                break
+    return {"hata": (cikti.strip()[-200:] or "PowerShell yanıt vermedi")}
+
+
+def hotspot_ayarlari() -> None:
+    os.startfile("ms-settings:network-mobilehotspot")  # noqa: S606
+
+
 # ---------------------------------------------------------------------------- DLNA (yol 1)
 
 SSDP_ADRES = ("239.255.255.250", 1900)
@@ -320,34 +414,40 @@ def aciklama_cozumle(xml_metin: str, konum: str) -> dict | None:
     return None
 
 
-def tv_ara(sure: float = 3.0, ip: str | None = None) -> list[dict]:
-    ip = ip or yerel_ip()
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
-    s.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 4)
-    try:
-        s.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, socket.inet_aton(ip))
-    except OSError:
-        pass
-    s.settimeout(0.4)
-    for st in ST_LISTESI:
-        msg = (f"M-SEARCH * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nMAN: \"ssdp:discover\"\r\n"
-               f"MX: 2\r\nST: {st}\r\n\r\n").encode()
-        for _ in range(2):
-            try:
-                s.sendto(msg, SSDP_ADRES)
-            except OSError:
-                pass
+def tv_ara(sure: float = 3.0, ipler: list[str] | None = None) -> list[dict]:
+    """Bütün ağlarda (modem Wi-Fi'si, kablo, bilgisayarın kendi erişim noktası) DLNA TV arar."""
+    soketler = []
+    for ip in ipler or yerel_ipler():
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+        s.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 4)
+        try:
+            s.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, socket.inet_aton(ip))
+        except OSError:
+            pass
+        s.setblocking(False)
+        for st in ST_LISTESI:
+            msg = (f"M-SEARCH * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nMAN: \"ssdp:discover\"\r\n"
+                   f"MX: 2\r\nST: {st}\r\n\r\n").encode()
+            for _ in range(2):
+                try:
+                    s.sendto(msg, SSDP_ADRES)
+                except OSError:
+                    pass
+        soketler.append(s)
     konumlar: set[str] = set()
     bitis = time.time() + sure
     while time.time() < bitis:
-        try:
-            veri, _ = s.recvfrom(65507)
-        except (socket.timeout, OSError):
-            continue
-        m = re.search(rb"(?im)^location:\s*(\S+)", veri)
-        if m:
-            konumlar.add(m.group(1).decode(errors="replace"))
-    s.close()
+        hazir, _, _ = select.select(soketler, [], [], 0.3)
+        for s in hazir:
+            try:
+                veri, _ = s.recvfrom(65507)
+            except OSError:
+                continue
+            m = re.search(rb"(?im)^location:\s*(\S+)", veri)
+            if m:
+                konumlar.add(m.group(1).decode(errors="replace"))
+    for s in soketler:
+        s.close()
     tvler, gorulen = [], set()
     for konum in sorted(konumlar):
         try:
@@ -637,14 +737,15 @@ class Uygulama:
         self.mesaj = ""
         self._ses: str | None | bool = False  # False = henüz bakılmadı
         self.miracast = miracast_destegi()
+        self.hotspot: dict = {}
         threading.Thread(target=self._bekci, daemon=True).start()
 
     @property
     def ip(self) -> str:
         return yerel_ip()
 
-    def tv_adresi(self) -> str:
-        return f"http://{self.ip}:{self.port}/{self.pin}"
+    def tv_adresi(self, ip: str | None = None) -> str:
+        return f"http://{ip or self.ip}:{self.port}/{self.pin}"
 
     def ses(self) -> str | None:
         if self._ses is False:
@@ -673,7 +774,8 @@ class Uygulama:
         self._lossless()
         self.ts_baslat()
         self.aktif_tv = tv
-        tv_oynat(tv, f"http://{self.ip}:{self.port}/{self.pin}/ekran.ts")
+        ip = ayni_agdaki_ip(tv["ip"], yerel_ipler())  # TV bilgisayarın Wi-Fi'sindeyse 192.168.137.1
+        tv_oynat(tv, f"{self.tv_adresi(ip)}/ekran.ts")
 
     def durdur(self) -> None:
         if self.aktif_tv:
@@ -695,6 +797,7 @@ class Uygulama:
 
     def durum(self) -> dict:
         return {"ip": self.ip, "port": self.port, "pin": self.pin, "tv_adresi": self.tv_adresi(),
+                "tv_adresleri": [self.tv_adresi(ip) for ip in yerel_ipler()], "hotspot": self.hotspot,
                 "ffmpeg": bool(self.ffmpeg), "kodlayici": _kodlayici_onbellek, "ses": self._ses or None,
                 "miracast": self.miracast, "ayar": self.ayar_adi,
                 "ayarlar": {k: v["ad"] for k, v in AYARLAR.items()},
@@ -826,7 +929,7 @@ def sunucu_kur(app: Uygulama) -> type[BaseHTTPRequestHandler]:
                 if yol == "/api/ara":
                     app.tvler = tv_ara()
                     app.mesaj = f"{len(app.tvler)} TV bulundu." if app.tvler else \
-                        "TV bulunamadı: TV açık mı, aynı modeme bağlı mı, TV'de DLNA/'Ekran paylaşımı' açık mı?"
+                        "TV bulunamadı: TV açık mı, bilgisayarla aynı Wi-Fi'de mi (modem ya da bilgisayarın Wi-Fi'si), TV'de DLNA/'Ekran paylaşımı' açık mı?"
                 elif yol == "/api/gonder":
                     i = int(veri.get("tv", 0))
                     if not 0 <= i < len(app.tvler):
@@ -839,6 +942,22 @@ def sunucu_kur(app: Uygulama) -> type[BaseHTTPRequestHandler]:
                 elif yol == "/api/miracast":
                     miracast_paneli()
                     app.mesaj = "Windows 'Yansıt' paneli açıldı; listeden TV'nizi seçin."
+                elif yol == "/api/wifi":
+                    islem = veri.get("islem", "durum")
+                    if islem == "ayarlar":
+                        hotspot_ayarlari()
+                        app.mesaj = "Windows 'Mobil etkin nokta' ayarları açıldı."
+                    else:
+                        app.hotspot = hotspot(islem, veri.get("bant", ""))
+                        h = app.hotspot
+                        if h.get("hata"):
+                            app.mesaj = ("Wi-Fi erişim noktası açılamadı: " + h["hata"] +
+                                         " — 'Windows ayarlarını aç' ile elle açmayı deneyin.")
+                        elif h.get("acik"):
+                            app.mesaj = (f"Bilgisayarın Wi-Fi'si açık: TV'yi '{h.get('ag')}' ağına bağlayın "
+                                         f"(şifre: {h.get('sifre')}), sonra 'TV'leri ara'.")
+                        else:
+                            app.mesaj = "Bilgisayarın Wi-Fi erişim noktası kapalı."
                 elif yol == "/api/lossless":
                     app.mesaj = lossless_ac()
                 elif yol == "/api/steam":
