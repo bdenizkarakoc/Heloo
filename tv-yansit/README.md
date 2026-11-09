@@ -6,10 +6,17 @@ menzili kadardır: TV başka odada olsa da olur.
 
 ## Kurulum (Windows)
 
-**Tek adımda (PowerShell):** PowerShell'i *Yönetici olarak çalıştır* ile açın ve `kur.ps1` dosyasının içeriğini
-yapıştırın. Script git, Python ve ffmpeg yoksa kurar, uygulamayı `%USERPROFILE%\Heloo` klasörüne indirir ya da
-günceller, güvenlik duvarı izni verir, Masaüstüne "TV Yansıt" kısayolunu koyar ve uygulamayı açar. Oyun kolunu
-gerçek Xbox kolu olarak kullanmak için önce `$OyunKolu = $true` yazın.
+**Uygulama olarak (önerilen):** PowerShell'de depo klasöründen şunu çalıştırın:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tv-yansit\kur.ps1
+```
+
+Ya da `kur.ps1`'in içeriğini PowerShell'e yapıştırın. Uygulama `%LOCALAPPDATA%\Programs\TV Yansit` klasörüne,
+kendi Python'u ve kendi `TV Yansit.exe` dosyasıyla kurulur. Bilgisayardaki Python'a bağlı değildir. Başlat menüsünde
+ve Masaüstünde simgesiyle görünür, görev çubuğuna sabitlenebilir. **Ayarlar → Uygulamalar → TV Yansıt → Kaldır**
+ile tamamen kaldırılır. Güvenlik duvarı izni için Windows bir kez yönetici onayı ister. Gerçek Xbox kolu için
+önce `$OyunKolu = $true` yazıp sonra kur.ps1'in içeriğini yapıştırın. Aynı komut güncelleme için de kullanılır.
 
 **Elle:**
 

@@ -1,5 +1,6 @@
 """TV Yansıt hızlı testleri: python -m pytest tv-yansit/tests -q"""
 import json
+import socket
 import shutil
 import sys
 import threading
@@ -250,3 +251,21 @@ def test_pin_tahmini_engellenir():
         assert kod(f"/{app.pin}") == 403            # artık doğru PIN de engelli
     finally:
         srv.shutdown()
+
+
+def test_kurulum_parcalari():
+    kok = Path(tv.__file__).resolve().parent
+    ico = (kok / "tv-yansit.ico").read_bytes()
+    assert ico[:4] == b"\x00\x00\x01\x00"                  # geçerli ICO başlığı
+    kur = (kok / "kur.ps1").read_bytes()
+    assert kur.startswith(b"\xef\xbb\xbf")                   # PowerShell 5.1 Türkçe için UTF-8 BOM
+    for dosya in ("tv_yansit.py", "girdi.py", "panel.html", "tv.html", "tv-yansit.ico"):
+        assert dosya.encode() in kur and (kok / dosya).exists()
+    assert isinstance(tv.kurulum_ayari(), dict)
+
+
+def test_acik_kopya_yoksa_false():
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        bos_port = s.getsockname()[1]
+    assert tv.acik_kopya_paneli(bos_port) is False

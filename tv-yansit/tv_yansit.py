@@ -102,7 +102,21 @@ def ayni_agdaki_ip(hedef: str, ipler: list[str]) -> str:
     return ipler[0]
 
 
+KURULU_EXE = KOK.parent / "TV Yansit.exe"  # kur.ps1 ile kurulmuş uygulama: <klasör>/TV Yansit.exe + app/
+
+
+def kurulum_ayari() -> dict:
+    """kur.ps1'in yazdığı ayar.json (ör. ffmpeg'in tam yolu; Başlat menüsünden açılınca PATH eski olabilir)."""
+    try:
+        return json.loads((KOK / "ayar.json").read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError):
+        return {}
+
+
 def ffmpeg_yolu() -> str | None:
+    ayarli = kurulum_ayari().get("ffmpeg")
+    if ayarli and Path(ayarli).exists():
+        return ayarli
     bul = shutil.which("ffmpeg")
     if bul:
         return bul
@@ -294,10 +308,13 @@ def steame_ekle() -> str:
         return "Steam bulunamadı. Steam'de: Oyunlar → Steam dışı bir oyunu kütüphaneme ekle → 'TV Yansit.bat'."
     if surec_calisiyor_mu("steam.exe"):
         return "Önce Steam'i tamamen kapatın (sağ alttaki simge → Çıkış), sonra yeniden 'Steam'e ekle'ye basın."
-    py = Path(sys.executable)
-    pyw = py.with_name("pythonw.exe")
-    exe = f'"{pyw if pyw.exists() else py}"'
-    betik = KOK / "tv_yansit.py"
+    if KURULU_EXE.exists():  # kurulu uygulama: Steam doğrudan TV Yansit.exe'yi açar (simgesiyle)
+        exe, baslangic, secenekler, simge = f'"{KURULU_EXE}"', f'"{KURULU_EXE.parent}"', "--steam", str(KURULU_EXE)
+    else:
+        py = Path(sys.executable)
+        pyw = py.with_name("pythonw.exe")
+        exe, baslangic = f'"{pyw if pyw.exists() else py}"', f'"{KOK}"'
+        secenekler, simge = f'"{KOK / "tv_yansit.py"}" --steam', ""
     eklenen = 0
     for kul in (steam / "userdata").iterdir():
         if not kul.is_dir() or not kul.name.isdigit() or kul.name == "0":
@@ -307,7 +324,7 @@ def steame_ekle() -> str:
         eski = dosya.read_bytes() if dosya.exists() else b""
         if eski:
             shutil.copy2(dosya, dosya.with_name(f"shortcuts.vdf.yedek-{time.strftime('%Y%m%d-%H%M%S')}"))
-        kayit = kisayol_kaydi(exe, f'"{KOK}"', f'"{betik}" --steam')
+        kayit = kisayol_kaydi(exe, baslangic, secenekler, simge)
         dosya.write_bytes(kisayol_ekle(eski, kayit))
         eklenen += 1
     if not eklenen:
@@ -1104,6 +1121,18 @@ def sunucu_baslat(app: Uygulama) -> ThreadingHTTPServer:
     raise SystemExit("Boş port bulunamadı.")
 
 
+def acik_kopya_paneli(port: int) -> bool:
+    """Uygulama zaten açıksa ikinci kopyayı başlatmaz, açık olanın panelini gösterir."""
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/durum", timeout=1) as r:
+            if "pin" not in json.loads(r.read()):
+                return False
+    except (OSError, ValueError):
+        return False
+    webbrowser.open(f"http://127.0.0.1:{port}/")
+    return True
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Bilgisayar ekranını TV'ye yansıt (DLNA + TV tarayıcısı).")
     ap.add_argument("--port", type=int, default=VARSAYILAN_PORT)
@@ -1119,6 +1148,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{t['ad']}  ({t['ip']})")
         if not tvler:
             print("TV bulunamadı.")
+        return 0
+    if not a.acma and acik_kopya_paneli(a.port):
         return 0
     app = Uygulama(a.port, a.kaynak)
     srv = sunucu_baslat(app)
