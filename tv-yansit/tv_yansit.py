@@ -56,9 +56,9 @@ PENCERESIZ = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000) if WINDOWS else
 # "gecikme": en düşük gecikme (varsayılan) — küçük kareler hızlı gider, 60 fps, hızlı ölçekleme.
 AYARLAR = {
     "gecikme": {"ad": "En düşük gecikme (720p 60, oyun)", "yukseklik": 720, "fps": 60, "bitrate": 8,
-                "mjpeg_q": 6, "olcek": "bilinear"},
+                "mjpeg_q": 6, "olcek": "area"},
     "ultra": {"ad": "Ultra düşük gecikme (540p 60, yavaş TV / zayıf Wi-Fi)", "yukseklik": 540, "fps": 60,
-              "bitrate": 5, "mjpeg_q": 7, "olcek": "bilinear"},
+              "bitrate": 5, "mjpeg_q": 7, "olcek": "area"},
     "kalite": {"ad": "Yüksek kalite (1080p 30)", "yukseklik": 1080, "fps": 30, "bitrate": 15, "mjpeg_q": 3},
     "akici": {"ad": "Akıcı (1080p 60, oyun)", "yukseklik": 1080, "fps": 60, "bitrate": 20, "mjpeg_q": 4},
     "uzak": {"ad": "Uzak menzil (720p, zayıf Wi-Fi)", "yukseklik": 720, "fps": 30, "bitrate": 5, "mjpeg_q": 7},

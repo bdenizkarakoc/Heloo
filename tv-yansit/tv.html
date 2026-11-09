@@ -6,6 +6,7 @@
 <title>TV Yansıt</title>
 <style>
   html, body { margin: 0; height: 100%; background: #000; overflow: hidden; cursor: default; }
+  canvas { position: fixed; left: 0; top: 0; width: 100%; height: 100%; display: none; }
   img { position: fixed; left: 0; top: 0; width: 100%; height: 100%; object-fit: contain; -webkit-user-drag: none; user-select: none; }
   #b { position: fixed; left: 0; right: 0; bottom: 8%; color: #fff; font: 28px sans-serif; text-align: center; text-shadow: 0 0 6px #000; }
   #i { position: fixed; left: 12px; top: 10px; color: #fff; font: 15px sans-serif; opacity: .55; text-shadow: 0 0 4px #000; }
@@ -18,6 +19,7 @@
 </head>
 <body>
 <img id="g" alt="">
+<canvas id="c"></canvas>
 <div id="b">Bağlanıyor…</div>
 <div id="k"></div>
 <div id="i"></div>
@@ -38,22 +40,58 @@ function koptu(sonra) {
 
 /* --- Görüntü: en düşük gecikme için istek-yanıt. TV bir kare ister, bilgisayar en yenisini gönderir; kare
    gelir gelmez bir sonraki istenir, bu sırada gelen kare çizilir. Arada kare birikmez (gecikme büyümez). */
-var URLc = window.URL || window.webkitURL;
+var URLc = window.URL || window.webkitURL, kareW = 16, kareH = 9;
 var istekModu = !!(URLc && window.Blob && ('responseType' in new XMLHttpRequest()));
 if (istekModu) {
-  var n = 0, cizilen = null, cizimde = false, bekleyen = null, sayac = 0, gecikmeler = [], sonGelen = 0;
+  /* Kareler önce arka planda TAMAMEN çözülür, sonra ekranın yenilenme anında (vsync, requestAnimationFrame)
+     tek seferde tuvale çizilir: yarım kare / boş kare görünmez (titreme, yırtılma, dalgalanma olmaz), kareler
+     ekranın kendi ritmine oturur (sarsıntı olmaz). */
+  var n = 0, sayac = 0, gecikmeler = [], sonGelen = 0, cozumde = 0, hazir = null, cizilenNo = 0;
   var istemci = Math.floor(Math.random() * 1e9).toString(36);   /* bu TV'nin kimliği: aynı kare iki kez gelmesin */
-  g.onload = function () {
-    b.style.display = 'none';
-    if (cizilen) URLc.revokeObjectURL(cizilen);
-    cizilen = g.src; cizimde = false; sayac++;
-    if (bekleyen) { var y = bekleyen; bekleyen = null; ciz(y); }
+  var tuval = document.getElementById('c'), c2 = tuval.getContext('2d');
+  g.style.display = 'none'; tuval.style.display = 'block';
+  function boyutla() {
+    var o = Math.min(window.devicePixelRatio || 1, 2);
+    tuval.width = Math.round(window.innerWidth * o); tuval.height = Math.round(window.innerHeight * o);
+    c2.fillStyle = '#000'; c2.fillRect(0, 0, tuval.width, tuval.height);
+    if ('imageSmoothingQuality' in c2) c2.imageSmoothingQuality = 'high';
+    cizilenNo = 0;
+  }
+  boyutla();
+  window.addEventListener('resize', boyutla, false);
+  function kareHazir(k) {                            /* daha yenisi hazırsa eskisini bırak */
+    if (hazir && hazir.no > k.no && hazir.no - k.no < 1000) { birak(k); return; }   /* sayaç sıfırlandıysa kabul */
+    if (hazir) birak(hazir);
+    hazir = k;
+  }
+  function birak(k) { if (k.resim && k.resim.close) k.resim.close(); if (k.url) URLc.revokeObjectURL(k.url); }
+  var ciz = function (k) {                           /* çöz (arka planda) */
+    cozumde++;
+    if (window.createImageBitmap) {
+      createImageBitmap(k.blob).then(function (bmp) { cozumde--; k.resim = bmp; kareHazir(k); },
+                                     function () { cozumde--; });
+    } else {
+      var im = new Image();
+      k.url = URLc.createObjectURL(k.blob);
+      im.onload = function () { cozumde--; k.resim = im; kareHazir(k); };
+      im.onerror = function () { cozumde--; URLc.revokeObjectURL(k.url); };
+      im.src = k.url;
+    }
   };
-  g.onerror = function () { cizimde = false; };
-  var ciz = function (k) {
-    if (cizimde) { if (bekleyen) URLc.revokeObjectURL(bekleyen.url); bekleyen = k; return; }
-    cizimde = true; gecikmeler.push(k.ms); g.src = k.url;
-  };
+  var rAF = window.requestAnimationFrame || window.webkitRequestAnimationFrame || function (f) { return setTimeout(f, 16); };
+  function cizimDongusu() {
+    if (hazir && hazir.no !== cizilenNo) {
+      var k = hazir, r = k.resim, rw = r.width, rh = r.height;
+      var s = Math.min(tuval.width / rw, tuval.height / rh), w = Math.round(rw * s), h = Math.round(rh * s);
+      var x = (tuval.width - w) >> 1, y = (tuval.height - h) >> 1;
+      if (rw !== kareW || rh !== kareH) { c2.fillStyle = '#000'; c2.fillRect(0, 0, tuval.width, tuval.height); }
+      c2.drawImage(r, x, y, w, h);
+      kareW = rw; kareH = rh; cizilenNo = k.no; sayac++; gecikmeler.push(k.ms);
+      b.style.display = 'none';
+    }
+    rAF(cizimDongusu);
+  }
+  rAF(cizimDongusu);
   var kareIste = function () {
     var x = new XMLHttpRequest(), t0 = +new Date();
     x.open('GET', KARE + '?n=' + n + '&c=' + istemci, true);
@@ -67,7 +105,7 @@ if (istekModu) {
         if (no && no <= sonGelen && sonGelen - no < 1000) return;   /* daha yenisi zaten geldi */
         sonGelen = no;
         var ag = Math.max(0, (+new Date()) - t0 - (+x.getResponseHeader('X-Bekleme') || 0));
-        ciz({ url: URLc.createObjectURL(x.response), ms: (+x.getResponseHeader('X-Yas') || 0) + ag });
+        ciz({ blob: x.response, no: no, ms: (+x.getResponseHeader('X-Yas') || 0) + ag });
       } else if (x.status === 204) {
         if (no < n) n = 0;
         kareIste();
@@ -227,7 +265,7 @@ if (!KUMANDA) {
 
   /* --- fare: görüntünün gerçek alanına göre 0..1 konum */
   function konum(e) {
-    var nw = g.naturalWidth || 16, nh = g.naturalHeight || 9;
+    var nw = (istekModu ? kareW : g.naturalWidth) || 16, nh = (istekModu ? kareH : g.naturalHeight) || 9;
     var cw = window.innerWidth, ch = window.innerHeight, s = Math.min(cw / nw, ch / nh);
     var w = nw * s, h = nh * s, ox = (cw - w) / 2, oy = (ch - h) / 2;
     return { t: 'ma', x: Math.max(0, Math.min(1, (e.clientX - ox) / w)), y: Math.max(0, Math.min(1, (e.clientY - oy) / h)) };
