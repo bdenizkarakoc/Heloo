@@ -8,25 +8,78 @@
   html, body { margin: 0; height: 100%; background: #000; overflow: hidden; cursor: default; }
   img { position: fixed; left: 0; top: 0; width: 100%; height: 100%; object-fit: contain; -webkit-user-drag: none; user-select: none; }
   #b { position: fixed; left: 0; right: 0; bottom: 8%; color: #fff; font: 28px sans-serif; text-align: center; text-shadow: 0 0 6px #000; }
+  #i { position: fixed; left: 12px; top: 10px; color: #fff; font: 15px sans-serif; opacity: .55; text-shadow: 0 0 4px #000; }
   #k { position: fixed; right: 12px; top: 10px; color: #8f8; font: 16px sans-serif; opacity: .8; }
 </style>
 </head>
 <body>
-<img id="g" src="__AKIS__" alt="">
+<img id="g" alt="">
 <div id="b">Bağlanıyor…</div>
 <div id="k"></div>
+<div id="i"></div>
 <script>
 /* Eski TV tarayıcıları için ES5: var, function, XMLHttpRequest. */
-var AKIS = '__AKIS__', GIRDI = '__GIRDI__', KUMANDA = __KUMANDA__, SANAL_KOL = __SANALKOL__;
+var AKIS = '__AKIS__', KARE = '__KARE__', GIRDI = '__GIRDI__', KUMANDA = __KUMANDA__, SANAL_KOL = __SANALKOL__;
 var g = document.getElementById('g'), b = document.getElementById('b'), k = document.getElementById('k');
 var tamEkranIstendi = false;
 
-g.onload = function () { b.style.display = 'none'; };
-g.onerror = function () {
+var bilgi = document.getElementById('i');
+function koptu(sonra) {
   b.style.display = 'block';
   b.textContent = 'Bağlantı koptu, yeniden deneniyor…';
-  setTimeout(function () { g.src = AKIS + '?t=' + (+new Date()); }, 2000);
-};
+  setTimeout(sonra, 1000);
+}
+
+/* --- Görüntü: en düşük gecikme için istek-yanıt. TV bir kare ister, bilgisayar en yenisini gönderir; kare
+   gelir gelmez bir sonraki istenir, bu sırada gelen kare çizilir. Arada kare birikmez (gecikme büyümez). */
+var URLc = window.URL || window.webkitURL;
+var istekModu = !!(URLc && window.Blob && ('responseType' in new XMLHttpRequest()));
+if (istekModu) {
+  var n = 0, cizilen = null, cizimde = false, bekleyen = null, sayac = 0, gecikmeler = [];
+  g.onload = function () {
+    b.style.display = 'none';
+    if (cizilen) URLc.revokeObjectURL(cizilen);
+    cizilen = g.src; cizimde = false; sayac++;
+    if (bekleyen) { var y = bekleyen; bekleyen = null; ciz(y); }
+  };
+  g.onerror = function () { cizimde = false; };
+  var ciz = function (k) {
+    if (cizimde) { if (bekleyen) URLc.revokeObjectURL(bekleyen.url); bekleyen = k; return; }
+    cizimde = true; gecikmeler.push(k.ms); g.src = k.url;
+  };
+  var kareIste = function () {
+    var x = new XMLHttpRequest(), t0 = +new Date();
+    x.open('GET', KARE + '?n=' + n, true);
+    x.responseType = 'blob';
+    x.timeout = 10000;
+    x.onload = function () {
+      var no = +x.getResponseHeader('X-Kare');
+      if (x.status === 200) {
+        n = no || n + 1;
+        var ag = Math.max(0, (+new Date()) - t0 - (+x.getResponseHeader('X-Bekleme') || 0));
+        ciz({ url: URLc.createObjectURL(x.response), ms: (+x.getResponseHeader('X-Yas') || 0) + ag });
+        kareIste();
+      } else if (x.status === 204) {
+        if (no < n) n = 0;
+        kareIste();
+      } else { koptu(kareIste); }
+    };
+    x.onerror = x.ontimeout = function () { koptu(kareIste); };
+    x.send();
+  };
+  kareIste();
+  setInterval(function () {
+    var o = 0;
+    for (var j = 0; j < gecikmeler.length; j++) o += gecikmeler[j];
+    bilgi.textContent = sayac + ' fps' + (gecikmeler.length ? ' · ~' + Math.round(o / gecikmeler.length) + ' ms' : '');
+    sayac = 0; gecikmeler = [];
+  }, 1000);
+} else {
+  /* çok eski tarayıcı: sürekli akış (MJPEG) */
+  g.onload = function () { b.style.display = 'none'; };
+  g.onerror = function () { koptu(function () { g.src = AKIS + '?t=' + (+new Date()); }); };
+  g.src = AKIS;
+}
 function tamEkran() {
   if (tamEkranIstendi) return false;
   tamEkranIstendi = true;
@@ -59,7 +112,7 @@ if (!KUMANDA) {
     };
     x.send(JSON.stringify(paket));
   }
-  setInterval(gonder, 33);
+  setInterval(gonder, 16);
 
   /* --- fare: görüntünün gerçek alanına göre 0..1 konum */
   function konum(e) {

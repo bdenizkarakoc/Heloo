@@ -70,8 +70,24 @@ def test_ts_komutu_ayarlar():
     for ad, ayar in tv.AYARLAR.items():
         c = tv.ts_komutu("ffmpeg", ayar, "h264_nvenc", "Stereo Mix", kaynak="test")
         assert c[-1] == "pipe:1" and "mpegts" in c and "aac" in c
-        assert f"scale=-2:{ayar['yukseklik']}:flags=lanczos,format=yuv420p" in c
+        assert f"scale=-2:{ayar['yukseklik']}:flags={ayar.get('olcek', 'lanczos')},format=yuv420p" in c
+        assert "-bf" in c and "-muxpreload" in c
     assert "-an" in tv.ts_komutu("ffmpeg", tv.AYARLAR["uzak"], "libx264", None, kaynak="test")
+    m = tv.mjpeg_komutu("ffmpeg", tv.AYARLAR["gecikme"], kaynak="test")
+    assert "yuvj420p" in m and "-r" not in m          # küçük kare, kare çoğaltma yok
+
+
+def test_yeni_kare_istek_yanit():
+    y = tv.Yayin("mjpeg")
+    assert y.yeni_kare(0, bekle=0.05)[1] is None              # kare yok → boş döner, takılmaz
+    with y.kilit:
+        y.son_kare, y.kare_no, y.kare_zamani = b"\xff\xd8A\xff\xd9", 5, 1.0
+    assert y.yeni_kare(0)[:2] == (5, b"\xff\xd8A\xff\xd9")
+    assert y.yeni_kare(5, bekle=0.05)[1] is None              # aynı kareyi tekrar göndermez
+    assert y.yeni_kare(900, bekle=0.05)[0] == 5               # sayaç sıfırlandıysa en son kare gelir
+    threading.Timer(0.05, lambda: (setattr(y, "kare_no", 6), setattr(y, "son_kare", b"yeni"),
+                                   y.kilit.acquire(), y.kilit.notify_all(), y.kilit.release())).start()
+    assert y.yeni_kare(5, bekle=2)[:2] == (6, b"yeni")        # yeni kare gelince hemen döner
 
 
 def test_ayni_agdaki_ip():

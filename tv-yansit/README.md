@@ -18,7 +18,7 @@ Panel tarayıcıda açılır (`http://127.0.0.1:8765/`).
 |---|---|---|
 | Ne yapılır | Panelde **TV'leri ara**, TV'yi seçin, **TV'ye gönder**'e basın | TV'nin internet tarayıcısına paneldeki adresi yazın (ör. `http://192.168.1.5:8765/4821`) |
 | Ses | TV'den gelir (Stereo Karışımı açıksa) | Bilgisayardan gelir |
-| Gecikme | 2-5 sn (film ve dizi için uygun) | Yaklaşık 0,2-0,5 sn (masaüstü ve oyun için) |
+| Gecikme | 1-3 sn (TV'nin oynatıcısı kendi tamponunu tutar; film ve dizi için) | En düşük: genellikle 30-80 ms (masaüstü ve oyun için) |
 | Görüntü | H.264, ekran kartının donanım kodlayıcısıyla (NVIDIA, Intel, AMD) | MJPEG. Bağlantı zayıflayınca kare atlar, gecikme birikmez |
 
 ### Modem yoksa: bilgisayarın kendi Wi-Fi'si
@@ -61,8 +61,21 @@ Windows, yönetici olarak açılmış pencerelere başka programın tuş gönder
 kumandayla kullanmak için TV Yansıt'ı da yönetici olarak açın. Basılı kalan tuşlar, TV sayfası kapanınca ya da
 kumanda kapatılınca bırakılır. Aynı ağdaki bir cihaz PIN'i 30 kez yanlış girerse engellenir.
 
+## Gecikme
+
+Yol 2'de TV tek kare ister, bilgisayar en yeni kareyi gönderir. Kare gelir gelmez bir sonraki istenir ve bu
+sırada gelen kare çizilir. Arada hiç kare birikmediği için ağ yavaşlarsa gecikme büyümez, yalnızca fps düşer.
+Ekran, ffmpeg 6 ve sonrasında **Masaüstü Çoğaltma** (ddagrab) yöntemiyle ekran kartından kopyalanır. Bu yöntem
+yoksa gdigrab kullanılır ve giriş tamponu kapalıdır. TV ekranının sol üstünde fps ve ağ gecikmesi (ms) görünür;
+bu sayıya yakalama ve kodlama süresi dahil değildir. DLNA'da H.264 ultra düşük gecikme ayarıyla kodlanır
+(B-kare yok, küçük tampon, saniyede bir anahtar kare). Yine de TV'nin oynatıcısı birkaç saniyelik tampon tutar, bu yüzden oyun için Yol 2'yi kullanın.
+
+Daha da düşürmek için: Bilgisayarı kabloyla modeme bağlayın, TV'yi 5 GHz ağa alın, TV'de **Oyun modu**nu açın
+(TV'nin görüntü işleme gecikmesi 50-100 ms düşer) ve Lossless Scaling'in kare üretimini kapatın (kare üretimi ek gecikme getirir).
+
 ## Kalite ve menzil
 
+- **En düşük gecikme** (varsayılan): 720p 60 fps. Küçük kareler ağda hızlı gider, oyun ve fare için uygundur.
 - **Yüksek kalite**: 1080p 30 fps, 15 Mbit/sn
 - **Akıcı**: 1080p 60 fps, oyun için
 - **Uzak menzil**: 720p, 5 Mbit/sn. Saniyede bir anahtar kare gönderdiği için kopmalardan hızlı toparlanır. TV

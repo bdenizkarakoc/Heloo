@@ -49,7 +49,10 @@ WINDOWS = os.name == "nt"
 PENCERESIZ = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000) if WINDOWS else 0
 
 # Kalite ayarları. "uzak": zayıf/uzak Wi-Fi için düşük bit hızı + sık anahtar kare (kopmadan hızlı toparlar).
+# "gecikme": en düşük gecikme (varsayılan) — küçük kareler hızlı gider, 60 fps, hızlı ölçekleme.
 AYARLAR = {
+    "gecikme": {"ad": "En düşük gecikme (720p 60, oyun)", "yukseklik": 720, "fps": 60, "bitrate": 8,
+                "mjpeg_q": 6, "olcek": "bilinear"},
     "kalite": {"ad": "Yüksek kalite (1080p 30)", "yukseklik": 1080, "fps": 30, "bitrate": 15, "mjpeg_q": 3},
     "akici": {"ad": "Akıcı (1080p 60, oyun)", "yukseklik": 1080, "fps": 60, "bitrate": 20, "mjpeg_q": 4},
     "uzak": {"ad": "Uzak menzil (720p, zayıf Wi-Fi)", "yukseklik": 720, "fps": 30, "bitrate": 5, "mjpeg_q": 7},
@@ -556,46 +559,77 @@ def ana_ekran_boyutu() -> tuple[int, int] | None:
     return u.GetSystemMetrics(0), u.GetSystemMetrics(1)
 
 
-def yakalama_girdisi(fps: int, kaynak: str) -> list[str]:
+_ddagrab_onbellek: bool | None = None
+
+
+def ddagrab_var(ffmpeg: str) -> bool:
+    """Masaüstü Çoğaltma (ddagrab, ffmpeg 6+): ekranı ekran kartından kopyalar; gdigrab'dan çok daha hızlı."""
+    global _ddagrab_onbellek
+    if _ddagrab_onbellek is None:
+        _ddagrab_onbellek = False
+        if WINDOWS:
+            try:
+                p = calistir([ffmpeg, "-hide_banner", "-v", "error", "-f", "lavfi", "-i",
+                              "ddagrab=output_idx=0:framerate=5", "-frames:v", "1", "-f", "null", "-"], zaman=15)
+                _ddagrab_onbellek = p.returncode == 0
+            except (OSError, subprocess.SubprocessError):
+                pass
+    return _ddagrab_onbellek
+
+
+# Girişte tampon yok: kodlayıcı yetişemezse kareler birikmez (gecikme saniyelerce büyümez), atlanır.
+DUSUK_GECIKME_GIRIS = ["-fflags", "nobuffer", "-flags", "low_delay", "-probesize", "32", "-analyzeduration", "0"]
+
+
+def yakalama_girdisi(fps: int, kaynak: str, ffmpeg: str = "ffmpeg") -> tuple[list[str], str]:
+    """(ffmpeg giriş argümanları, filtre öneki)."""
     if kaynak == "test" or not WINDOWS:
-        return ["-re", "-f", "lavfi", "-i", f"testsrc2=size=1920x1080:rate={fps}"]
-    g = ["-thread_queue_size", "512", "-rtbufsize", "200M", "-f", "gdigrab", "-framerate", str(fps),
-         "-draw_mouse", "1"]
+        return ["-re", "-f", "lavfi", "-i", f"testsrc2=size=1920x1080:rate={fps}"], ""
+    if kaynak == "ana" and ddagrab_var(ffmpeg):
+        return (DUSUK_GECIKME_GIRIS + ["-f", "lavfi", "-i", f"ddagrab=output_idx=0:framerate={fps}:draw_mouse=1"],
+                "hwdownload,format=bgra,")
+    g = DUSUK_GECIKME_GIRIS + ["-thread_queue_size", "4", "-f", "gdigrab", "-framerate", str(fps), "-draw_mouse", "1"]
     boyut = ana_ekran_boyutu()
     if boyut and kaynak == "ana":
         g += ["-offset_x", "0", "-offset_y", "0", "-video_size", f"{boyut[0]}x{boyut[1]}"]
-    return g + ["-i", "desktop"]
+    return g + ["-i", "desktop"], ""
 
 
 def ts_komutu(ffmpeg: str, ayar: dict, enc: str, ses: str | None, kaynak: str = "ana") -> list[str]:
     """DLNA için canlı MPEG-TS (H.264 + AAC) → stdout."""
     fps, br, h = ayar["fps"], ayar["bitrate"], ayar["yukseklik"]
-    g = fps if ayar is AYARLAR["uzak"] or h <= 720 else fps * 2  # uzak menzil: saniyede bir anahtar kare
-    cmd = [ffmpeg, "-hide_banner", "-loglevel", "error"] + yakalama_girdisi(fps, kaynak)
+    g = fps  # saniyede bir anahtar kare: TV bağlanınca en geç 1 sn'de görüntü
+    giris, onek = yakalama_girdisi(fps, kaynak, ffmpeg)
+    cmd = [ffmpeg, "-hide_banner", "-loglevel", "error"] + giris
     if ses:
-        cmd += ["-thread_queue_size", "512", "-f", "dshow", "-audio_buffer_size", "50", "-i", f"audio={ses}"]
-    cmd += ["-vf", f"scale=-2:{h}:flags=lanczos,format=yuv420p", "-c:v", enc]
-    oran = ["-b:v", f"{br}M", "-maxrate", f"{br}M", "-bufsize", f"{br}M"]
+        cmd += ["-thread_queue_size", "16", "-f", "dshow", "-audio_buffer_size", "20", "-i", f"audio={ses}"]
+    olcek = ayar.get("olcek", "lanczos")
+    cmd += ["-vf", f"{onek}scale=-2:{h}:flags={olcek},format=yuv420p", "-c:v", enc]
+    # Küçük VBV tamponu (~yarım saniye): kod çözücü daha az bekler
+    oran = ["-b:v", f"{br}M", "-maxrate", f"{br}M", "-bufsize", f"{max(1, br // 2)}M"]
     if enc == "h264_nvenc":
-        cmd += ["-preset", "p4", "-tune", "ll", "-rc", "cbr"] + oran + ["-bf", "0"]
+        cmd += ["-preset", "p1", "-tune", "ull", "-zerolatency", "1", "-delay", "0", "-rc", "cbr"] + oran + ["-bf", "0"]
     elif enc == "h264_qsv":
-        cmd += ["-preset", "faster", "-look_ahead", "0"] + oran
+        cmd += ["-preset", "veryfast", "-look_ahead", "0", "-async_depth", "1"] + oran + ["-bf", "0"]
     elif enc == "h264_amf":
-        cmd += ["-usage", "lowlatency", "-quality", "balanced", "-rc", "cbr"] + oran
+        cmd += ["-usage", "ultralowlatency", "-quality", "speed", "-rc", "cbr"] + oran + ["-bf", "0"]
     else:
-        cmd += ["-preset", "veryfast", "-tune", "zerolatency"] + oran
+        cmd += ["-preset", "ultrafast" if fps >= 60 else "superfast", "-tune", "zerolatency"] + oran
     cmd += ["-profile:v", "high", "-level", "5.1" if h > 1080 else "4.2", "-g", str(g), "-r", str(fps)]
     cmd += (["-map", "0:v", "-map", "1:a", "-c:a", "aac", "-b:a", "192k", "-ar", "48000"] if ses else ["-an"])
-    return cmd + ["-f", "mpegts", "-muxdelay", "0", "-flush_packets", "1", "pipe:1"]
+    return cmd + ["-f", "mpegts", "-muxdelay", "0", "-muxpreload", "0", "-flush_packets", "1", "pipe:1"]
 
 
 def mjpeg_komutu(ffmpeg: str, ayar: dict, kaynak: str = "ana") -> list[str]:
     """TV tarayıcısı için JPEG kare akışı → stdout."""
-    fps = min(ayar["fps"], 30)
+    fps = ayar["fps"]
     h = min(ayar["yukseklik"], 1080)  # TV tarayıcıları 4K JPEG'i akıcı çözemez
-    return ([ffmpeg, "-hide_banner", "-loglevel", "error"] + yakalama_girdisi(fps, kaynak) +
-            ["-vf", f"scale=-2:{h}:flags=lanczos", "-c:v", "mjpeg", "-q:v", str(ayar["mjpeg_q"]),
-             "-r", str(fps), "-an", "-f", "image2pipe", "pipe:1"])
+    giris, onek = yakalama_girdisi(fps, kaynak, ffmpeg)
+    olcek = ayar.get("olcek", "lanczos")
+    # yuvj420p: 4:4:4'e göre ~2 kat küçük kare → ağda ve TV'de çözmede daha hızlı. Kare çoğaltma yok.
+    return ([ffmpeg, "-hide_banner", "-loglevel", "error"] + giris +
+            ["-vf", f"{onek}scale=-2:{h}:flags={olcek}", "-pix_fmt", "yuvj420p", "-c:v", "mjpeg",
+             "-q:v", str(ayar["mjpeg_q"]), "-an", "-flush_packets", "1", "-f", "image2pipe", "pipe:1"])
 
 
 def jpeg_kareleri(tampon: bytearray) -> list[bytes]:
@@ -624,6 +658,7 @@ class Yayin:
         self.izleyiciler: list[list] = []  # ts: her izleyiciye parça kuyruğu
         self.bagli = 0  # mjpeg: bağlı tarayıcı sayısı
         self.son_kare: bytes | None = None
+        self.kare_zamani = 0.0
         self.kare_no = 0
         self.son_izleyici = time.time()
         self.hata = ""
@@ -679,6 +714,7 @@ class Yayin:
                 for kare in jpeg_kareleri(tampon):
                     with self.kilit:
                         self.son_kare = kare
+                        self.kare_zamani = time.time()
                         self.kare_no += 1
                         self.kilit.notify_all()
             if self.izleyiciler or self.bagli:
@@ -710,6 +746,19 @@ class Yayin:
                     self.izleyiciler.remove(kuyruk)
             self.son_izleyici = time.time()
 
+    def yeni_kare(self, gorulen: int, bekle: float = 5.0) -> tuple[int, bytes | None, float]:
+        """İstek-yanıt modu: TV bir kare ister, 'gorulen'den yeni olan en son kare gelir. Arada hiç kare
+        birikmez; gecikme = yakalama + kodlama + tek karenin aktarımı."""
+        with self.kilit:
+            if gorulen > self.kare_no:  # uygulama yeniden başladı: sayaç sıfırlandı
+                gorulen = -1
+            bitis = time.time() + bekle
+            while self.kare_no <= gorulen or self.son_kare is None:
+                kalan = bitis - time.time()
+                if kalan <= 0 or not self.kilit.wait(kalan):
+                    return self.kare_no, None, 0.0
+            return self.kare_no, self.son_kare, self.kare_zamani
+
     def kare_akisi(self):
         """En son kare: yavaş bağlantıda eski kareleri atlar (gecikme birikmez)."""
         gorulen = -1
@@ -733,7 +782,7 @@ class Uygulama:
         self.ffmpeg = ffmpeg_yolu()
         self.ts = Yayin("ts")
         self.mjpeg = Yayin("mjpeg")
-        self.ayar_adi = "kalite"
+        self.ayar_adi = "gecikme"
         self.tvler: list[dict] = []
         self.aktif_tv: dict | None = None
         self.lossless_otomatik = True
@@ -744,6 +793,7 @@ class Uygulama:
         self.kumanda_acik = False  # TV'den klavye/fare/oyun kolu: panelden açılır
         self.kumanda: girdi.Kumanda | None = None
         self.kumanda_son = 0.0
+        self.kare_istek = 0.0
         self.yanlis_pin: dict[str, int] = {}
         threading.Thread(target=self._bekci, daemon=True).start()
 
@@ -822,7 +872,7 @@ class Uygulama:
                 "tvler": [{"ad": t["ad"], "ip": t["ip"]} for t in self.tvler],
                 "aktif_tv": self.aktif_tv["ad"] if self.aktif_tv else None,
                 "dlna_yayin": self.ts.calisiyor(), "tarayici_yayin": self.mjpeg.calisiyor(),
-                "tarayici_izleyici": self.mjpeg.bagli,
+                "tarayici_izleyici": self.mjpeg.bagli or time.time() - self.kare_istek < 5,
                 "lossless_otomatik": self.lossless_otomatik, "lossless_yuklu": bool(lossless_exe()),
                 "steam": bool(steam_klasoru()), "mesaj": self.mesaj,
                 "hata": self.ts.hata or self.mjpeg.hata, "windows": WINDOWS,
@@ -834,7 +884,8 @@ def tv_sayfasi(app: "Uygulama") -> bytes:
     p = f"/{app.pin}"
     sanal = app.kumanda.sanal_kol if app.kumanda else girdi.vgamepad_var()
     html = (KOK / "tv.html").read_text(encoding="utf-8")
-    html = html.replace("__AKIS__", f"{p}/canli.mjpg").replace("__GIRDI__", f"{p}/girdi")
+    html = (html.replace("__AKIS__", f"{p}/canli.mjpg").replace("__KARE__", f"{p}/kare.jpg")
+            .replace("__GIRDI__", f"{p}/girdi"))
     return html.replace("__KUMANDA__", "true").replace("__SANALKOL__", "true" if sanal else "false").encode("utf-8")
 
 YANLIS_PIN_SINIRI = 30
@@ -884,6 +935,8 @@ def sunucu_kur(app: Uygulama) -> type[BaseHTTPRequestHandler]:
                 return self._gonder(403, b"", "text/plain")
             if yol == p:
                 return self._gonder(200, tv_sayfasi(app), "text/html; charset=utf-8")
+            if yol == f"{p}/kare.jpg":
+                return self._kare()
             if yol == f"{p}/canli.mjpg":
                 return self._mjpeg()
             if yol == f"{p}/ekran.ts":
@@ -927,6 +980,27 @@ def sunucu_kur(app: Uygulama) -> type[BaseHTTPRequestHandler]:
                     self.wfile.write(parca)
             except (ConnectionError, OSError, RuntimeError):
                 pass
+
+        def _kare(self):
+            """Tek kare (istek-yanıt). X-Kare: kare numarası, X-Yas: kare ne kadar bekledi (ms)."""
+            try:
+                gorulen = int(urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get("n", ["0"])[0])
+            except ValueError:
+                gorulen = 0
+            self.connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            if not app.mjpeg.calisiyor():
+                app._lossless()
+            try:
+                app.mjpeg_baslat()
+            except RuntimeError as e:
+                return self._gonder(503, str(e).encode(), "text/plain; charset=utf-8")
+            app.kare_istek = app.mjpeg.son_izleyici = bas = time.time()
+            no, kare, zaman = app.mjpeg.yeni_kare(gorulen)
+            bekleme = int((time.time() - bas) * 1000)
+            if kare is None:
+                return self._gonder(204, b"", "image/jpeg", {"X-Kare": str(no)})
+            yas = max(0, int((time.time() - zaman) * 1000))
+            self._gonder(200, kare, "image/jpeg", {"X-Kare": str(no), "X-Yas": str(yas), "X-Bekleme": str(bekleme)})
 
         def _mjpeg(self):
             sinir = "kare"
