@@ -55,6 +55,13 @@ DEFAULTS: dict[str, Any] = {
         "ai_model": "small",      # yapay zekâ altyazı (faster-whisper): base | small | medium | large-v3-turbo
         "opensubtitles_key": "",  # opensubtitles.com ücretsiz API anahtarı (internetten altyazı)
     },
+    # Lossless Scaling (Steam, ücretli; kuruluysa): kare üretimi ile akıcılık. Ölçekleme RTX VSR'de kalır.
+    "lossless": {
+        "auto_fullscreen": False,  # tam ekrana geçince otomatik aç, çıkınca kapat
+        "hotkey": "Ctrl+Alt+S",   # Lossless Scaling'deki "Ölçekle" kısayolu
+        "exe": "",                # boş: Steam kütüphanelerinde aranır
+        "tips_shown": False,
+    },
     "network": {
         "user_agent": "VLC/3.0.21 LibVLC/3.0.21",
         "timeout": 15,

@@ -342,7 +342,8 @@ class MpvEngine:
                 self._load(req)
 
     def _load(self, req: PlayRequest, pinned_label: str = "") -> None:
-        for k, v in opt.play_options(self.settings, req.kind, req.url, req.headers).items():
+        for k, v in opt.play_options(self.settings, req.kind, req.url, req.headers,
+                                     external_framegen=getattr(self, "external_framegen", False)).items():
             self._set(k, v)
         self._set("force-media-title", req.title)
         self._set("audio-files", [req.meta["audio"]] if req.meta.get("audio") else [])
@@ -580,6 +581,16 @@ class MpvEngine:
             if k in ("glsl-shaders", "glsl-shader-opts", "hwdec"):
                 self._set(k, v)
         self._update_vf(force=True)
+
+    def set_external_framegen(self, on: bool) -> None:
+        """Lossless Scaling kare üretimi açıkken mpv interpolasyonu kapanır (ikisi birlikte titreme yapar)."""
+        self.external_framegen = bool(on)
+        req = self.request
+        o = (opt.play_options(self.settings, req.kind, req.url, req.headers, external_framegen=self.external_framegen)
+             if req else {"interpolation": "no", "video-sync": "audio"})
+        for k in ("interpolation", "video-sync"):
+            if k in o:
+                self._set(k, o[k])
 
     def screenshot(self) -> None:
         self.command("screenshot")

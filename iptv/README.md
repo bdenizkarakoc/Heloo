@@ -148,6 +148,25 @@ Gürültü azaltma, RTX VSR'den **önce** uygulanır (VSR temiz kareyi büyütü
 `d3d11va-copy` olur (kare işlemciye kopyalanır, filtrelenir ve GPU'ya geri yüklenir); 1080p50'de bile modern bir
 işlemcide sorunsuzdur. "Kapalı"da sıfır kopya `d3d11va`'ya döner.
 
+## Lossless Scaling ile kare üretimi (isteğe bağlı)
+
+[Lossless Scaling](https://store.steampowered.com/app/993090/Lossless_Scaling/) (THS) Steam'de satılan, kapalı
+kaynaklı bir Windows uygulamasıdır; GitHub'da resmi deposu yoktur ve Heloo TV onu içermez. Bilgisayarınızda
+kuruluysa Heloo TV onunla birlikte çalışır:
+
+- **Görüntü menüsü → ⚡ Lossless Scaling** ya da **Ctrl+G**: program kapalıysa Steam üzerinden başlatılır,
+  Heloo TV penceresi öne alınır ve Lossless Scaling'in "Ölçekle" kısayolu (varsayılan **Ctrl+Alt+S**) gönderilir.
+  Tekrar basınca kapanır.
+- **Ayarlar → Lossless Scaling**: tam ekrana geçince otomatik aç/kapat, kısayol, program yolu (boşsa bütün Steam
+  kütüphaneleri `libraryfolders.vdf` üzerinden aranır).
+- Açıkken mpv'nin kendi interpolasyonu (film/dizide "akıcı oynatma") kapatılır; iki kare üretimi üst üste
+  titreme yapar. Kapanınca geri gelir.
+
+Lossless Scaling'de önerilen ayar: **Ölçekleme türü: Kapalı** (4K büyütmeyi RTX VSR yapıyor; ikisi birlikte
+görüntüyü bozar), **Kare üretimi: LSFG 3, ×2** (25/30 fps yayın → 50/60 fps), **Max frame latency: 1**, yakalama
+**WGC**. Kare üretimi yaklaşık bir kare (~20–40 ms) gecikme ekler; en düşük gecikme gereken maçlarda kapalı
+tutabilirsiniz. Lossless Scaling'in kısayolunu değiştirdiyseniz Heloo TV ayarlarında da aynısını yazın.
+
 ## LG televizyonda izleme
 
 1. **En iyi yol: bilgisayardan HDMI ile** (RTX VSR / RTX HDR yalnız bilgisayardaki NVIDIA kartta çalışır).

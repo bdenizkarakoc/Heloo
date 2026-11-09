@@ -33,6 +33,9 @@ python -m pytest tests -q              # testler (libmpv2/ffmpeg/7z varsa başs�
   Keskinlik kendi CAS shader'ımız (`helootv/glsl/cas.glsl`, `cas_sharpness` parametresi).
 - Altyazı: OpenSubtitles `subs_online.py` (API anahtarı ayarlarda), yapay zekâ altyazı `ai_subs.py` (faster-whisper,
   isteğe bağlı kurulur; ffmpeg ile 40 sn'lik parçalar, `on_update` → arayüzde `sub_add`/`sub_reload`).
+- Lossless Scaling (Steam 993090, ücretli, kapalı kaynak) asla pakete eklenmez/indirilmez: `lossless.py` yalnız
+  kurulu programı bulur, başlatır ve kısayolunu gönderir. Açıkken `engine.set_external_framegen(True)` →
+  `play_options(external_framegen=True)` mpv interpolasyonunu kapatır.
 - Veritabanı: `store.py` (iş parçacığı başına bağlantı, WAL). EPG ayrı dosyada (`*-epg.db`); uzun EPG içe aktarımı
   katalog/geçmiş yazmalarını bekletmez. Arayüzden uzun sorguları `ui/workers.run_task` ile arka planda çalıştır.
 - Kullanıcı metinleri Türkçe. `.ps1`/`.bat` dosyaları yalnız ASCII (Windows kod sayfası sorunları).

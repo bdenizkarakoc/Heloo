@@ -178,7 +178,8 @@ def quality_options(settings: dict, platform: str = sys.platform) -> dict:
     return o
 
 
-def play_options(settings: dict, kind: str, url: str, headers: dict | None = None) -> dict:
+def play_options(settings: dict, kind: str, url: str, headers: dict | None = None,
+                 external_framegen: bool = False) -> dict:
     """Her loadfile'dan hemen önce ayarlanır. kind: live | catchup | movie | episode | file | image | url."""
     headers = headers or {}
     net = settings["network"]
@@ -243,6 +244,10 @@ def play_options(settings: dict, kind: str, url: str, headers: dict | None = Non
             "network-timeout": str(max(30, net["timeout"])),
             "af": "@norm:lavfi=[dynaudnorm=f=250:g=15:p=0.95:m=8]" if settings["audio"]["normalize"] else "",
         })
+    if external_framegen:
+        # Lossless Scaling kare üretiyor: mpv kendi ara karesini üretmesin (ikisi birlikte titreme yapar)
+        o["video-sync"] = "audio"
+        o["interpolation"] = "no"
     return o
 
 

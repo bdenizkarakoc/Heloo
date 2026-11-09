@@ -265,6 +265,12 @@ def test_vod_seek_tracks_subs_picture(monkeypatch, tmp_path):
         assert pump(3, lambda: int(eng._get("brightness")) == 10)
         win._fill_picture_menu()
         assert any(a.text() == "Karıncalı yayın" for a in win.player.menus["picture"].actions())
+        assert any("Lossless Scaling" in a.text() for a in win.player.menus["picture"].actions())
+        # Lossless Scaling kare üretimi açıkken mpv interpolasyonu kapanır, kapanınca geri gelir
+        eng.set_external_framegen(True)
+        assert eng._get("interpolation") is False and eng._get("video-sync") == "audio"
+        eng.set_external_framegen(False)
+        assert eng._get("interpolation") is True and eng._get("video-sync") == "display-resample"
         if os.environ.get("HELOOTV_SHOT"):
             win.grab().save(os.environ["HELOOTV_SHOT"])
     finally:

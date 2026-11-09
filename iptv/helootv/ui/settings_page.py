@@ -223,6 +223,7 @@ class SettingsPage(QScrollArea):
         self._loading = False
         self._build_sources()
         self._build_video()
+        self._build_lossless()
         self._build_latency()
         self._build_audio_subs()
         self._build_network_ui()
@@ -409,6 +410,38 @@ class SettingsPage(QScrollArea):
             w.currentIndexChanged.connect(self._changed)
         self.body.addWidget(g)
 
+    # ------------------------------------------------------------------ Lossless Scaling
+    def _build_lossless(self) -> None:
+        from .. import lossless
+        g = QGroupBox("Lossless Scaling — kare üretimi (Steam'de ücretli, kuruluysa)")
+        lay = QGridLayout(g)
+        exe = lossless.find_exe(self.ctx.settings["lossless"].get("exe", ""))
+        self.ls_status = QLabel(f"✓ Bulundu: {exe}" if exe else
+                                "Kurulu değil. Steam: Lossless Scaling (993090). Heloo TV yalnızca çalıştırır ve "
+                                "kısayolunu gönderir; programı içermez.")
+        self.ls_status.setWordWrap(True)
+        self.ls_status.setObjectName("Muted")
+        self.ls_auto = QCheckBox("Tam ekrana geçince kare üretimini otomatik aç, çıkınca kapat")
+        self.ls_hotkey = QLineEdit()
+        self.ls_hotkey.setPlaceholderText(lossless.DEFAULT_HOTKEY)
+        self.ls_hotkey.setToolTip("Lossless Scaling'deki 'Ölçekle' kısayolu ile aynı olmalı (örn. Ctrl+Alt+S)")
+        self.ls_exe = QLineEdit()
+        self.ls_exe.setPlaceholderText("Boş: Steam kütüphanelerinde aranır")
+        note = QLabel(lossless.TIPS + "\nOynarken: Görüntü menüsü → ⚡ Lossless Scaling ya da Ctrl+G.")
+        note.setWordWrap(True)
+        note.setObjectName("Muted")
+        r = 0
+        lay.addWidget(self.ls_status, r, 0, 1, 2); r += 1
+        lay.addWidget(self.ls_auto, r, 0, 1, 2); r += 1
+        lay.addWidget(QLabel("Kısayol"), r, 0); lay.addWidget(self.ls_hotkey, r, 1); r += 1
+        lay.addWidget(QLabel("Program yolu"), r, 0); lay.addWidget(self.ls_exe, r, 1); r += 1
+        lay.addWidget(note, r, 0, 1, 2)
+        lay.setColumnStretch(1, 1)
+        self.ls_auto.toggled.connect(self._changed)
+        self.ls_hotkey.editingFinished.connect(self._changed)
+        self.ls_exe.editingFinished.connect(self._changed)
+        self.body.addWidget(g)
+
     # ------------------------------------------------------------------ gecikme
     def _build_latency(self) -> None:
         g = QGroupBox("Canlı yayın gecikmesi")
@@ -582,6 +615,10 @@ class SettingsPage(QScrollArea):
         self.sharpen.setCurrentIndex(max(0, self.sharpen.findData(v["sharpen"])))
         self.denoise.setCurrentIndex(max(0, self.denoise.findData(s["picture"]["denoise"])))
         self.low_boost.setChecked(bool(v["low_boost"]))
+        ls = s["lossless"]
+        self.ls_auto.setChecked(bool(ls["auto_fullscreen"]))
+        self.ls_hotkey.setText(ls["hotkey"])
+        self.ls_exe.setText(ls["exe"])
         i = self.ua.findData(n["user_agent"])
         if i >= 0:
             self.ua.setCurrentIndex(i)
@@ -631,6 +668,17 @@ class SettingsPage(QScrollArea):
         v["sharpen"] = self.sharpen.currentData()
         pic["denoise"] = self.denoise.currentData()
         v["low_boost"] = self.low_boost.isChecked()
+        from .. import lossless
+        ls = s["lossless"]
+        ls["auto_fullscreen"] = self.ls_auto.isChecked()
+        hk = self.ls_hotkey.text().strip() or lossless.DEFAULT_HOTKEY
+        try:
+            lossless.parse_hotkey(hk)
+            ls["hotkey"] = hk
+            self.ls_hotkey.setStyleSheet("")
+        except ValueError:
+            self.ls_hotkey.setStyleSheet("border: 1px solid #ff5c7a;")
+        ls["exe"] = self.ls_exe.text().strip()
         ua_data = self.ua.currentData()
         text = self.ua.currentText().strip()
         n["user_agent"] = ua_data if (ua_data and self.ua.itemText(self.ua.currentIndex()) == text) else (text or n["user_agent"])
