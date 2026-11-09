@@ -1,10 +1,11 @@
-"""scripts/hoparlor.ps1: Windows PowerShell 5.1 Türkçe harfleri ancak BOM ile okur; hazırlar Python sürümüyle aynı."""
+"""hoparlor-app: HoparlorSesAyari.ps1 Windows PowerShell 5.1 Türkçe harfleri ancak BOM ile okur; hazırlar Python sürümüyle aynı."""
 import re
 from pathlib import Path
 
 from reels import hoparlor as h
 
-PS1 = Path(__file__).resolve().parents[1] / "scripts" / "hoparlor.ps1"
+APP = Path(__file__).resolve().parents[2] / "hoparlor-app"
+PS1 = APP / "HoparlorSesAyari.ps1"
 
 
 def test_bom_and_presets_match_python():
@@ -17,3 +18,9 @@ def test_bom_and_presets_match_python():
         assert [int(x) for x in v.split(",")] == h.PRESETS[k]["b"], k
     for k, v in h.KINDS.items():
         assert re.search(rf"{k}\s+= @\{{ ad = '[^']*';\s+hp = {v['hp']};\s+max = {v['max']};", text), k
+
+
+def test_installer_is_ascii_and_points_to_app():
+    text = (APP / "kur.ps1").read_text(encoding="utf-8")
+    assert text.isascii()                       # irm | iex hangi kodlamayla okursa okusun bozulmaz
+    assert "/hoparlor-app/kur.ps1" in text and "$Raw/HoparlorSesAyari.ps1" in text

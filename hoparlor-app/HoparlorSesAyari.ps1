@@ -10,8 +10,8 @@
     config.txt içine bir kez:  Include: heloo-hoparlor.txt
   Ayarlar: %APPDATA%\HelooHoparlor\ayarlar.json (reels-factory /hoparlor sayfasıyla aynı hazırlar ve kurallar).
 
-  Çalıştırma: dosyaya sağ tık → "PowerShell ile çalıştır". Equalizer APO klasörüne yazabilmek için yönetici izni ister.
-  İnternetten indirdiysen bir kez:  Unblock-File .\hoparlor.ps1
+  Kurulum (kısayol + Equalizer APO): hoparlor-app\kur.ps1 — README.md'deki tek satır.
+  Elle çalıştırma: dosyaya sağ tık → "PowerShell ile çalıştır". Equalizer APO klasörüne yazmak için yönetici izni ister.
 
 .PARAMETER SelfTest
   Pencere açmadan örnek ayar dosyasını ekrana yazar (deneme için).
@@ -220,7 +220,7 @@ function Get-ApoConfig($st) {
   $act = Get-Active $st
   if (-not $act.device) { [void]$blocks.Add((Get-Block $act)) }   # çıkışı seçilmemiş: varsayılan çıkışa
   foreach ($sp in $st.speakers) { if ($sp.device) { [void]$blocks.Add((Get-Block $sp)) } }
-  "# Heloo hoparlör ayarı - hoparlor.ps1 yazar, elle değiştirme.`r`n`r`n" + ($blocks -join "`r`n`r`n") + "`r`n`r`nDevice: all`r`n"
+  "# Heloo hoparlör ayarı - Hoparlör Ses Ayarı programı yazar, elle değiştirme.`r`n`r`n" + ($blocks -join "`r`n`r`n") + "`r`n`r`nDevice: all`r`n"
 }
 
 function Get-ApoDir {
