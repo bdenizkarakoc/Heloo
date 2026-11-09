@@ -259,6 +259,7 @@ def test_kurulum_parcalari():
     assert ico[:4] == b"\x00\x00\x01\x00"                  # geçerli ICO başlığı
     kur = (kok / "kur.ps1").read_bytes()
     assert kur.startswith(b"\xef\xbb\xbf")                   # PowerShell 5.1 Türkçe için UTF-8 BOM
+    assert not kur.startswith(b"\xef\xbb\xbf" * 2)           # çift BOM: ilk satır yorum sayılmaz, hata verir
     for dosya in ("tv_yansit.py", "girdi.py", "panel.html", "tv.html", "tv-yansit.ico"):
         assert dosya.encode() in kur and (kok / dosya).exists()
     assert isinstance(tv.kurulum_ayari(), dict)

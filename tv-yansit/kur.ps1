@@ -1,4 +1,4 @@
-﻿﻿# TV Yansıt — Windows uygulaması olarak kurulum (Windows PowerShell 5.1 / PowerShell 7)
+﻿# TV Yansıt — Windows uygulaması olarak kurulum (Windows PowerShell 5.1 / PowerShell 7)
 #
 # Kurulduğu yer:  %LOCALAPPDATA%\Programs\TV Yansit
 #   TV Yansit.exe   uygulama (simgeli; Başlat menüsü, Masaüstü, görev çubuğuna sabitlenebilir, Steam)
