@@ -9,7 +9,8 @@
   img { position: fixed; left: 0; top: 0; width: 100%; height: 100%; object-fit: contain; -webkit-user-drag: none; user-select: none; }
   #b { position: fixed; left: 0; right: 0; bottom: 8%; color: #fff; font: 28px sans-serif; text-align: center; text-shadow: 0 0 6px #000; }
   #i { position: fixed; left: 12px; top: 10px; color: #fff; font: 15px sans-serif; opacity: .55; text-shadow: 0 0 4px #000; }
-  #k { position: fixed; right: 12px; top: 10px; color: #8f8; font: 16px sans-serif; opacity: .8; }
+  #k { position: fixed; right: 12px; top: 10px; color: #8f8; font: 16px sans-serif; opacity: .8; text-align: right; }
+  #s { position: fixed; left: 12px; bottom: 12px; color: #fff; font: 18px sans-serif; opacity: .8; text-shadow: 0 0 4px #000; }
 </style>
 </head>
 <body>
@@ -17,9 +18,10 @@
 <div id="b">Bağlanıyor…</div>
 <div id="k"></div>
 <div id="i"></div>
+<div id="s"></div>
 <script>
 /* Eski TV tarayıcıları için ES5: var, function, XMLHttpRequest. */
-var AKIS = '__AKIS__', KARE = '__KARE__', GIRDI = '__GIRDI__', KUMANDA = __KUMANDA__, SANAL_KOL = __SANALKOL__;
+var AKIS = '__AKIS__', KARE = '__KARE__', SES = '__SES__', GIRDI = '__GIRDI__', KUMANDA = __KUMANDA__, SANAL_KOL = __SANALKOL__;
 var g = document.getElementById('g'), b = document.getElementById('b'), k = document.getElementById('k');
 var tamEkranIstendi = false;
 
@@ -80,6 +82,63 @@ if (istekModu) {
   g.onerror = function () { koptu(function () { g.src = AKIS + '?t=' + (+new Date()); }); };
   g.src = AKIS;
 }
+/* --- Ses: bilgisayarın sesi küçük parçalar hâlinde gelir, Web Audio ile ~60 ms tamponla çalınır. Tampon
+   büyürse (gecikme) ya da boşalırsa (takılma) kendini sıfırlar; böylece ses görüntünün gerisinde kalmaz. */
+var sesBilgi = document.getElementById('s');
+var AC = window.AudioContext || window.webkitAudioContext, ctx = null, sesNo = 0, sonraki = 0, sesBasladi = false;
+var HEDEF = 0.06, EN_COK = 0.2;
+function sesCal(ab, oran) {
+  if (!ctx || ctx.state === 'suspended' || !ab.byteLength) return;
+  var f = new Float32Array(ab), n = f.length >> 1;
+  if (!n) return;
+  var buf = ctx.createBuffer(2, n, oran), L = buf.getChannelData(0), R = buf.getChannelData(1);
+  for (var i = 0, j = 0; i < n; i++, j += 2) { L[i] = f[j]; R[i] = f[j + 1]; }
+  var src = ctx.createBufferSource();
+  src.buffer = buf;
+  src.connect(ctx.destination);
+  var simdi = ctx.currentTime;
+  if (sonraki < simdi + 0.01 || sonraki > simdi + EN_COK) sonraki = simdi + HEDEF;
+  (src.start || src.noteOn).call(src, sonraki);
+  sonraki += n / oran;
+}
+function sesIste() {
+  var x = new XMLHttpRequest();
+  x.open('GET', SES + '?n=' + sesNo, true);
+  x.responseType = 'arraybuffer';
+  x.timeout = 5000;
+  x.onload = function () {
+    if (x.status === 200) {
+      sesNo = +x.getResponseHeader('X-Ses-No') || sesNo;
+      sesCal(x.response, +x.getResponseHeader('X-Oran') || 48000);
+      sesIste();
+    } else if (x.status === 204) {
+      sesBilgi.textContent = 'Bilgisayar sesi alınamıyor (panelde ayrıntı var)';
+      setTimeout(sesIste, 10000);
+    } else { setTimeout(sesIste, 1000); }
+  };
+  x.onerror = x.ontimeout = function () { setTimeout(sesIste, 1000); };
+  x.send();
+}
+function sesDurum() {
+  if (!AC) { sesBilgi.textContent = 'Bu TV tarayıcısı sesi çalamıyor'; return; }
+  sesBilgi.textContent = ctx && ctx.state === 'suspended' ? 'Ses için Tamam\'a basın ya da ekrana tıklayın' : '';
+}
+function sesBaslat() {
+  if (!AC) return sesDurum();
+  if (!ctx) {
+    try { ctx = new AC({ latencyHint: 'interactive' }); } catch (x) { ctx = new AC(); }
+    if (ctx.onstatechange !== undefined) ctx.onstatechange = sesDurum;
+  }
+  if (ctx.state === 'suspended' && ctx.resume) ctx.resume();
+  if (!sesBasladi) { sesBasladi = true; sesIste(); }
+  sesDurum();
+}
+sesBaslat();                       /* çoğu TV hemen izin verir; vermezse ilk tuş/tıklamada açılır */
+setTimeout(sesDurum, 1500);
+document.addEventListener('keydown', sesBaslat, true);
+document.addEventListener('mousedown', sesBaslat, true);
+document.addEventListener('touchstart', sesBaslat, true);
+
 function tamEkran() {
   if (tamEkranIstendi) return false;
   tamEkranIstendi = true;
@@ -91,7 +150,16 @@ function tamEkran() {
 if (!KUMANDA) {
   document.body.onclick = tamEkran;
 } else {
-  k.textContent = 'Kumanda açık';
+  /* TV kumandası iki modda: FARE (oklar imleci yürütür, Tamam = tıkla, Yeşil = sağ tık) ya da OK TUŞU
+     (oklar ve Tamam bilgisayara tuş olarak gider). Değiştirmek: Kırmızı tuş ya da Tamam'a uzun basmak.
+     Gerçek fare ya da klavye kullanılınca kendiliğinden ok tuşu moduna geçer. */
+  var fareModu = true, modSecildi = false, durumHatasi = '';
+  function kumandaYaz() {
+    k.textContent = durumHatasi || ('Kumanda: ' + (fareModu ? 'FARE modu (oklar imleç, Tamam tıkla)' : 'OK TUŞU modu') +
+      ' · Kırmızı / Tamam\'a uzun bas: değiştir');
+  }
+  function modDegistir() { fareModu = !fareModu; modSecildi = true; kumandaYaz(); }
+  kumandaYaz();
 
   /* --- gönderim kuyruğu: olaylar toplu gider, aynı anda tek istek */
   var kuyruk = [], yolda = false, sonFare = null;
@@ -107,7 +175,8 @@ if (!KUMANDA) {
     x.onreadystatechange = function () {
       if (x.readyState !== 4) return;
       yolda = false;
-      k.textContent = x.status === 200 ? 'Kumanda açık' : 'Kumanda kapalı (bilgisayardaki panelden açın)';
+      durumHatasi = x.status === 200 ? '' : 'Kumanda kapalı (bilgisayardaki panelden açın)';
+      kumandaYaz();
       if (kuyruk.length || sonFare) setTimeout(gonder, 0);
     };
     x.send(JSON.stringify(paket));
@@ -121,7 +190,13 @@ if (!KUMANDA) {
     var w = nw * s, h = nh * s, ox = (cw - w) / 2, oy = (ch - h) / 2;
     return { t: 'ma', x: Math.max(0, Math.min(1, (e.clientX - ox) / w)), y: Math.max(0, Math.min(1, (e.clientY - oy) / h)) };
   }
-  document.addEventListener('mousemove', function (e) { sonFare = konum(e); }, false);
+  var sonXY = null;
+  document.addEventListener('mousemove', function (e) {
+    var xy = e.clientX + ',' + e.clientY;
+    if (sonXY !== null && xy !== sonXY && fareModu && !modSecildi) { fareModu = false; kumandaYaz(); }  /* gerçek fare var */
+    sonXY = xy;
+    sonFare = konum(e);
+  }, false);
   var fareBasili = {};
   document.addEventListener('mousedown', function (e) {
     e.preventDefault();
@@ -154,10 +229,21 @@ if (!KUMANDA) {
   document.addEventListener('touchend', function () { if (dokunma) { dokunma = false; ekle({ t: 'mu', b: 0 }); } }, false);
 
   /* --- klavye ve TV kumandası */
-  var vkBasili = {};
+  var vkBasili = {}, okHiz = {}, tamamBas = 0;
+  var OKLAR = { 37: [-1, 0], 38: [0, -1], 39: [1, 0], 40: [0, 1] };
+  var KIRMIZI = 403, YESIL = 404;
   document.addEventListener('keydown', function (e) {
     var kod = e.keyCode || e.which, tus = e.key || '';
     e.preventDefault();
+    if (kod === KIRMIZI) { if (!vkBasili[kod]) modDegistir(); vkBasili[kod] = 'mod'; return; }
+    if (kod === YESIL) { if (!vkBasili[kod]) { ekle({ t: 'md', b: 2 }); ekle({ t: 'mu', b: 2 }); } vkBasili[kod] = 'mod'; return; }
+    if (kod === 13) { if (!tamamBas) tamamBas = +new Date(); return; }       /* bırakınca: kısa = tıkla/Enter, uzun = mod */
+    if (fareModu && OKLAR[kod]) {
+      okHiz[kod] = okHiz[kod] ? Math.min(okHiz[kod] * 1.3, 60) : 8;       /* basılı tuttukça hızlanır */
+      ekle({ t: 'mr', dx: Math.round(OKLAR[kod][0] * okHiz[kod]), dy: Math.round(OKLAR[kod][1] * okHiz[kod]) });
+      return;
+    }
+    if (fareModu && !modSecildi && ((kod >= 65 && kod <= 90) || tus.length === 1)) { fareModu = false; kumandaYaz(); }
     /* Harf, rakam, boşluk: gerçek tuş (oyunlarda W/A/S/D basılı tutulabilir).
        Diğer yazı karakterleri (ş, ğ, ü, noktalama…): karakter olarak, klavye düzeninden bağımsız. */
     var temel = kod === 32 || (kod >= 48 && kod <= 57) || (kod >= 65 && kod <= 90);
@@ -172,6 +258,16 @@ if (!KUMANDA) {
   document.addEventListener('keyup', function (e) {
     var kod = e.keyCode || e.which;
     e.preventDefault();
+    delete okHiz[kod];
+    if (vkBasili[kod] === 'mod') { delete vkBasili[kod]; return; }
+    if (kod === 13 && tamamBas) {
+      var sure = (+new Date()) - tamamBas;
+      tamamBas = 0;
+      if (sure >= 700) modDegistir();
+      else if (fareModu) { ekle({ t: 'md', b: 0 }); ekle({ t: 'mu', b: 0 }); }
+      else { ekle({ t: 'kd', k: 13 }); ekle({ t: 'ku', k: 13 }); }
+      return;
+    }
     if (vkBasili[kod]) { delete vkBasili[kod]; ekle({ t: 'ku', k: kod }); }
   }, false);
   function hepsiniBirak() { vkBasili = {}; ekle({ t: 'birak' }); }

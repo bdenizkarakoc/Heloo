@@ -74,6 +74,8 @@ def test_ts_komutu_ayarlar():
         assert f"scale=-2:{ayar['yukseklik']}:flags={ayar.get('olcek', 'lanczos')},format=yuv420p" in c
         assert "-bf" in c and "-muxpreload" in c
     assert "-an" in tv.ts_komutu("ffmpeg", tv.AYARLAR["uzak"], "libx264", None, kaynak="test")
+    p = tv.ts_komutu("ffmpeg", tv.AYARLAR["gecikme"], "libx264", "pipe", kaynak="test", ses_oran=44100)
+    assert "pipe:0" in p and "44100" in p and "f32le" in p
     m = tv.mjpeg_komutu("ffmpeg", tv.AYARLAR["gecikme"], kaynak="test")
     assert "yuvj420p" in m and "-r" not in m          # küçük kare, kare çoğaltma yok
 
@@ -218,7 +220,10 @@ def test_kumanda_sunucu_izin_ve_pin_engeli():
     try:
         sayfa = urllib.request.urlopen(f"{taban}/{app.pin}", timeout=5).read().decode()
         assert f"/{app.pin}/girdi" in sayfa and "__" not in sayfa.split("<script>")[1].split("var g")[0]
+        assert app.kumanda_acik is True                                          # varsayılan: açık
+        assert gonder("/api/ayar", {"kumanda_acik": False})[1]["kumanda_acik"] is False
         assert gonder(f"/{app.pin}/girdi", [{"t": "kd", "k": 13}])[0] == 403   # kapalıyken izin yok
+        kayit.kayit.clear()
         assert gonder("/api/ayar", {"kumanda_acik": True})[1]["kumanda_acik"] is True
         kod, cevap = gonder(f"/{app.pin}/girdi", [{"t": "kd", "k": 13}, {"t": "ku", "k": 13}])
         assert kod == 200 and cevap["n"] == 2 and kayit.kayit == [("kd", 13), ("ku", 13)]
@@ -259,8 +264,9 @@ def test_kurulum_parcalari():
     assert ico[:4] == b"\x00\x00\x01\x00"                  # geçerli ICO başlığı
     kur = (kok / "kur.ps1").read_bytes()
     assert kur.startswith(b"\xef\xbb\xbf")                   # PowerShell 5.1 Türkçe için UTF-8 BOM
+    assert kur.count(b"\r\n") == kur.count(b"\n")              # Windows satır sonu (CRLF)
     assert not kur.startswith(b"\xef\xbb\xbf" * 2)           # çift BOM: ilk satır yorum sayılmaz, hata verir
-    for dosya in ("tv_yansit.py", "girdi.py", "panel.html", "tv.html", "tv-yansit.ico"):
+    for dosya in ("tv_yansit.py", "girdi.py", "ses.py", "panel.html", "tv.html", "tv-yansit.ico"):
         assert dosya.encode() in kur and (kok / dosya).exists()
     assert isinstance(tv.kurulum_ayari(), dict)
 
@@ -306,3 +312,34 @@ def test_baska_uygulamanin_portunu_kullanmaz(monkeypatch):
             srv.shutdown()
             srv.server_close()
         baska.shutdown()
+
+
+def test_ses_yakala_test_tonu_ve_istek_yanit():
+    if not shutil.which("ffmpeg"):
+        pytest.skip("ffmpeg yok")
+    import ses
+    y = ses.SesYakala(ffmpeg="ffmpeg", test=True)
+    try:
+        assert y.baslat() and y.kaynak == "test"
+        no, veri = y.parcalar_sonra(0, bekle=2)
+        assert no >= 1 and len(veri) % 8 == 0                 # stereo f32 kareler
+        no2, veri2 = y.parcalar_sonra(no, bekle=2)
+        assert no2 > no and veri2                               # yalnızca yeni parçalar
+        no3, _ = y.parcalar_sonra(no2 + 10_000, bekle=0.1)      # sayaç ileride: sıfırlanır, takılmaz
+        assert no3 >= no2
+    finally:
+        y.durdur()
+
+
+def test_stereo_f32_donusum():
+    import array
+    import ses
+    f = array.array("f", [0.1, 0.2, 0.3, 0.4, 0.5, 0.6]).tobytes()     # 3 kanal, 2 kare
+    out = array.array("f"); out.frombytes(ses.stereo_f32(f, 3, "f32"))
+    assert [round(v, 2) for v in out] == [0.1, 0.2, 0.4, 0.5]
+    mono = array.array("f", [0.5, -0.5]).tobytes()
+    out = array.array("f"); out.frombytes(ses.stereo_f32(mono, 1, "f32"))
+    assert [round(v, 2) for v in out] == [0.5, 0.5, -0.5, -0.5]
+    s16 = array.array("h", [16384, -16384]).tobytes()
+    out = array.array("f"); out.frombytes(ses.stereo_f32(s16, 2, "s16"))
+    assert [round(v, 2) for v in out] == [0.5, -0.5]

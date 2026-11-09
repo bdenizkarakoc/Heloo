@@ -31,7 +31,7 @@ Panel tarayıcıda açılır (`http://127.0.0.1:8780/`).
 | | Yol 1: DLNA | Yol 2: TV tarayıcısı |
 |---|---|---|
 | Ne yapılır | Panelde **TV'leri ara**, TV'yi seçin, **TV'ye gönder**'e basın | TV'nin internet tarayıcısına paneldeki adresi yazın (ör. `http://192.168.1.5:8780/4821`) |
-| Ses | TV'den gelir (Stereo Karışımı açıksa) | Bilgisayardan gelir |
+| Ses | TV'den gelir | TV'den gelir (~60 ms gecikme) |
 | Gecikme | 1-3 sn (TV'nin oynatıcısı kendi tamponunu tutar; film ve dizi için) | En düşük: genellikle 30-80 ms (masaüstü ve oyun için) |
 | Görüntü | H.264, ekran kartının donanım kodlayıcısıyla (NVIDIA, Intel, AMD) | MJPEG. Bağlantı zayıflayınca kare atlar, gecikme birikmez |
 
@@ -44,23 +44,26 @@ verirse **Windows ayarlarını aç** ile etkin noktayı elle açın; bunun için
 
 Bilgisayar Miracast destekliyorsa panelde **Yansıt panelini aç (Win+K)** düğmesi de işe yarar.
 
-### TV'den ses almak için (Yol 1)
-Ses → Kayıt cihazları → **Stereo Karışımı**'na sağ tıklayıp Etkinleştir'i seçin. Listede yoksa "Devre dışı
-cihazları göster"i açın. Hiç yoksa ücretsiz VB-Audio Virtual Cable kurun; "CABLE Output" da tanınır.
+### Ses
+Bilgisayarın sesi, Windows'un ses çıkışından doğrudan yakalanır (WASAPI). Stereo Karışımı ya da ek sürücü
+gerekmez. Yakalanamazsa Stereo Karışımı ya da VB-Audio "CABLE Output" denenir. Ses iki yolda da TV'den çıkar. TV
+tarayıcısı ilk açılışta izin isterse ekranda "Ses için Tamam'a basın" yazar.
 
 ## TV'den kumanda: klavye, fare, oyun kolu
 
 TV'ye takılı (USB ya da Bluetooth) klavye, fare ve oyun kolu, TV kumandasının ok, Tamam ve Geri tuşları
 bilgisayarı yönetir. Bu özellik **Yol 2 (TV tarayıcısı)** ile çalışır. DLNA'da TV'nin oynatıcısı tuşları iletmez.
 
-1. Paneldeki **TV'den kumandayı aç** kutusunu işaretleyin. Güvenlik için varsayılan olarak kapalıdır.
+1. Kumanda varsayılan olarak açıktır. İsterseniz paneldeki **TV'den kumandayı aç** kutusuyla kapatabilirsiniz.
 2. TV tarayıcısında adresi açın. Sağ üstte "Kumanda açık" yazar. İlk tıklama yalnızca tam ekran yapar.
 
 | TV'de | Bilgisayarda |
 |---|---|
 | Fare / sihirli kumanda imleci | Fare (görüntüde nereye tıklarsanız bilgisayarda orası) |
 | Klavye | Klavye. Harfler gerçek tuş olarak gider, oyunlarda W/A/S/D basılı tutulabilir. Ş, ğ, ü gibi harfler aynen yazılır |
-| TV kumandası: oklar, Tamam, Geri, Oynat/Duraklat | Ok tuşları, Enter, Esc, medya tuşları |
+| TV kumandası, **fare modu** (varsayılan) | Oklar imleci yürütür (basılı tutunca hızlanır), Tamam sol tık, Yeşil sağ tık |
+| TV kumandası, **ok tuşu modu** | Ok tuşları, Enter; Geri Esc'tir; Oynat/Duraklat medya tuşlarıdır |
+| Modu değiştirmek | **Kırmızı** tuş ya da **Tamam'a uzun basmak** (gerçek fare/klavye kullanılınca kendiliğinden ok tuşu moduna geçer) |
 | Oyun kolu | Aşağıya bakın |
 
 **Oyun kolu iki şekilde çalışır:**
@@ -89,6 +92,7 @@ Daha da düşürmek için: Bilgisayarı kabloyla modeme bağlayın, TV'yi 5 GHz 
 
 ## Kalite ve menzil
 
+- **Ultra düşük gecikme**: 540p 60 fps. TV'nin tarayıcısı yavaşsa ya da Wi-Fi zayıfsa (sol üstte fps 60'tan düşükse).
 - **En düşük gecikme** (varsayılan): 720p 60 fps. Küçük kareler ağda hızlı gider, oyun ve fare için uygundur.
 - **Yüksek kalite**: 1080p 30 fps, 15 Mbit/sn
 - **Akıcı**: 1080p 60 fps, oyun için

@@ -41,6 +41,7 @@ from pathlib import Path
 KOK = Path(__file__).resolve().parent
 sys.path.insert(0, str(KOK))
 import girdi  # noqa: E402
+import ses as ses_mod  # noqa: E402
 
 UYGULAMA_ADI = "TV Yansıt"
 VARSAYILAN_PORT = 8780  # 8765'i Reels Fabrikası kullanır; çakışmasın
@@ -53,6 +54,8 @@ PENCERESIZ = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000) if WINDOWS else
 AYARLAR = {
     "gecikme": {"ad": "En düşük gecikme (720p 60, oyun)", "yukseklik": 720, "fps": 60, "bitrate": 8,
                 "mjpeg_q": 6, "olcek": "bilinear"},
+    "ultra": {"ad": "Ultra düşük gecikme (540p 60, yavaş TV / zayıf Wi-Fi)", "yukseklik": 540, "fps": 60,
+              "bitrate": 5, "mjpeg_q": 7, "olcek": "bilinear"},
     "kalite": {"ad": "Yüksek kalite (1080p 30)", "yukseklik": 1080, "fps": 30, "bitrate": 15, "mjpeg_q": 3},
     "akici": {"ad": "Akıcı (1080p 60, oyun)", "yukseklik": 1080, "fps": 60, "bitrate": 20, "mjpeg_q": 4},
     "uzak": {"ad": "Uzak menzil (720p, zayıf Wi-Fi)", "yukseklik": 720, "fps": 30, "bitrate": 5, "mjpeg_q": 7},
@@ -612,13 +615,16 @@ def yakalama_girdisi(fps: int, kaynak: str, ffmpeg: str = "ffmpeg") -> tuple[lis
     return g + ["-i", "desktop"], ""
 
 
-def ts_komutu(ffmpeg: str, ayar: dict, enc: str, ses: str | None, kaynak: str = "ana") -> list[str]:
-    """DLNA için canlı MPEG-TS (H.264 + AAC) → stdout."""
+def ts_komutu(ffmpeg: str, ayar: dict, enc: str, ses: str | None, kaynak: str = "ana",
+              ses_oran: int = 48000) -> list[str]:
+    """DLNA için canlı MPEG-TS (H.264 + AAC) → stdout. ses="pipe": bilgisayar sesi stdin'den (f32le stereo)."""
     fps, br, h = ayar["fps"], ayar["bitrate"], ayar["yukseklik"]
     g = fps  # saniyede bir anahtar kare: TV bağlanınca en geç 1 sn'de görüntü
     giris, onek = yakalama_girdisi(fps, kaynak, ffmpeg)
     cmd = [ffmpeg, "-hide_banner", "-loglevel", "error"] + giris
-    if ses:
+    if ses == "pipe":
+        cmd += ["-thread_queue_size", "64", "-f", "f32le", "-ar", str(ses_oran), "-ac", "2", "-i", "pipe:0"]
+    elif ses:
         cmd += ["-thread_queue_size", "16", "-f", "dshow", "-audio_buffer_size", "20", "-i", f"audio={ses}"]
     olcek = ayar.get("olcek", "lanczos")
     cmd += ["-vf", f"{onek}scale=-2:{h}:flags={olcek},format=yuv420p", "-c:v", enc]
@@ -681,7 +687,7 @@ class Yayin:
         self.hata = ""
         self.komut: list[str] = []
 
-    def baslat(self, komut: list[str]) -> None:
+    def baslat(self, komut: list[str], ses_kaynagi=None) -> None:
         with self.kilit:
             if self.surec and self.surec.poll() is None and komut == self.komut:
                 return
@@ -689,7 +695,10 @@ class Yayin:
         self.komut = komut
         self.hata = ""
         self.surec = subprocess.Popen(komut, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                      stdin=subprocess.DEVNULL, creationflags=PENCERESIZ, bufsize=0)
+                                      stdin=subprocess.PIPE if ses_kaynagi else subprocess.DEVNULL,
+                                      creationflags=PENCERESIZ, bufsize=0)
+        if ses_kaynagi:
+            threading.Thread(target=self._ses_besle, args=(self.surec, ses_kaynagi), daemon=True).start()
         threading.Thread(target=self._oku, args=(self.surec,), daemon=True).start()
         threading.Thread(target=self._hata_oku, args=(self.surec,), daemon=True).start()
 
@@ -706,6 +715,18 @@ class Yayin:
                 p.kill()
         with self.kilit:
             self.kilit.notify_all()
+
+    @staticmethod
+    def _ses_besle(p: subprocess.Popen, kaynak) -> None:
+        """Bilgisayar sesini ffmpeg'e (DLNA kodlayıcısı) aktarır."""
+        no = 0
+        try:
+            while p.poll() is None:
+                no, veri = kaynak.parcalar_sonra(no, bekle=0.5)
+                if veri:
+                    p.stdin.write(veri)
+        except (OSError, ValueError):
+            pass
 
     def _hata_oku(self, p: subprocess.Popen) -> None:
         for satir in iter(p.stderr.readline, b""):
@@ -807,7 +828,8 @@ class Uygulama:
         self._ses: str | None | bool = False  # False = henüz bakılmadı
         self.miracast = miracast_destegi()
         self.hotspot: dict = {}
-        self.kumanda_acik = False  # TV'den klavye/fare/oyun kolu: panelden açılır
+        self.kumanda_acik = True  # TV'den klavye/fare/oyun kolu/kumanda (PIN'li); panelden kapatılabilir
+        self.ses_y: ses_mod.SesYakala | None = None
         self.kumanda: girdi.Kumanda | None = None
         self.kumanda_son = 0.0
         self.kare_istek = 0.0
@@ -833,11 +855,21 @@ class Uygulama:
             except OSError as e:
                 self.mesaj = f"Lossless Scaling açılamadı: {e}"
 
+    def ses_yakalayici(self) -> "ses_mod.SesYakala | None":
+        """Bilgisayar sesi: WASAPI (ek ayar gerekmez) → Stereo Karışımı → yok. Çalışıyorsa döndürür."""
+        if self.ses_y is None:
+            self.ses_y = ses_mod.SesYakala(ffmpeg=self.ffmpeg, dshow_aygit=self.ses() if WINDOWS else None,
+                                           test=self.kaynak == "test")
+        return self.ses_y if self.ses_y.baslat() else None
+
     def ts_baslat(self) -> None:
         if not self.ffmpeg:
             raise RuntimeError("ffmpeg bulunamadı (README: kurulum).")
         ayar = AYARLAR[self.ayar_adi]
-        self.ts.baslat(ts_komutu(self.ffmpeg, ayar, kodlayici(self.ffmpeg), self.ses(), self.kaynak))
+        y = self.ses_yakalayici()
+        komut = ts_komutu(self.ffmpeg, ayar, kodlayici(self.ffmpeg), "pipe" if y else None, self.kaynak,
+                          y.oran if y else 48000)
+        self.ts.baslat(komut, ses_kaynagi=y)
 
     def mjpeg_baslat(self) -> None:
         if not self.ffmpeg:
@@ -860,6 +892,8 @@ class Uygulama:
         self.aktif_tv = None
         self.ts.durdur()
         self.mjpeg.durdur()
+        if self.ses_y:
+            self.ses_y.durdur()
 
     def kumanda_uygula(self, olaylar: list) -> int:
         if self.kumanda is None:
@@ -879,11 +913,15 @@ class Uygulama:
             for y in (self.ts, self.mjpeg):
                 if y.calisiyor() and not y.izleyiciler and not y.bagli and time.time() - y.son_izleyici > 15:
                     y.durdur()
+            s = self.ses_y
+            if s and s.calisiyor and not self.ts.calisiyor() and time.time() - s.son_istek > 20:
+                s.durdur()
 
     def durum(self) -> dict:
         return {"uygulama": UYGULAMA_ADI, "ip": self.ip, "port": self.port, "pin": self.pin, "tv_adresi": self.tv_adresi(),
                 "tv_adresleri": [self.tv_adresi(ip) for ip in yerel_ipler()], "hotspot": self.hotspot,
-                "ffmpeg": bool(self.ffmpeg), "kodlayici": _kodlayici_onbellek, "ses": self._ses or None,
+                "ffmpeg": bool(self.ffmpeg), "kodlayici": _kodlayici_onbellek, "ses": (self.ses_y.kaynak if self.ses_y and self.ses_y.calisiyor else None),
+                "ses_hata": self.ses_y.hata if self.ses_y else "",
                 "miracast": self.miracast, "ayar": self.ayar_adi,
                 "ayarlar": {k: v["ad"] for k, v in AYARLAR.items()},
                 "tvler": [{"ad": t["ad"], "ip": t["ip"]} for t in self.tvler],
@@ -902,6 +940,7 @@ def tv_sayfasi(app: "Uygulama") -> bytes:
     sanal = app.kumanda.sanal_kol if app.kumanda else girdi.vgamepad_var()
     html = (KOK / "tv.html").read_text(encoding="utf-8")
     html = (html.replace("__AKIS__", f"{p}/canli.mjpg").replace("__KARE__", f"{p}/kare.jpg")
+            .replace("__SES__", f"{p}/ses")
             .replace("__GIRDI__", f"{p}/girdi"))
     return html.replace("__KUMANDA__", "true").replace("__SANALKOL__", "true" if sanal else "false").encode("utf-8")
 
@@ -954,6 +993,8 @@ def sunucu_kur(app: Uygulama) -> type[BaseHTTPRequestHandler]:
                 return self._gonder(200, tv_sayfasi(app), "text/html; charset=utf-8")
             if yol == f"{p}/kare.jpg":
                 return self._kare()
+            if yol == f"{p}/ses":
+                return self._ses()
             if yol == f"{p}/canli.mjpg":
                 return self._mjpeg()
             if yol == f"{p}/ekran.ts":
@@ -997,6 +1038,20 @@ def sunucu_kur(app: Uygulama) -> type[BaseHTTPRequestHandler]:
                     self.wfile.write(parca)
             except (ConnectionError, OSError, RuntimeError):
                 pass
+
+        def _ses(self):
+            """Bilgisayar sesi (f32le stereo), istek-yanıt: son istekten bu yana gelen parçalar."""
+            try:
+                gorulen = int(urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get("n", ["0"])[0])
+            except ValueError:
+                gorulen = 0
+            self.connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            y = app.ses_yakalayici()
+            if not y:
+                return self._gonder(204, b"", "application/octet-stream", {"X-Ses": "yok"})
+            no, veri = y.parcalar_sonra(gorulen, bekle=0.5, en_az=2)   # ~20 ms'lik paketler
+            self._gonder(200, veri, "application/octet-stream",
+                         {"X-Ses-No": str(no), "X-Oran": str(y.oran), "X-Kanal": "2"})
 
         def _kare(self):
             """Tek kare (istek-yanıt). X-Kare: kare numarası, X-Yas: kare ne kadar bekledi (ms)."""
@@ -1115,6 +1170,10 @@ class OzelSunucu(ThreadingHTTPServer):
     Reels Fabrikası'na gidiyordu); bu yüzden kapalı ve Windows'ta SO_EXCLUSIVEADDRUSE açık."""
     allow_reuse_address = False
     daemon_threads = True
+
+    def handle_error(self, request, client_address):
+        if not isinstance(sys.exc_info()[1], (ConnectionError, TimeoutError)):  # TV sayfayı kapattı: sessiz geç
+            super().handle_error(request, client_address)
 
     def server_bind(self):
         if WINDOWS and hasattr(socket, "SO_EXCLUSIVEADDRUSE"):

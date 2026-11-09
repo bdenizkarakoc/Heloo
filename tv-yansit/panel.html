@@ -74,13 +74,14 @@
     <div class="adres" id="tvAdresi">…</div>
     <ol>
       <li>Görüntü gelince ekrana bir kez tıklayın → tam ekran.</li>
-      <li>Ses bilgisayardan çıkar (TV tarayıcısı yalnızca görüntü alır). Sesi TV'den isterseniz Yol 1'i kullanın.</li>
+      <li>Ses de TV'den çıkar (bilgisayarın sesi ~60 ms gecikmeyle). TV ilk açılışta "Ses için Tamam'a basın" derse kumandada Tamam'a basın.</li>
     </ol>
   </section>
 
   <section class="kart">
     <h2>TV'den kumanda: klavye, fare, oyun kolu</h2>
-    <p>TV'ye takılı (USB ya da Bluetooth) klavye, fare ve oyun kolu ile TV kumandasının ok, Tamam ve Geri tuşları bilgisayarı yönetir. Yol 2 (TV tarayıcısı) ile çalışır.</p>
+    <p>TV kumandası, TV'ye takılı (USB ya da Bluetooth) klavye, fare ve oyun kolu bilgisayarı yönetir. Yol 2 (TV tarayıcısı) ile çalışır.</p>
+    <p>TV kumandası: <b>Fare modu</b>nda oklar imleci yürütür (basılı tutunca hızlanır), Tamam tıklar, Yeşil sağ tıklar. <b>Ok tuşu modu</b>nda oklar ve Tamam bilgisayara tuş olarak gider. Modu değiştirmek için Kırmızı tuşa ya da Tamam'a uzun basın.</p>
     <p><label><input type="checkbox" id="kumanda"> TV'den kumandayı aç</label></p>
     <p id="kolBilgi"></p>
   </section>
@@ -141,7 +142,7 @@ function goster(d) {
   const et = $('etiketler'); et.replaceChildren();
   et.appendChild(etiket(d.ffmpeg ? 'ffmpeg hazır' : 'ffmpeg yok!', d.ffmpeg ? 'iyi' : 'kotu'));
   if (d.kodlayici) et.appendChild(etiket('Kodlayıcı: ' + d.kodlayici, d.kodlayici === 'libx264' ? '' : 'iyi'));
-  et.appendChild(etiket(d.ses ? 'Ses: ' + d.ses : 'Bilgisayar sesi yakalanmıyor (Stereo Karışımı kapalı)', d.ses ? 'iyi' : ''));
+  et.appendChild(etiket(d.ses ? 'Ses: ' + d.ses : (d.ses_hata ? 'Ses alınamadı: ' + d.ses_hata : 'Ses: TV bağlanınca başlar'), d.ses ? 'iyi' : (d.ses_hata ? 'kotu' : '')));
   et.appendChild(etiket(d.lossless_yuklu ? 'Lossless Scaling yüklü' : 'Lossless Scaling bulunamadı (Steam ile açılmayı dener)'));
   if (d.aktif_tv) et.appendChild(etiket('Yansıtılıyor: ' + d.aktif_tv, 'iyi'));
   if (d.kumanda_bagli) et.appendChild(etiket('TV kumandası kullanılıyor', 'iyi'));
