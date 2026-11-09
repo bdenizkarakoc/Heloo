@@ -232,6 +232,10 @@ def cmd_hoparlor(args, cfg) -> int:
             raise StageError(f"bilinmeyen hazır: {args.preset} ({', '.join(hoparlor.PRESETS)})")
         data["preset"] = args.preset
     sets = {k: getattr(args, k) for k in ("bas", "orta", "vokal", "tiz") if getattr(args, k) is not None}
+    if args.guc:
+        sets["guc"] = args.guc
+    if args.seviye is not None:
+        sets["yukseklik"] = args.seviye
     if args.kapat or args.ac:
         sets["acik"] = bool(args.ac)
     if sets:
@@ -447,6 +451,8 @@ def main() -> int:
     p.add_argument("--hoparlor", help="hoparlör kimliği (--list)")
     for k in ("bas", "orta", "vokal", "tiz"):
         p.add_argument(f"--{k}", type=float, help="dB (-12…12)")
+    p.add_argument("--guc", choices=["guvenli", "dengeli", "yuksek"], help="ses gücü: cızırtı koruması ne kadar sesi kıssın")
+    p.add_argument("--seviye", type=float, help="genel ses seviyesi dB (-20…+10)")
     p.add_argument("--kapat", action="store_true", help="ayarı kapat (düz ses)")
     p.add_argument("--ac", action="store_true")
     p.add_argument("--list", action="store_true")

@@ -30,6 +30,12 @@ Güncellemek için aynı satırı yeniden çalıştır. Kaldırmak için:
 
 - Program açılırken bir kez yönetici izni ister (Equalizer APO klasörüne yazmak için) — **Evet** de.
 - Her değişiklik anında sese uygulanır; kaydet düğmesi yok.
+- Her sürgü **0,5 dB** adımla oynar (sürükle, ok tuşları ya da fare tekerleği); yanındaki kutuya değeri elle de yazabilirsin.
+- **Ses gücü:** *Güvenli* (hiç cızırtı yok, yükselttiğin kadar ses kısılır) · *Dengeli* (varsayılan, yarısı kadar kısılır) ·
+  *Yüksek* (hiç kısılmaz; çok bas açınca yüksek seste bazı şarkılarda bozulma olabilir). *Ses seviyesi* +10 dB'ye kadar açılır.
+- Hâlâ kısıksa: **Windows ses ayarları** düğmesi → Hoparlörler → Özellikler → Geliştirmeler → *Ses yüksekliği eşitleme*
+  (Loudness Equalization) aç; sesi bozmadan yükseltir.
+- 10 bant, Equalizer APO'nun pürüzsüz **GraphicEQ** süzgeciyle uygulanır.
 - Z607'de Subwoofer/Merkez/Arka sürgüleri için Windows'ta *Ses ayarları → Hoparlörler → Yapılandır → 5.1 Surround* seç.
 - Kumandadaki bas düzeyini ortada bırak, ince ayarı buradan yap.
 - Ayar yalnızca bilgisayardan çalan seste geçerli; telefondan Bluetooth ile çalarken uygulanmaz.

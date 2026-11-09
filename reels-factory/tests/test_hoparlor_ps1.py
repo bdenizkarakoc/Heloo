@@ -24,3 +24,10 @@ def test_installer_is_ascii_and_points_to_app():
     text = (APP / "kur.ps1").read_text(encoding="utf-8")
     assert text.isascii()                       # irm | iex hangi kodlamayla okursa okusun bozulmaz
     assert "/hoparlor-app/kur.ps1" in text and "$Raw/HoparlorSesAyari.ps1" in text
+
+
+def test_power_modes_match_python():
+    text = PS1.read_bytes().decode("utf-8-sig")
+    for k, (_, pay) in h.POWER.items():
+        assert re.search(rf"{k}\s+= @\{{ ad = '[^']*';\s+pay = {pay};", text), k
+    assert "GraphicEQ: " in text and f"$LevelMax = {int(h.LEVEL_MAX)}" in text

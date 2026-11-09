@@ -68,6 +68,14 @@ $Chans = @(
   @{ k = 'arka';   ad = 'Arka hoparlörler'; ch = 'RL RR SL SR' }
 )
 
+# Ses gücü: yükseltilen yerde en yüksek noktanın ne kadarı kadar genel ses kısılsın (cızırtı koruması).
+$Power = [ordered]@{
+  guvenli = @{ ad = 'Güvenli'; pay = 1.0; ipucu = 'Hiç cızırtı olmaz; yükselttiğin kadar genel ses kısılır.' }
+  dengeli = @{ ad = 'Dengeli'; pay = 0.5; ipucu = 'Önerilen: ses az kısılır, cızırtı nadir.' }
+  yuksek  = @{ ad = 'Yüksek';  pay = 0.0; ipucu = 'Ses hiç kısılmaz. Çok bas açıp sonuna kadar dinlerken bazı şarkılarda bozulma olabilir.' }
+}
+$LevelMax = 10
+
 $AppDir = Join-Path $(if ($env:APPDATA) { $env:APPDATA } else { $HOME }) 'HelooHoparlor'
 $StateFile = Join-Path $AppDir 'ayarlar.json'
 $ApoFile = 'heloo-hoparlor.txt'
@@ -79,7 +87,7 @@ function New-Settings([string]$preset = 'duz') {
   $p = $Presets[$preset]
   $m = 0; if ($p.ContainsKey('merkez')) { $m = $p.merkez }
   [pscustomobject]@{ acik = $true; preset = $preset; bands = @($p.b | ForEach-Object { [double]$_ })
-    bas = 0.0; orta = 0.0; vokal = 0.0; tiz = 0.0; seviye = 0.0; sub = 0.0; merkez = [double]$m; arka = 0.0 }
+    bas = 0.0; orta = 0.0; vokal = 0.0; tiz = 0.0; seviye = 0.0; guc = 'dengeli'; sub = 0.0; merkez = [double]$m; arka = 0.0 }
 }
 
 function New-Speaker([string]$id, [string]$ad, [string]$kind) {
@@ -91,12 +99,13 @@ function Clamp([double]$v, [double]$lo = -12, [double]$hi = $Limit) { [math]::Ro
 function Repair-Settings($s) {
   $d = New-Settings
   if ($null -eq $s) { return $d }
-  foreach ($k in 'acik', 'preset', 'bas', 'orta', 'vokal', 'tiz', 'seviye', 'sub', 'merkez', 'arka') {
+  foreach ($k in 'acik', 'preset', 'bas', 'orta', 'vokal', 'tiz', 'seviye', 'guc', 'sub', 'merkez', 'arka') {
     if ($s.PSObject.Properties[$k]) { $d.$k = $s.$k }
   }
   if ($s.PSObject.Properties['bands'] -and @($s.bands).Count -eq $Bands.Count) { $d.bands = @($s.bands | ForEach-Object { Clamp $_ }) }
   foreach ($k in 'bas', 'orta', 'vokal', 'tiz', 'sub', 'merkez', 'arka') { $d.$k = Clamp $d.$k }
-  $d.seviye = Clamp $d.seviye -20 6
+  $d.seviye = Clamp $d.seviye -20 $LevelMax
+  if (-not $Power.Contains([string]$d.guc)) { $d.guc = 'dengeli' }
   $d.acik = [bool]$d.acik
   if (-not ($Presets.Contains([string]$d.preset) -or $d.preset -eq 'ozel')) { $d.preset = 'ozel' }
   $d
@@ -128,15 +137,33 @@ function Get-Active($st) {
 }
 
 # ------------------------------------------------------------------ süzgeçler
+# 10 bant Equalizer APO GraphicEQ ile uygulanır: pürüzsüz eğri, bantlar arasında dalgalanma yok.
+function Get-Graphic($s, [string]$kind) {
+  $k = $Kinds[$kind]
+  for ($i = 0; $i -lt $Bands.Count; $i++) {
+    $g = [math]::Min([double]$s.bands[$i], [double]$k.max)
+    if ($k.hp -and $Bands[$i] -lt $k.hp * 1.3) { $g = [math]::Min($g, 0) }   # çalamadığı bas yükseltilmez
+    , @([double]$Bands[$i], $g)
+  }
+}
+
+function Get-GraphicDb($pts, [double]$f) {
+  if ($f -le $pts[0][0]) { return $pts[0][1] }
+  $last = $pts[$pts.Count - 1]
+  if ($f -ge $last[0]) { return $last[1] }
+  for ($i = 1; $i -lt $pts.Count; $i++) {
+    if ($f -le $pts[$i][0]) {
+      $t = [math]::Log($f / $pts[$i - 1][0]) / [math]::Log($pts[$i][0] / $pts[$i - 1][0])
+      return $pts[$i - 1][1] + ($pts[$i][1] - $pts[$i - 1][1]) * $t
+    }
+  }
+  0.0
+}
+
 function Get-Filters($s, [string]$kind) {
   $k = $Kinds[$kind]; $mx = [double]$k.max
   $out = New-Object System.Collections.ArrayList
   if ($k.hp) { [void]$out.Add(@('HP', [double]$k.hp, 0.0, 0.71)) }
-  for ($i = 0; $i -lt $Bands.Count; $i++) {
-    $g = [math]::Min([double]$s.bands[$i], $mx)
-    if ($k.hp -and $Bands[$i] -lt $k.hp * 1.3) { $g = [math]::Min($g, 0) }   # çalamadığı bas yükseltilmez
-    if ($g -ne 0) { [void]$out.Add(@('PK', [double]$Bands[$i], $g, 1.41)) }
-  }
   foreach ($x in $Simple) {
     $g = [math]::Min([double]$s.($x.k), $mx)
     if ($x.k -eq 'bas' -and $k.hp -ge 100) { $g = [math]::Min($g, 3) }
@@ -180,11 +207,15 @@ function Get-Curve($flt) {
 function Get-Analysis($sp) {
   $s = $sp.settings; $k = $Kinds[$sp.kind]
   $flt = Get-Filters $s $sp.kind
-  $curve = if ($flt.Count) { @(Get-Curve $flt) } else { @($CurveFreqs | ForEach-Object { 0.0 }) }
+  $geq = @(Get-Graphic $s $sp.kind)
+  $bq = if ($flt.Count) { @(Get-Curve $flt) } else { @($CurveFreqs | ForEach-Object { 0.0 }) }
+  $curve = @(for ($i = 0; $i -lt $CurveFreqs.Count; $i++) { $bq[$i] + (Get-GraphicDb $geq $CurveFreqs[$i]) })
   $peak = [math]::Max(0, ($curve[3..($curve.Count - 1)] | Measure-Object -Maximum).Maximum)
   $chPeak = 0.0
   if ($k.k51) { foreach ($c in $Chans) { $chPeak = [math]::Max($chPeak, [double]$s.($c.k)) } }
-  @{ filters = $flt; curve = $curve; preamp = [math]::Round($s.seviye - $peak - $chPeak, 1) }
+  $pay = [double]$Power[[string]$s.guc].pay
+  if ($pay -lt 1) { $chPeak = 0.0 }   # kanal yükseltmesi yalnızca Güvenli'de genel sesi kısar
+  @{ filters = $flt; graphic = $geq; curve = $curve; peak = $peak; preamp = [math]::Round($s.seviye - $pay * $peak - $chPeak, 1) }
 }
 
 # ------------------------------------------------------------------ Equalizer APO
@@ -200,6 +231,9 @@ function Get-Block($sp) {
   if (-not $sp.settings.acik) { [void]$l.Add('# kapalı (düz ses)'); return ($l -join "`r`n") }
   $an = Get-Analysis $sp
   [void]$l.Add("Preamp: $(N $an.preamp) dB")
+  if (@($an.graphic | Where-Object { $_[1] -ne 0 }).Count) {
+    [void]$l.Add('GraphicEQ: ' + (($an.graphic | ForEach-Object { "$(N $_[0] '0') $(N $_[1])" }) -join '; '))
+  }
   foreach ($x in $an.filters) {
     if ($x[0] -eq 'HP') { [void]$l.Add("Filter: ON HP Fc $(N $x[1] '0') Hz Q $(N $x[3] '0.00')") }
     else { [void]$l.Add("Filter: ON $($x[0]) Fc $(N $x[1] '0') Hz Gain $(N $x[2]) dB Q $(N $x[3] '0.00')") }
@@ -332,17 +366,40 @@ foreach ($id in $Presets.Keys) {
 
 # --- sade sürgüler
 $form.Controls.Add((L 'SESİNİ KENDİN AYARLA' 16 216 300 $Bold $C.muted))
-$tracks = @{}; $vals = @{}
+$form.Controls.Add((L 'Ses gücü:' 16 245 140))
+$powerBtns = @{}; $px0 = 156
+foreach ($id in $Power.Keys) {
+  $b = New-Object Windows.Forms.Button -Property @{ Left = $px0; Top = 240; Width = 92; Height = 28; Text = $Power[$id].ad; Tag = $id; FlatStyle = 'Flat'; ForeColor = $C.ink; BackColor = $C.card }
+  $b.Add_Click({ (Get-Active $script:st).settings.guc = $this.Tag; Show-Power; Request-Apply })
+  $form.Controls.Add($b); $powerBtns[$id] = $b; $px0 += 98
+}
+$lblPower = L '' 16 272 470 $Font $C.muted; $form.Controls.Add($lblPower)
+
+# Her sürgü 0,5 dB adımla oynar (ok tuşları / fare tekerleği / sürükleme); yanındaki kutuya değer elle yazılabilir.
+$tracks = @{}; $nums = @{}; $script:syncing = $false
+function New-Num($x, $y, $w, [double]$lo, [double]$hi, $tag) {
+  New-Object Windows.Forms.NumericUpDown -Property @{ Left = $x; Top = $y; Width = $w; Minimum = [decimal]$lo; Maximum = [decimal]$hi; DecimalPlaces = 1
+    Increment = [decimal]0.5; Tag = $tag; BackColor = $C.card; ForeColor = $C.acc; Font = $Bold; TextAlign = 'Center' }
+}
+function Set-Num($num, [double]$v) { $num.Value = [decimal][math]::Max([double]$num.Minimum, [math]::Min([double]$num.Maximum, $v)) }
 function Add-Slider([string]$key, [string]$label, $y, [int]$lo = -12, [int]$hi = 12) {
   $form.Controls.Add((L $label 16 ($y + 6) 140))
-  $tb = New-Object Windows.Forms.TrackBar -Property @{ Left = 156; Top = $y; Width = 250; Minimum = $lo; Maximum = $hi; TickFrequency = 3; Tag = $key; BackColor = $C.bg }
-  $v = L '0 dB' 410 ($y + 6) 70 $Bold $C.acc
-  $tb.Add_ValueChanged({ if ($script:loading) { return }; $sp = Get-Active $script:st; $sp.settings.($this.Tag) = [double]$this.Value; Show-Value $this.Tag; Request-Apply })
-  $form.Controls.AddRange(@($tb, $v)); $script:tracks[$key] = $tb; $script:vals[$key] = $v
+  $tb = New-Object Windows.Forms.TrackBar -Property @{ Left = 156; Top = $y; Width = 250; Minimum = $lo * 2; Maximum = $hi * 2; TickFrequency = 2
+    SmallChange = 1; LargeChange = 2; Tag = $key; BackColor = $C.bg }
+  $num = New-Num 412 ($y + 3) 70 $lo $hi $key
+  $tb.Add_ValueChanged({
+      if ($script:loading -or $script:syncing) { return }
+      $v = $this.Value / 2.0; (Get-Active $script:st).settings.($this.Tag) = $v
+      $script:syncing = $true; Set-Num $script:nums[$this.Tag] $v; $script:syncing = $false; Request-Apply })
+  $num.Add_ValueChanged({
+      if ($script:loading -or $script:syncing) { return }
+      $v = [math]::Round([double]$this.Value * 2) / 2.0; (Get-Active $script:st).settings.($this.Tag) = $v
+      $script:syncing = $true; $script:tracks[$this.Tag].Value = [int]($v * 2); $script:syncing = $false; Request-Apply })
+  $form.Controls.AddRange(@($tb, $num)); $script:tracks[$key] = $tb; $script:nums[$key] = $num
 }
-$y = 240
+$y = 296
 foreach ($x in $Simple) { Add-Slider $x.k $x.ad $y; $y += 40 }
-Add-Slider 'seviye' 'Ses seviyesi' $y -20 6; $y += 48
+Add-Slider 'seviye' 'Ses seviyesi' $y -20 $LevelMax; $y += 48
 $lbl51 = L '5.1 kanal düzeyleri (Z607)' 16 $y 300 $Font $C.muted; $form.Controls.Add($lbl51); $y += 24
 foreach ($x in $Chans) { Add-Slider $x.k $x.ad $y; $y += 40 }
 
@@ -369,28 +426,44 @@ $pic.Add_Paint({
 
 # --- 10 bant
 $form.Controls.Add((L 'GELİŞMİŞ EKOLAYZIR (10 BANT)' 500 506 300 $Bold $C.muted))
-$bandTracks = @(); $bandVals = @()
+$bandTracks = @(); $bandNums = @()
+function Set-Band([int]$i, [double]$v) {
+  $sp = Get-Active $script:st; $sp.settings.bands[$i] = $v; $sp.settings.preset = 'ozel'; Show-Presets; Request-Apply
+}
 for ($i = 0; $i -lt $Bands.Count; $i++) {
   $x0 = 500 + $i * 47
-  $v = L '0' $x0 528 44 $Bold $C.acc; $v.TextAlign = 'MiddleCenter'
-  $tb = New-Object Windows.Forms.TrackBar -Property @{ Left = $x0; Top = 548; Height = 150; Width = 44; Orientation = 'Vertical'; Minimum = -12; Maximum = 12; TickFrequency = 3; Tag = $i; BackColor = $C.bg }
+  $num = New-Num $x0 528 45 -12 12 $i; $num.Font = $Font
+  $tb = New-Object Windows.Forms.TrackBar -Property @{ Left = $x0; Top = 554; Height = 144; Width = 44; Orientation = 'Vertical'; Minimum = -24; Maximum = 24
+    TickFrequency = 2; SmallChange = 1; LargeChange = 2; Tag = $i; BackColor = $C.bg }
   $f = $Bands[$i]; $fl = L $(if ($f -ge 1000) { "$($f / 1000)k" } else { "$f" }) $x0 700 44 $Font $C.muted; $fl.TextAlign = 'MiddleCenter'
   $tb.Add_ValueChanged({
-      if ($script:loading) { return }
-      $sp = Get-Active $script:st; $sp.settings.bands[$this.Tag] = [double]$this.Value; $sp.settings.preset = 'ozel'
-      $script:bandVals[$this.Tag].Text = "$($this.Value)"; Show-Presets; Request-Apply })
-  $form.Controls.AddRange(@($v, $tb, $fl)); $bandTracks += $tb; $bandVals += $v
+      if ($script:loading -or $script:syncing) { return }
+      $v = $this.Value / 2.0
+      $script:syncing = $true; Set-Num $script:bandNums[$this.Tag] $v; $script:syncing = $false; Set-Band $this.Tag $v })
+  $num.Add_ValueChanged({
+      if ($script:loading -or $script:syncing) { return }
+      $v = [math]::Round([double]$this.Value * 2) / 2.0
+      $script:syncing = $true; $script:bandTracks[$this.Tag].Value = [int]($v * 2); $script:syncing = $false; Set-Band $this.Tag $v })
+  $form.Controls.AddRange(@($num, $tb, $fl)); $bandTracks += $tb; $bandNums += $num
 }
 $btnReset = New-Object Windows.Forms.Button -Property @{ Left = 16; Top = $y + 6; Width = 100; Height = 28; Text = 'Sıfırla'; FlatStyle = 'Flat'; ForeColor = $C.ink }
-$form.Controls.Add($btnReset)
+$btnWin = New-Object Windows.Forms.Button -Property @{ Left = 124; Top = $y + 6; Width = 200; Height = 28; Text = 'Windows ses ayarları'; FlatStyle = 'Flat'; ForeColor = $C.ink }
+$form.Controls.AddRange(@($btnReset, $btnWin))
 
 $status = L '' 16 724 955 $Bold $C.muted
 $form.Controls.Add($status)
-$tip = L 'İpucu: Z607 kumandasındaki bas düzeyini ortada bırak, ince ayarı buradan yap. Telefondan Bluetooth ile çalarken bu ayar uygulanmaz.' 16 700 470 $Font $C.muted
-$tip.Height = 22; $form.Controls.Add($tip)
+$tip = L "Daha yüksek ses: Windows ses ayarları → Hoparlörler → Özellikler → Geliştirmeler → 'Ses yüksekliği eşitleme' aç (sesi bozmadan yükseltir)." 16 690 470 $Font $C.muted
+$tip.Height = 34; $form.Controls.Add($tip)
 
 # ------------------------------------------------------------------ davranış
-function Show-Value([string]$k) { $v = [double](Get-Active $script:st).settings.$k; $script:vals[$k].Text = ('{0}{1} dB' -f $(if ($v -gt 0) { '+' } else { '' }), $v) }
+function Show-Power {
+  $cur = [string](Get-Active $script:st).settings.guc
+  foreach ($id in $powerBtns.Keys) {
+    $on = ($id -eq $cur)
+    $powerBtns[$id].BackColor = $(if ($on) { $C.acc } else { $C.card }); $powerBtns[$id].ForeColor = $(if ($on) { [Drawing.Color]::Black } else { $C.ink })
+  }
+  $lblPower.Text = $Power[$cur].ipucu
+}
 
 function Show-Presets {
   $cur = (Get-Active $script:st).settings.preset
@@ -419,12 +492,13 @@ function Load-UI {
   $cbKind.SelectedIndex = [array]::IndexOf(@($Kinds.Keys), $sp.kind)
   $chkOn.Checked = [bool]$s.acik
   foreach ($key in @($script:tracks.Keys)) {
-    $tb = $script:tracks[$key]; $tb.Value = [int][math]::Max($tb.Minimum, [math]::Min($tb.Maximum, [math]::Round([double]$s.$key))); Show-Value $key
+    $tb = $script:tracks[$key]; $tb.Value = [int][math]::Max($tb.Minimum, [math]::Min($tb.Maximum, [math]::Round([double]$s.$key * 2)))
+    Set-Num $script:nums[$key] ([double]$s.$key)
   }
-  foreach ($x in $Chans) { $script:tracks[$x.k].Enabled = $k.k51 }
+  foreach ($x in $Chans) { $script:tracks[$x.k].Enabled = $k.k51; $script:nums[$x.k].Enabled = $k.k51 }
   $lbl51.Text = $(if ($k.k51) { '5.1 kanal düzeyleri (Windows: 5.1 Surround yapılandır)' } else { '5.1 kanal düzeyleri yalnızca 5.1 hoparlörde' })
-  for ($i = 0; $i -lt $Bands.Count; $i++) { $bandTracks[$i].Value = [int][math]::Round([double]$s.bands[$i]); $bandVals[$i].Text = "$($bandTracks[$i].Value)" }
-  Show-Presets; Fill-Devices
+  for ($i = 0; $i -lt $Bands.Count; $i++) { $bandTracks[$i].Value = [int][math]::Round([double]$s.bands[$i] * 2); Set-Num $bandNums[$i] ([double]$s.bands[$i]) }
+  Show-Presets; Show-Power; Fill-Devices
   $script:loading = $false
 }
 
@@ -434,7 +508,7 @@ $timer.Add_Tick({
     $timer.Stop()
     Save-State $script:st
     $script:an = Get-Analysis (Get-Active $script:st)
-    $lblPre.Text = "Ön kısma: $(N $script:an.preamp) dB (yükseltilen yerde cızırtı olmasın diye otomatik)"
+    $lblPre.Text = "Genel ses: $(N $script:an.preamp) dB" + $(if ($script:an.preamp -lt 0) { "  (cızırtı koruması; daha yüksek ses için 'Ses gücü: Yüksek' ya da 'Ses seviyesi')" } else { '' })
     $pic.Invalidate()
     $r = Write-Apo $script:st
     $status.Text = $r.msg; $status.ForeColor = $(if ($r.ok) { $C.ok } else { $C.bad })
@@ -443,7 +517,7 @@ $timer.Add_Tick({
 
 function Set-Preset([string]$id) {
   $sp = Get-Active $script:st; $old = $sp.settings; $new = New-Settings $id
-  foreach ($key in 'bas', 'orta', 'vokal', 'tiz', 'seviye', 'sub', 'arka', 'acik') { $new.$key = $old.$key }   # kendi sürgülerin korunur
+  foreach ($key in 'bas', 'orta', 'vokal', 'tiz', 'seviye', 'guc', 'sub', 'arka', 'acik') { $new.$key = $old.$key }   # kendi sürgülerin korunur
   $sp.settings = $new; Load-UI; Request-Apply
 }
 
@@ -455,7 +529,8 @@ $cbDev.Add_SelectedIndexChanged({
     if ($cbDev.SelectedIndex -le 0) { $sp.device = ''; $sp.device_ad = '' } else { $d = $script:devList[$cbDev.SelectedIndex - 1]; $sp.device = $d.guid; $sp.device_ad = $d.ad }
     Request-Apply })
 $chkOn.Add_CheckedChanged({ if ($script:loading) { return }; (Get-Active $script:st).settings.acik = $chkOn.Checked; Request-Apply })
-$btnReset.Add_Click({ (Get-Active $script:st).settings = New-Settings 'duz'; Load-UI; Request-Apply })
+$btnReset.Add_Click({ $sp = Get-Active $script:st; $g = $sp.settings.guc; $sp.settings = New-Settings 'duz'; $sp.settings.guc = $g; Load-UI; Request-Apply })
+$btnWin.Add_Click({ Start-Process control.exe -ArgumentList 'mmsys.cpl' })
 $btnApo.Add_Click({ Start-Process $ApoUrl })
 $btnDev.Add_Click({ $script:devs = Get-Devices; $script:loading = $true; Fill-Devices; $script:loading = $false; $status.Text = "$(@($script:devs).Count) ses çıkışı bulundu"; $status.ForeColor = $C.muted })
 $btnAdd.Add_Click({

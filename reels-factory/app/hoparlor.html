@@ -23,15 +23,17 @@
   .muted { color: var(--muted); font-size: 13px; }
   .ok { color: var(--acc2); } .bad { color: var(--bad); }
   .two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; } @media (max-width: 860px) { .two { grid-template-columns: 1fr; } }
-  .sl { display: grid; grid-template-columns: 150px 1fr 64px; gap: 10px; align-items: center; margin: 8px 0; }
+  .sl { display: grid; grid-template-columns: 150px 1fr 78px; gap: 10px; align-items: center; margin: 8px 0; }
   .sl b { font-weight: 600; } .sl span { text-align: right; font-variant-numeric: tabular-nums; color: var(--acc); }
   .sl small { display: block; color: var(--muted); font-size: 12px; font-weight: 400; }
   input[type=range] { width: 100%; accent-color: var(--acc); }
   .eq { display: grid; grid-template-columns: repeat(10, 1fr); gap: 6px; text-align: center; margin-top: 8px; }
-  .eq input { writing-mode: vertical-lr; direction: rtl; height: 160px; width: 28px; }
+  .eq input[type=range] { writing-mode: vertical-lr; direction: rtl; height: 160px; width: 28px; }
+  input.num { width: 100%; max-width: 78px; padding: 5px 4px; border-radius: 8px; border: 1px solid var(--line); background: #0e1424; color: var(--acc); font: 600 13px system-ui; text-align: center; }
+  .eq input.num { max-width: 58px; font-size: 12px; }
   .eq div { display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); }
   .eq .v { color: var(--acc); font-variant-numeric: tabular-nums; }
-  @media (max-width: 600px) { .sl { grid-template-columns: 105px 1fr 58px; } .eq { gap: 2px; } .eq input { width: 20px; } .eq div { font-size: 10px; } }
+  @media (max-width: 600px) { .sl { grid-template-columns: 100px 1fr 64px; } .eq { gap: 2px; } .eq input[type=range] { width: 20px; } .eq input.num { font-size: 10px; padding: 4px 0; } .eq div { font-size: 10px; } }
   canvas { width: 100%; height: 170px; display: block; background: #0e1424; border-radius: 10px; }
   select, input[type=text] { padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); background: #0e1424; color: var(--ink); font: inherit; }
   .switch { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
@@ -82,6 +84,8 @@
   <div class="two">
     <div class="card">
       <h2>Sesini kendin ayarla</h2>
+      <div class="row" id="power"></div>
+      <div class="muted" id="powerHint" style="margin:6px 0 4px"></div>
       <div id="simple"></div>
       <div id="chans"></div>
     </div>
@@ -126,19 +130,32 @@ const post = async (p, body) => { const r = await (await fetch(p, { method: "POS
 const fmt = (v) => (v > 0 ? "+" : "") + Number(v).toFixed(1) + " dB";
 const fq = (f) => f >= 1000 ? (f / 1000) + "k" : String(f);
 
-const SIMPLE = [["bas", "Bas", "Davul, bas gitar"], ["orta", "Orta", "Gövde, sıcaklık"], ["vokal", "Vokal / netlik", "Şarkıcı, konuşma, bağlama"], ["tiz", "Tiz", "Zil, parlaklık"], ["yukseklik", "Ses seviyesi", "Genel kısma/açma", -20, 6]];
+const SIMPLE = [["bas", "Bas", "Davul, bas gitar"], ["orta", "Orta", "Gövde, sıcaklık"], ["vokal", "Vokal / netlik", "Şarkıcı, konuşma, bağlama"], ["tiz", "Tiz", "Zil, parlaklık"], ["yukseklik", "Ses seviyesi", "Genel kısma/açma", -20, 10]];
 const CHANS = [["sub", "Subwoofer", "Z607 bas kutusu"], ["merkez", "Merkez", "Diyalog, vokal"], ["arka", "Arka hoparlörler", "Çevresel ses"]];
 let INFO = null, ST = null, SP = null, AN = null, timer = null, devs = [];
 
 function kindOf(sp) { return INFO.kinds.find((k) => k.id === sp.kind) || INFO.kinds[0]; }
 
-function slider(key, label, hint, lo = -12, hi = 12) {
-  const v = el("span"), inp = el("input", { type: "range", min: lo, max: hi, step: 0.5 });
-  inp.value = SP.settings[key]; v.textContent = fmt(inp.value);
-  inp.oninput = () => { v.textContent = fmt(inp.value); SP.settings[key] = +inp.value; schedule(); };
-  const name = el("b", { textContent: label }); name.append(el("small", { textContent: hint }));
-  return el("div", { className: "sl" }, [name, inp, v]);
+// sürgü + elle yazılabilen kutu (0,5 dB adım; kutuda ok tuşları / fare tekerleği de çalışır)
+function pair(value, lo, hi, onset, vertical) {
+  const inp = el("input", { type: "range", min: lo, max: hi, step: 0.5, value });
+  const num = el("input", { type: "number", className: "num", min: lo, max: hi, step: 0.5, value, title: "Değeri yaz (dB)" });
+  const set = (v, from) => {
+    v = Math.min(hi, Math.max(lo, Math.round((+v || 0) * 2) / 2));
+    if (from !== inp) inp.value = v;
+    if (from !== num) num.value = v;
+    onset(v);
+  };
+  inp.oninput = () => set(inp.value, inp);
+  num.oninput = () => { if (num.value !== "" && !isNaN(+num.value)) set(num.value, num); };
+  num.onchange = () => set(num.value, null);
+  return vertical ? [num, inp] : [inp, num];
 }
+function slider(key, label, hint, lo = -12, hi = 12) {
+  const name = el("b", { textContent: label }); name.append(el("small", { textContent: hint }));
+  return el("div", { className: "sl" }, [name, ...pair(SP.settings[key], lo, hi, (v) => { SP.settings[key] = v; schedule(); })]);
+}
+const POWER_HINT = { guvenli: "Hiç cızırtı olmaz; yükselttiğin kadar genel ses kısılır.", dengeli: "Önerilen: ses az kısılır, cızırtı nadir.", yuksek: "Ses hiç kısılmaz, en yüksek ses. Çok bas açıp sonuna kadar dinlerken bazı şarkılarda bozulma olabilir." };
 
 function render() {
   SP = ST.speakers.find((s) => s.id === ST.active) || ST.speakers[0];
@@ -155,15 +172,17 @@ function render() {
     b.onclick = () => send({ speaker: SP.id, preset: p.id }, true);
     return b;
   }), el("button", { className: "chip" + (SP.settings.preset === "ozel" ? " on" : ""), textContent: "Özel", disabled: true }));
+  $("power").replaceChildren(...INFO.power.map((p) => {
+    const b = el("button", { className: "chip" + (SP.settings.guc === p.id ? " on" : ""), textContent: "Ses gücü: " + p.ad });
+    b.onclick = () => { SP.settings.guc = p.id; send({ speaker: SP.id, settings: SP.settings }, true); };
+    return b;
+  }));
+  $("powerHint").textContent = POWER_HINT[SP.settings.guc] || "";
   $("simple").replaceChildren(...SIMPLE.map((a) => slider(...a)));
   $("chans").replaceChildren(...(k.kanal === "5.1" ? [el("div", { className: "muted", textContent: "5.1 kanal düzeyleri" }), ...CHANS.map((a) => slider(...a))] : []));
-  $("eq").replaceChildren(...INFO.bands.map((f, i) => {
-    const v = el("span", { className: "v", textContent: SP.settings.bands[i] });
-    const inp = el("input", { type: "range", min: -12, max: 12, step: 0.5 });
-    inp.value = SP.settings.bands[i];
-    inp.oninput = () => { SP.settings.bands[i] = +inp.value; v.textContent = inp.value; SP.settings.preset = "ozel"; schedule(); };
-    return el("div", {}, [v, inp, el("span", { textContent: fq(f) + " Hz" })]);
-  }));
+  $("eq").replaceChildren(...INFO.bands.map((f, i) => el("div", {}, [
+    ...pair(SP.settings.bands[i], -12, 12, (v) => { SP.settings.bands[i] = v; SP.settings.preset = "ozel"; schedule(); }, true),
+    el("span", { textContent: fq(f) + " Hz" })])));
   $("spName").value = SP.ad;
   $("spKind").replaceChildren(...INFO.kinds.map((x) => el("option", { value: x.id, textContent: x.ad, selected: x.id === SP.kind })));
   fillDevs();
@@ -189,7 +208,7 @@ function draw() {
   g.strokeStyle = SP.settings.acik === false ? "#9aa6c2" : "#ffd23f"; g.lineWidth = 4; g.beginPath();
   AN.freqs.forEach((f, i) => { const v = SP.settings.acik === false ? 0 : AN.curve[i]; i ? g.lineTo(x(f), y(v)) : g.moveTo(x(f), y(v)); });
   g.stroke();
-  $("pre").textContent = "Ön kısma: " + fmt(AN.preamp) + " (yükseltilen yerde cızırtı olmasın diye otomatik)";
+  $("pre").textContent = "Genel ses: " + fmt(AN.preamp) + (AN.preamp < 0 ? " (cızırtı koruması — daha yüksek ses için 'Ses gücü: Yüksek' ya da 'Ses seviyesi')" : "");
 }
 
 function showApply(a) {
@@ -222,7 +241,7 @@ function tryUpdate() {
   srcNode.disconnect(); chain.forEach((n) => n.disconnect());
   const T = { PK: "peaking", LSC: "lowshelf", HSC: "highshelf", HP: "highpass" };
   const on = SP.settings.acik !== false;
-  chain = on ? AN.filters.map(([t, f, gain, q]) => { const b = ctx.createBiquadFilter(); b.type = T[t]; b.frequency.value = f; b.gain.value = gain; b.Q.value = q; return b; }) : [];
+  chain = on ? AN.preview.map(([t, f, gain, q]) => { const b = ctx.createBiquadFilter(); b.type = T[t]; b.frequency.value = f; b.gain.value = gain; b.Q.value = q; return b; }) : [];
   const pre = ctx.createGain(); pre.gain.value = on ? Math.pow(10, AN.preamp / 20) : 1; chain.push(pre);
   let n = srcNode; chain.forEach((c) => { n.connect(c); n = c; }); n.connect(ctx.destination);
 }
@@ -234,7 +253,7 @@ $("tryFile").onchange = () => {
 };
 
 $("acik").onchange = () => { SP.settings.acik = $("acik").checked; send({ speaker: SP.id, settings: SP.settings }, false); };
-$("reset").onclick = () => send({ speaker: SP.id, settings: { preset: "duz", bands: INFO.bands.map(() => 0), bas: 0, orta: 0, vokal: 0, tiz: 0, yukseklik: 0, sub: 0, merkez: 0, arka: 0, acik: true } }, true);
+$("reset").onclick = () => send({ speaker: SP.id, settings: { preset: "duz", bands: INFO.bands.map(() => 0), bas: 0, orta: 0, vokal: 0, tiz: 0, yukseklik: 0, guc: SP.settings.guc, sub: 0, merkez: 0, arka: 0, acik: true } }, true);
 $("addBtn").onclick = () => $("addBox").classList.toggle("hide");
 $("addOk").onclick = async () => {
   const r = await post("/api/hoparlor/add", { ad: $("addName").value, kind: $("addKind").value });

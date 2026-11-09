@@ -68,6 +68,8 @@ TIPS = {
         "Bu ayarlar bilgisayardan çalan sese uygulanır (kablo ya da bilgisayarın Bluetooth'u). Telefondan Z607'ye "
         "Bluetooth ile çalarken telefonun kendi ekolayzırını kullan.",
         "5.1 için Windows'ta Ses ayarları → Hoparlörler → Yapılandır → 5.1 Surround seç; sonra Subwoofer / Merkez / Arka sürgüleri çalışır.",
+        "Ses hâlâ kısıksa: Windows Ses ayarları → Hoparlörler → Özellikler → Geliştirmeler → 'Ses yüksekliği eşitleme' "
+        "(Loudness Equalization) aç; sesi bozmadan yükseltir. Sonra burada 'Ses gücü: Yüksek' seç.",
         "Subwoofer'ı duvardan 20-30 cm uzağa, yere koy; köşe bası abartır, arka hoparlörleri kulak hizasının biraz üstüne yerleştir.",
     ],
     "laptop": ["Dahili hoparlör 150 Hz altını çalamaz; bas yerine 'Vokal' ve 'Orta'yı biraz açmak sesi daha dolu duyurur."],
@@ -82,12 +84,17 @@ SIMPLE = {  # sade sürgüler: (süzgeç türü, merkez frekans, Q)
 }
 CHANNELS = {"sub": "SUB", "merkez": "C", "arka": "RL RR SL SR"}
 
+# Ses gücü: yükseltilen yerde ne kadar ön kısma yapılsın (en yüksek noktanın kesri). Güvenli hiç cızırtı yapmaz ama
+# sesi en çok kısar; Yüksek hiç kısmaz (çok bas açınca yüksek sesli şarkılarda bozulma olabilir).
+POWER = {"guvenli": ("Güvenli", 1.0), "dengeli": ("Dengeli", 0.5), "yuksek": ("Yüksek", 0.0)}
+LEVEL_MAX = 10.0
+
 
 # ---------------------------------------------------------------- ayarlar
 def default_settings(preset: str = "duz") -> dict:
     p = PRESETS.get(preset, PRESETS["duz"])
     return {"acik": True, "preset": preset, "bands": list(p["b"]), "bas": 0.0, "orta": 0.0, "vokal": 0.0, "tiz": 0.0,
-            "yukseklik": 0.0, "sub": 0.0, "merkez": float(p.get("merkez", 0)), "arka": 0.0}
+            "yukseklik": 0.0, "guc": "dengeli", "sub": 0.0, "merkez": float(p.get("merkez", 0)), "arka": 0.0}
 
 
 def default_state() -> dict:
@@ -131,7 +138,8 @@ def clean_settings(s: dict | None) -> dict:
     for k in ("bas", "orta", "vokal", "tiz", "sub", "merkez", "arka"):
         if k in s:
             out[k] = _num(s[k])
-    out["yukseklik"] = _num(s.get("yukseklik", 0), -20, 6)
+    out["yukseklik"] = _num(s.get("yukseklik", 0), -20, LEVEL_MAX)
+    out["guc"] = s.get("guc") if s.get("guc") in POWER else "dengeli"
     return out
 
 
@@ -169,20 +177,43 @@ def _guid(s: str) -> str:
 
 
 # ---------------------------------------------------------------- süzgeçler
+def graphic(settings: dict, kind: str) -> list[tuple[float, float]]:
+    """10 bant (frekans, dB) — Equalizer APO GraphicEQ ile pürüzsüz uygulanır (tepe süzgeçlerinin dalgalanması yok).
+    Hoparlörün çalamadığı derin bantlar koruma için 0'ın üstüne çıkmaz."""
+    k = KINDS.get(kind, KINDS["masaustu"])
+    s = clean_settings(settings)
+    out = []
+    for f, g in zip(BANDS, s["bands"]):
+        g = min(g, float(k["max"]))
+        if k["hp"] and f < k["hp"] * 1.3:
+            g = min(g, 0.0)
+        out.append((float(f), g))
+    return out
+
+
+def graphic_response(pts: list[tuple[float, float]], freqs: list[float]) -> list[float]:
+    """GraphicEQ eğrisi: noktalar arası logaritmik frekansta doğrusal, uçlarda sabit."""
+    out = []
+    for f in freqs:
+        if f <= pts[0][0]:
+            out.append(pts[0][1]); continue
+        if f >= pts[-1][0]:
+            out.append(pts[-1][1]); continue
+        for (f0, g0), (f1, g1) in zip(pts, pts[1:]):
+            if f0 <= f <= f1:
+                t = math.log(f / f0) / math.log(f1 / f0)
+                out.append(g0 + (g1 - g0) * t); break
+    return out
+
+
 def filters(settings: dict, kind: str) -> list[tuple[str, float, float, float]]:
-    """(tür, frekans, kazanç dB, Q). Hoparlörün çalamadığı derin bantlar koruma için 0'ın üstüne çıkmaz."""
+    """Ekolayzır dışındaki süzgeçler (tür, frekans, kazanç dB, Q): koruma alçak kesimi + Bas/Orta/Vokal/Tiz."""
     k = KINDS.get(kind, KINDS["masaustu"])
     s = clean_settings(settings)
     mx = float(k["max"])
     out: list[tuple[str, float, float, float]] = []
     if k["hp"]:
         out.append(("HP", float(k["hp"]), 0.0, 0.71))
-    for f, g in zip(BANDS, s["bands"]):
-        g = min(g, mx)
-        if k["hp"] and f < k["hp"] * 1.3:
-            g = min(g, 0.0)
-        if g:
-            out.append(("PK", float(f), g, BAND_Q))
     for key, (typ, f, q) in SIMPLE.items():
         g = min(s[key], mx)
         if key == "bas" and k["hp"] >= 100:
@@ -229,14 +260,19 @@ def curve_freqs(n: int = 120) -> list[float]:
 def analyse(settings: dict, kind: str) -> dict:
     s = clean_settings(settings)
     flt = filters(s, kind)
+    geq = graphic(s, kind)
     fr = curve_freqs()
-    curve = response(flt, fr) if flt else [0.0] * len(fr)
+    curve = [a + b for a, b in zip(response(flt, fr), graphic_response(geq, fr))]
     peak = max([0.0, *curve[3:]])           # 20-25 Hz zaten kesiliyor
     chans = {k: s[k] for k in CHANNELS} if KINDS.get(kind, {}).get("kanal") == "5.1" else {}
     chan_peak = max([0.0, *chans.values()])
-    preamp = round(s["yukseklik"] - peak - chan_peak, 1)    # cızırtı olmasın diye en yüksek nokta kadar kıs
-    return {"filters": flt, "freqs": [round(f, 1) for f in fr], "curve": [round(c, 2) for c in curve],
-            "preamp": preamp, "channels": chans, "settings": s}
+    share = POWER[s["guc"]][1]
+    # cızırtı koruması: en yüksek noktanın 'share' kadarı kısılır; kanal yükseltmesi yalnızca Güvenli'de
+    preamp = round(s["yukseklik"] - share * peak - (chan_peak if share >= 1 else 0.0), 1)
+    preview = flt + [("PK", f, g, BAND_Q) for f, g in geq if g]   # tarayıcıda deneme için yaklaşık eşdeğer
+    return {"filters": flt, "graphic": geq, "preview": preview, "freqs": [round(f, 1) for f in fr],
+            "curve": [round(c, 2) for c in curve], "peak": round(peak, 1), "preamp": preamp, "channels": chans,
+            "settings": s}
 
 
 # ---------------------------------------------------------------- Equalizer APO
@@ -251,6 +287,8 @@ def block(sp: dict) -> str:
         return "\n".join(lines)
     an = analyse(s, kind)
     lines.append(f"Preamp: {an['preamp']:.1f} dB")
+    if any(g for _, g in an["graphic"]):
+        lines.append("GraphicEQ: " + "; ".join(f"{f:g} {g:.1f}" for f, g in an["graphic"]))
     for typ, f, g, q in an["filters"]:
         if typ == "HP":
             lines.append(f"Filter: ON HP Fc {f:g} Hz Q {q:.2f}")
@@ -366,7 +404,7 @@ def devices() -> list[dict]:
 def info() -> dict:
     st = load_state()
     d = apo_dir()
-    return {"state": st, "presets": [{"id": k, "ad": v["ad"], "bands": v["b"]} for k, v in PRESETS.items()],
+    return {"power": [{"id": k, "ad": v[0]} for k, v in POWER.items()], "state": st, "presets": [{"id": k, "ad": v["ad"], "bands": v["b"]} for k, v in PRESETS.items()],
             "kinds": [{"id": k, **v} for k, v in KINDS.items()], "bands": BANDS, "tips": TIPS,
             "apo": {"kurulu": bool(d), "path": str(d) if d else "", "url": APO_URL, "windows": os.name == "nt"}}
 
@@ -378,7 +416,7 @@ def update(data: dict) -> dict:
     if data.get("preset") in PRESETS:
         keep = clean_settings(sp.get("settings"))
         new = default_settings(data["preset"])
-        for k in ("bas", "orta", "vokal", "tiz", "yukseklik", "sub", "arka", "acik"):
+        for k in ("bas", "orta", "vokal", "tiz", "yukseklik", "guc", "sub", "arka", "acik"):
             new[k] = keep[k]          # sade sürgüler ve kanal düzeyleri hazır değişince korunur
         sp["settings"] = new
     elif isinstance(data.get("settings"), dict):
