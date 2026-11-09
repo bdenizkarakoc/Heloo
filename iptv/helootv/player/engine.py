@@ -32,6 +32,12 @@ SPEED_BOOST = 1.04          # canlıya yetişme hızı: %4 göze/kulağa fark ed
 CHASE_SUSTAIN = 8.0         # tampon bu kadar sn sürekli üst sınırı aşarsa hızlanılır (anlık dalgalanmada değil)
 JUMP_MIN = 25.0             # tampon içinde ileri atlama yalnız gecikme bu kadar büyürse (atlama görüntüyü dondurur)
 EXTRA_STEP, EXTRA_MAX, EXTRA_DECAY = 1.0, 6.0, 180.0   # takılmada tampona eklenen pay, üst sınırı, azalma süresi
+# bekçi: canlı yayın takılı kalırsa (TiviMate'in "takılınca yeniden bağlan"ı gibi) yayını yeniden açar
+STUCK_FROZEN = 6.0          # duraklatılmadan ve arabelleğe almadan konum bu kadar sn ilerlemezse
+STUCK_BUFFERING = 10.0      # tampon bu kadar sn boş kalırsa (veri yavaş da gelse)
+STUCK_DEAD = 4.0            # tampon boş VE hiç veri gelmiyorsa (bağlantı ölü) bu kadar sn sonra
+RELOAD_GAP = 20.0           # iki yeniden açma arasında en az
+DROP_RATE, DROP_WINDOW = 3.0, 10.0   # sn başına atlanan kare, ölçüm penceresi → iyileştirme hafifletilir
 PIN_CACHE_SECONDS = 300
 
 
@@ -155,6 +161,15 @@ class MpvEngine:
         self._hw_copy = False
         self._interlaced = False
         self._il_checked = False
+        self._wd_pos: float | None = None
+        self._wd_moved = 0.0
+        self._wd_buf_since = 0.0
+        self._wd_data_at = 0.0
+        self._wd_cache = 0.0
+        self._last_reload = 0.0
+        self.reloads = 0
+        self._drop_mark: tuple[float, int] | None = None
+        self.lighten = 0             # 0 tam iyileştirme | 1 gürültü azaltma kapalı | 2 + VSR/yapay zekâ kapalı
         self._vp: dict | None = None
         self._screen: tuple[int, int] | None = None
         self._plan: dict = {}
@@ -280,6 +295,7 @@ class MpvEngine:
         for k, v in opt.quality_options(settings, self.platform).items():
             self._set(k, v)
         self._hw_copy = False        # quality_options sıfır kopya hwdec kurdu; gerekirse _update_vf yeniden açar
+        self.lighten = 0             # ayar değişince tam iyileştirmeyle yeniden dene
         self._update_vf(force=True)
 
     def set_vsr_available(self, ok: bool) -> None:
@@ -315,6 +331,10 @@ class MpvEngine:
             self._extra = 0.0
             self._interlaced = False
             self._il_checked = False
+            self._wd_pos = None
+            self._wd_moved = time.monotonic()
+            self._wd_buf_since = 0.0
+            self._drop_mark = None
             self._errors.clear()
             self._vp = None          # önceki kanalın çözünürlüğü/yüklenme anı yeni kanalda görünmesin
             self._loaded_at = 0.0
@@ -510,8 +530,19 @@ class MpvEngine:
         self._vp = vp
         self._update_vf()
 
+    def _effective_settings(self) -> dict:
+        """Bilgisayar kare atlıyorsa (GPU/CPU yetmiyor) bu oturumda iyileştirme kademeli hafifletilir."""
+        if not self.lighten:
+            return self.settings
+        s = dict(self.settings)
+        s["picture"] = dict(self.settings["picture"], denoise="off")
+        if self.lighten >= 2:
+            s["video"] = dict(self.settings["video"], rtx_vsr=False, hq_scaling=False)
+        return s
+
     def _update_vf(self, force: bool = False) -> None:
-        plan = opt.vsr_plan(self.settings, self._vp, self._screen, self.platform, vsr_available=self._vsr_ok,
+        eff = self._effective_settings()
+        plan = opt.vsr_plan(eff, self._vp, self._screen, self.platform, vsr_available=self._vsr_ok,
                             kind=self.request.kind if self.request else None)
         self._plan = plan
         if self.mpv is None:
@@ -519,7 +550,7 @@ class MpvEngine:
         if self._vp is not None:     # çözünürlük belli olmadan değiştirme (her kanal geçişinde iki kez yeniden başlardı)
             self._ensure_hwdec(bool(plan.get("denoise")))
         # kaynağa göre değişen görüntü ayarları (düşük kalitede güçlü deband/keskinlik; VSR varken hafif CAS)
-        tuned = opt.picture_options(self.settings, self._vp, vsr=bool(plan.get("scale")))
+        tuned = opt.picture_options(eff, self._vp, vsr=bool(plan.get("scale")))
         key = tuple(sorted(tuned.items()))
         if key != getattr(self, "_tuned_key", None):
             self._tuned_key = key
@@ -674,9 +705,11 @@ class MpvEngine:
             "boost": self._boost,
             "buffer_extra": self._extra,
             "underruns": self.underruns,
+            "reloads": self.reloads,
+            "lighten": self.lighten,
             "vsr": plan,
             "vsr_active": vsr_active,
-            "enhance": opt.enhancement_summary(self.settings, plan, vsr_active, vp, self.platform,
+            "enhance": opt.enhancement_summary(self._effective_settings(), plan, vsr_active, vp, self.platform,
                                                getattr(self, "external_framegen", False)) if vp else [],
             "vsr_driver_failed": self.vsr_driver_failed,
             "hdr_driver_failed": self.hdr_driver_failed,
@@ -695,11 +728,77 @@ class MpvEngine:
                 self._interlaced = True
                 self._vp = dict(self._vp, interlaced=True)
                 self._update_vf()
+        if self.request.kind in ("live", "catchup"):
+            self._watchdog(st)
         if self.request.kind == "live":
             self._chase(st)
+        if self.request.kind != "image":
+            self._watch_drops(st)
         if self._loaded_at and st["active"] and time.monotonic() - self._loaded_at > 20:
             self._retry = 0
         return st
+
+    def _watchdog(self, st: dict) -> None:
+        """Takılı kalan canlı yayını yeniden açar: görüntü donduysa ya da tampon uzun süre boşsa."""
+        now = time.monotonic()
+        if not self._loaded_at or st["paused"] or self._user_paused or st["seeking"]:
+            self._wd_moved = now
+            self._wd_buf_since = 0.0
+            return
+        pos = st.get("pos")
+        if isinstance(pos, (int, float)) and (self._wd_pos is None or abs(pos - self._wd_pos) > 0.05):
+            self._wd_pos = pos
+            self._wd_moved = now
+        if st["buffering"]:
+            self._wd_buf_since = self._wd_buf_since or now
+            # veri geliyor mu: tampon dolmaya devam ediyor mu (mpv'nin cache-speed'i veri kesilince eski değerde kalır)
+            cache = st.get("cache") if isinstance(st.get("cache"), (int, float)) else 0.0
+            if not self._wd_data_at or self._wd_data_at < self._wd_buf_since:
+                self._wd_data_at = self._wd_buf_since
+                self._wd_cache = cache
+            elif cache > self._wd_cache + 0.05:
+                self._wd_data_at = now
+                self._wd_cache = cache
+        else:
+            self._wd_buf_since = 0.0
+            self._wd_data_at = 0.0
+        # "dondu" yalnız oynatma bir kez başladıktan sonra (yavaş açılan kanal yeniden başlatılmasın)
+        frozen = self._wd_pos is not None and not st["buffering"] and now - self._wd_moved > STUCK_FROZEN
+        dead = bool(self._wd_buf_since) and now - self._wd_data_at > STUCK_DEAD
+        starved = dead or (self._wd_buf_since and now - self._wd_buf_since > STUCK_BUFFERING)
+        if (frozen or starved) and now - self._last_reload > RELOAD_GAP:
+            self._last_reload = now
+            self.reloads += 1
+            self._wd_moved = now
+            self._wd_buf_since = 0.0
+            self._wd_data_at = 0.0
+            why = "görüntü dondu" if frozen else "sağlayıcı yayını kesti"
+            log.warning("canlı yayın takıldı (%s) → yeniden açılıyor (%d)", why, self.reloads)
+            self._emit("reconnecting", {"attempt": 1, "max": 1, "delay": 0, "error": f"Yayın takıldı ({why})"})
+            self.show_text("Yayın takıldı — yeniden açılıyor…", 2000)
+            self._schedule_retry(0.05)
+
+    def _watch_drops(self, st: dict) -> None:
+        """Kare atlama sürekli yüksekse (bilgisayar iyileştirmeye yetişemiyor) iyileştirmeyi bir kademe hafifletir."""
+        if not st.get("active") or st["paused"] or st["buffering"] or self.lighten >= 2:
+            self._drop_mark = None
+            return
+        now = time.monotonic()
+        drops = int(st.get("dropped") or 0) + int(self._get("decoder-frame-drop-count") or 0)
+        if self._drop_mark is None or drops < self._drop_mark[1]:
+            self._drop_mark = (now, drops)
+            return
+        t0, d0 = self._drop_mark
+        if now - t0 < DROP_WINDOW:
+            return
+        rate = (drops - d0) / (now - t0)
+        self._drop_mark = (now, drops)
+        if rate > DROP_RATE:
+            self.lighten += 1
+            log.warning("kare atlama %.1f/sn → iyileştirme hafifletildi (kademe %d)", rate, self.lighten)
+            self.show_text("Akıcılık için görüntü iyileştirme hafifletildi", 2500)
+            self._emit("lightened", {"level": self.lighten, "rate": rate})
+            self._update_vf(force=True)
 
     def _chase(self, st: dict) -> None:
         """Canlı yayında tamponu yönetir. Öncelik akıcılık: takılma olursa tampon payını büyütür (bir daha takılmasın),

@@ -106,9 +106,16 @@ def test_interlaced_denoise_and_migration(tmp_path):
     p = tmp_path / "settings.json"
     p.write_text(json.dumps({"video": {"vsr_target": "2160", "sharpen": "strong"}}), encoding="utf-8")
     s = settings_mod.load_settings(p)
-    assert s["video"]["vsr_target"] == "screen" and s["video"]["sharpen"] == "strong" and s["meta"]["version"] == 2
+    assert s["video"]["vsr_target"] == "screen" and s["video"]["sharpen"] == "strong" and s["meta"]["version"] == 3
     p.write_text(json.dumps({"meta": {"version": 2}, "video": {"vsr_target": "2160"}}), encoding="utf-8")
     assert settings_mod.load_settings(p)["video"]["vsr_target"] == "2160"   # yeni sürümde seçilen 4K kalır
+    # v2 → v3: 1,5 sn tampon donma yapıyordu → Dengeli, canlıya yetişme kapalı; v3'te seçilen "low" korunur
+    p.write_text(json.dumps({"meta": {"version": 2}, "latency": {"mode": "low", "chase": True}}), encoding="utf-8")
+    lat = settings_mod.load_settings(p)["latency"]
+    assert lat["mode"] == "balanced" and lat["chase"] is False
+    p.write_text(json.dumps({"meta": {"version": 3}, "latency": {"mode": "low", "chase": True}}), encoding="utf-8")
+    lat = settings_mod.load_settings(p)["latency"]
+    assert lat["mode"] == "low" and lat["chase"] is True
     p.write_text(json.dumps({"lossless": {"mode": "always"}}), encoding="utf-8")
     assert settings_mod.load_settings(p)["lossless"]["mode"] == "fullscreen"
     # AMD FSR kendi keskinleştirmesini yapar → CAS yarıya; küçültmede hafif filtre
@@ -235,6 +242,7 @@ def test_engine_plays_live_lavfi(engine):
         engine._user_paused = False
         engine._loaded_at = 900.0
         engine._boost, engine._over_since, engine._last_jump = False, 0.0, 0.0   # gerçek tick'lerin durumu
+        engine.settings["latency"].update(mode="low", chase=True)              # varsayılanda kapalı
         engine._set("speed", "1")
         engine._chase(fake)
         assert not engine._boost
@@ -310,3 +318,103 @@ def test_engine_reconnects_live_and_resumes_vod(engine, tmp_path):
         assert err["message"]
     finally:
         httpd.shutdown()
+
+
+def test_live_reconnect_options():
+    live = opt.play_options(S(), "live", "http://x/live/u/p/1.ts")
+    assert "reconnect_streamed=1" in live["stream-lavf-o"] and "reconnect_on_network_error=1" in live["stream-lavf-o"]
+    assert "stream-lavf-o" not in opt.play_options(S(), "live", "udp://239.0.0.1:1234")
+    assert "stream-lavf-o" not in opt.play_options(S(), "movie", "http://x/movie/1.mkv")
+    bal = opt.play_options(S(), "live", "http://x/1.ts")
+    assert bal["cache-pause-wait"] == "3" and bal["demuxer-lavf-o"] == ""   # Dengeli: nobuffer yok
+
+
+class _FakeEngine:
+    """Bekçi ve kare atlama korumasını mpv olmadan sınamak için motorun yalnız gereken parçaları."""
+
+    def __init__(self):
+        from helootv.player.engine import MpvEngine
+        self.e = MpvEngine.__new__(MpvEngine)
+        e = self.e
+        e.settings = S()
+        e.request = None
+        e._loaded_at, e._user_paused = 1.0, False
+        e._wd_pos, e._wd_moved, e._wd_buf_since, e._last_reload, e.reloads = None, 0.0, 0.0, 0.0, 0
+        e._wd_data_at, e._wd_cache = 0.0, 0.0
+        e._drop_mark, e.lighten = None, 0
+        self.retries, self.texts, self.vf = [], [], []
+        e._schedule_retry = lambda d: self.retries.append(d)
+        e.show_text = lambda t, ms=0: self.texts.append(t)
+        e._emit = lambda n, d=None: None
+        e._update_vf = lambda force=False: self.vf.append(force)
+        e._get = lambda name: 0
+
+
+def test_watchdog_reloads_stuck_live(monkeypatch):
+    from helootv.player import engine as eng_mod
+    clock = [100.0]
+    monkeypatch.setattr(eng_mod.time, "monotonic", lambda: clock[0])
+    f = _FakeEngine()
+    e = f.e
+    # henüz hiç oynamadı (konum yok): yavaş açılan kanal yeniden başlatılmaz
+    e._watchdog({"paused": False, "seeking": False, "buffering": False, "pos": None})
+    clock[0] += 9
+    e._watchdog({"paused": False, "seeking": False, "buffering": False, "pos": None})
+    assert f.retries == []
+    st = {"paused": False, "seeking": False, "buffering": False, "pos": 10.0}
+    e._watchdog(st)
+    for _ in range(5):            # konum ilerliyor → bir şey yapılmaz
+        clock[0] += 1
+        st["pos"] += 1
+        e._watchdog(st)
+    assert f.retries == []
+    clock[0] += 7                 # görüntü 7 sn dondu → yeniden açılır
+    e._watchdog(st)
+    assert f.retries == [0.05] and e.reloads == 1 and "yeniden açılıyor" in f.texts[0]
+    clock[0] += 7                 # 20 sn dolmadan ikinci kez açılmaz
+    e._watchdog(st)
+    assert len(f.retries) == 1
+    clock[0] += 30                # tampon boş ama yavaş doluyor (veri geliyor): 10 sn beklenir
+    e._watchdog(dict(st, buffering=True, cache=0.0))
+    for i in range(1, 6):
+        clock[0] += 1
+        e._watchdog(dict(st, buffering=True, cache=0.2 * i))
+    assert len(f.retries) == 1
+    clock[0] += 6
+    e._watchdog(dict(st, buffering=True, cache=1.2))
+    assert len(f.retries) == 2
+    clock[0] += 30                # tampon boş ve hiç dolmuyor (bağlantı ölü) → 4 sn'de yeniden açılır
+    e._watchdog(dict(st, buffering=True, cache=0.0))
+    clock[0] += 4.5
+    e._watchdog(dict(st, buffering=True, cache=0.0))
+    assert len(f.retries) == 3
+    # kullanıcı duraklattıysa asla
+    clock[0] += 60
+    e._watchdog(dict(st, paused=True))
+    clock[0] += 60
+    e._watchdog(dict(st, paused=True))
+    assert len(f.retries) == 3
+
+
+def test_frame_drops_lighten_enhancement(monkeypatch):
+    from helootv.player import engine as eng_mod
+    clock = [100.0]
+    monkeypatch.setattr(eng_mod.time, "monotonic", lambda: clock[0])
+    f = _FakeEngine()
+    e = f.e
+    st = {"active": True, "paused": False, "buffering": False, "dropped": 0}
+    e._watch_drops(st)
+    clock[0] += 11
+    e._watch_drops(dict(st, dropped=10))      # 0,9/sn: sorun yok
+    assert e.lighten == 0
+    clock[0] += 11
+    e._watch_drops(dict(st, dropped=80))      # 6,4/sn → gürültü azaltma kapanır
+    assert e.lighten == 1 and f.vf == [True]
+    eff = e._effective_settings()
+    assert eff["picture"]["denoise"] == "off" and e.settings["picture"]["denoise"] == "auto"
+    clock[0] += 11
+    e._watch_drops(dict(st, dropped=200))     # hâlâ → VSR/yapay zekâ da kapanır, daha ileri gitmez
+    assert e.lighten == 2 and e._effective_settings()["video"]["rtx_vsr"] is False
+    clock[0] += 11
+    e._watch_drops(dict(st, dropped=400))
+    assert e.lighten == 2

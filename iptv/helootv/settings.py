@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 # Varsayılanlar "en iyi" deneyim içindir: RTX VSR ile 4K, düşük gecikme, canlıya yetişme, otomatik yeniden bağlanma.
-SETTINGS_VERSION = 2
+SETTINGS_VERSION = 3
 
 DEFAULTS: dict[str, Any] = {
     "meta": {"version": SETTINGS_VERSION},
@@ -42,8 +42,8 @@ DEFAULTS: dict[str, Any] = {
         "deband": 1,              # 0..3 renk bandı yumuşatma gücü
     },
     "latency": {
-        "mode": "low",            # ultra | low | balanced | stable
-        "chase": True,            # canlıya yetişme: tampon büyürse hafif hızlanıp gecikmeyi geri alır
+        "mode": "balanced",       # ultra | low | balanced (≈3 sn tampon, önerilen) | stable
+        "chase": False,           # canlıya yetişme: gecikme çok büyürse %4 hızlanır (kapalı: hiç oynamaz, en akıcı)
         "live_format": "ts",      # Xtream canlı yayın biçimi: ts (en düşük gecikme) | m3u8
     },
     "audio": {
@@ -173,6 +173,11 @@ def _migrate(s: dict, version) -> None:
         # v1: Lossless Scaling pencere kipinde de açılıyor, listelerle birlikte bütün pencereyi büyütüyordu
         if s.get("lossless", {}).get("mode") == "always":
             s["lossless"]["mode"] = "fullscreen"
+    if not isinstance(version, int) or version < 3:
+        # v2: varsayılan "low" (1,5 sn) tampon çoğu IPTV sağlayıcısında donmaya yol açtı; canlıya yetişme kapalı
+        if s["latency"].get("mode") in ("low", "ultra"):
+            s["latency"]["mode"] = "balanced"
+        s["latency"]["chase"] = False
     s["meta"]["version"] = SETTINGS_VERSION
 
 

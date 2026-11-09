@@ -32,16 +32,16 @@ LATENCY_MODES: dict[str, dict] = {
         "hls-start": -2, "stream-buffer-size": "64KiB", "curl-buffer-size": "1MiB", "chase": (1.0, 3.0),
     },
     "low": {
-        "label": "Düşük gecikme (önerilen)",
-        "desc": "Canlıya yakın ve akıcı: ~1,5 sn tampon, takılma olursa tamponu kendiliğinden büyütür.",
+        "label": "Düşük gecikme",
+        "desc": "Canlıya yakın: ~1,5 sn tampon, takılma olursa tamponu kendiliğinden büyütür. İyi internet ister.",
         "audio-buffer": "0.1", "cache-pause": "yes", "cache-pause-wait": "1", "cache-pause-initial": "no",
         "probe-info": "nostreams", "analyzeduration": "1", "nobuffer": False, "latency-hacks": "no",
         "hls-start": -3, "stream-buffer-size": "128KiB", "curl-buffer-size": "2MiB", "chase": (1.5, 5.0),
     },
     "balanced": {
-        "label": "Dengeli",
-        "desc": "Biraz daha tampon (~3 sn); çoğu bağlantıda hiç takılmaz.",
-        "audio-buffer": "0.2", "cache-pause": "yes", "cache-pause-wait": "2", "cache-pause-initial": "no",
+        "label": "Dengeli (önerilen)",
+        "desc": "TiviMate/Smarters gibi ~3 sn tampon: kanal hızlı açılır, dalgalanmada donmaz.",
+        "audio-buffer": "0.2", "cache-pause": "yes", "cache-pause-wait": "3", "cache-pause-initial": "no",
         "probe-info": "auto", "analyzeduration": "1", "nobuffer": False, "latency-hacks": "no",
         "hls-start": -3, "stream-buffer-size": "128KiB", "curl-buffer-size": "4MiB", "chase": (3.0, 9.0),
     },
@@ -53,6 +53,8 @@ LATENCY_MODES: dict[str, dict] = {
         "hls-start": -3, "stream-buffer-size": "128KiB", "curl-buffer-size": "4MiB", "chase": (6.0, 18.0),
     },
 }
+
+LAVF_RECONNECT = "reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=4"
 
 TR_AUDIO = "tur,tr,tr-TR,turkish,türkçe,eng,en"
 
@@ -204,6 +206,9 @@ def play_options(settings: dict, kind: str, url: str, headers: dict | None = Non
         "cache": "yes",
         "demuxer-seekable-cache": "yes",  # canlıda duraklat/geri sar (tampon içinde)
     }
+    if kind in ("live", "catchup") and url.lower().startswith(("http://", "https://")):
+        # bağlantı koparsa FFmpeg hemen yeniden bağlanır (oynatıcı 15 sn beklemez, akış kaldığı yerden sürer)
+        o["stream-lavf-o"] = LAVF_RECONNECT
     if kind == "live":
         m = LATENCY_MODES[settings["latency"]["mode"]]
         lavf = []

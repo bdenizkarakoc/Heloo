@@ -255,23 +255,33 @@ Hedef "Ekran çözünürlüğü" ya da "1440p" yapılabilir (daha az GPU yükü)
 
 | Kip | Ne yapar |
 |---|---|
-| **Ultra düşük** | ~1 sn tampon, `fflags=+nobuffer`, akış bilgisi taraması yok, HLS'de canlı kenardan 2 parça geride. Kablolu ve çok iyi internet ister. |
-| **Düşük (önerilen)** | ~1,5 sn tampon, HLS'de 3 parça geride; takılma olursa tamponu kendiliğinden büyütür. |
-| **Dengeli** | ~3 sn tampon; çoğu bağlantıda hiç takılmaz. |
+| **Ultra düşük** | ~1 sn tampon, `fflags=+nobuffer`, HLS'de canlı kenardan 2 parça geride. Kablolu ve çok iyi internet ister. |
+| **Düşük** | ~1,5 sn tampon, HLS'de 3 parça geride. İyi internet ister. |
+| **Dengeli (önerilen, varsayılan)** | TiviMate/IPTV Smarters gibi ~3 sn tampon: kanal hızlı açılır, dalgalanmada donmaz. |
 | **Kararlı** | Açılışta 3 sn tampon; zayıf/kablosuz bağlantılar için. |
 
-**Takılmaya karşı kendini ayarlayan tampon:** canlı yayın bir kez takılırsa (tampon boşalır) Heloo TV o kanal için
-tampon payını 1 sn büyütür (en çok 6 sn) ve mpv'nin yeniden doldurma süresini uzatır; böylece aynı dalgalanma bir daha
-donma yapmaz. 3 dakika sorunsuz geçerse pay yavaşça azalır. Titrek bir yayın benzetiminde (1–2,5 sn kesintiler)
-donma sayısı 5'ten 2'ye, hızlanıp yavaşlama 4'ten 0'a indi.
+**Donmaya karşı (IPTV uygulamalarının yaptığı gibi):**
 
-**Canlıya yetişme:** gecikme sınırı 8 sn boyunca aşılırsa oynatma %4 hızlanır (göze/kulağa fark edilmez, ses perdesi
-korunur) ve hedefe inince normale döner; anlık dalgalanmalarda hızlanmaz. Tampon içinde ileri atlama yalnız gecikme
-25 sn'yi geçerse ve dakikada en çok bir kez yapılır (atlama görüntüyü bir an dondurur). Eski sürümdeki %8 hızlanma ve
-sık ileri atlama, "durmadan gecikmeyi sıfırlamaya çalışma" ve takılma olarak görünüyordu. HLS'de eşikler listenin parça süresine
-(`#EXT-X-TARGETDURATION`) göre ayarlanır. Kanal geçişi tek mpv örneğinde `loadfile` ile yapılır (oynatıcı yeniden
-başlatılmaz), `ytdl` kancası kapalıdır. Xtream'de canlı yayınlar varsayılan olarak MPEG-TS (`.ts`) açılır — HLS'den
-daha düşük gecikme.
+- **Otomatik yeniden bağlanma:** HTTP canlı yayında FFmpeg `reconnect_streamed` ile bağlantı koparsa anında yeniden
+  bağlanır; oynatıcı 15 sn beklemez.
+- **Bekçi:** görüntü 6 sn ilerlemezse, tampon boşken 4 sn hiç veri gelmezse (bağlantı ölü) ya da tampon 10 sn boş
+  kalırsa yayın kendiliğinden yeniden açılır (en çok 20 sn'de bir; duraklatılmışsa ya da kanal henüz açılmadıysa asla).
+- **Kendini ayarlayan tampon:** takılan kanalda tampon payı 1 sn büyür (en çok 6 sn), 3 dk sorunsuz geçince azalır.
+- **Aşırı yük koruması:** bilgisayar sürekli kare atlıyorsa (sn'de 3'ten fazla) iyileştirme bu oturum için bir kademe
+  hafifletilir: önce gürültü azaltma, sonra RTX VSR/yapay zekâ kapanır. Ayar değişince yeniden denenir.
+- **Canlıya yetişme varsayılan olarak kapalı** (gecikme sabit kalır, hiç hızlanma/atlama olmaz). Açılırsa yalnız
+  gecikme 8 sn boyunca sınırı aşınca %4 hızlanır; ileri atlama yalnız 25 sn'nin üstünde, dakikada en çok bir kez.
+
+Gerçek libmpv ile benzetim (eski → yeni sürüm, 60 sn):
+
+| Sorun | En uzun donma | Toplam donma |
+|---|---|---|
+| Sağlayıcı yayını kesti (bağlantı açık, veri yok) | 13,8 sn → **4,8 sn** | 15,4 → **5,2 sn** |
+| Bağlantı 15 sn'de bir kopuyor | 2,0 sn → **0,4 sn** | 4,0 → **0,5 sn** |
+| 1–2,5 sn'lik dalgalanmalar | 1,0 sn → **0,4 sn** | 1,8 → **0,4 sn** |
+
+Eski ayar dosyaları bir kez güncellenir: "Düşük" kip → "Dengeli", canlıya yetişme kapalı. Xtream'de canlı yayınlar
+varsayılan olarak MPEG-TS (`.ts`) açılır. Kanal geçişi tek mpv örneğinde `loadfile` ile yapılır.
 
 **HLS'de hızlı açılış (kalite sabitleme):** FFmpeg, çok kaliteli bir HLS kanalında açılışta *her* kalitenin
 (1080p/720p/480p/360p) ilk parçalarını indirir. Heloo TV ana listeyi kendisi okuyup en yüksek kaliteyi (çözünürlük,

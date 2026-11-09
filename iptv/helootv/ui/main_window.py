@@ -278,12 +278,19 @@ class MainWindow(QMainWindow):
                 self._status(f"Oynatılıyor: {req.title}")
                 QTimer.singleShot(1200, self._lossless_auto)
         elif name == "reconnecting":
-            msg = f"Bağlantı koptu — yeniden bağlanılıyor ({data['attempt']}/{data['max']})…"
-            if data.get("error"):
-                msg += f"  {data['error']}"
-            self._status(msg)
-            if self.engine:
-                self.engine.show_text(msg, 2500)
+            if data.get("max") == 1:     # bekçi: takılan yayın yeniden açılıyor (motor ekrana kendisi yazdı)
+                self._status(f"{data.get('error') or 'Yayın takıldı'} — yeniden açılıyor…")
+            else:
+                msg = f"Bağlantı koptu — yeniden bağlanılıyor ({data['attempt']}/{data['max']})…"
+                if data.get("error"):
+                    msg += f"  {data['error']}"
+                self._status(msg)
+                if self.engine:
+                    self.engine.show_text(msg, 2500)
+        elif name == "lightened":
+            self._status(f"Bilgisayar kare atlıyordu ({data.get('rate', 0):.1f}/sn): akıcılık için iyileştirme "
+                         + ("hafifletildi (gürültü azaltma kapalı)." if data.get("level") == 1 else
+                            "en aza indirildi (RTX VSR/yapay zekâ kapalı). Ayarlar değişince yeniden denenir."))
         elif name == "error":
             msg = data.get("message") or "Yayın açılamadı."
             self._status(f"⚠ {msg}")
