@@ -296,6 +296,8 @@ class LivePage(_BrowserBase):
 
 class EpgPanel(QWidget):
     catchup_requested = Signal(object, dict)
+    record_requested = Signal(object, dict)     # gelecek/şimdiki program: zamanlanmış kayıt
+    remind_requested = Signal(object, dict)     # gelecek program: hatırlatıcı
 
     def __init__(self, ctx: AppContext, parent=None):
         super().__init__(parent)
@@ -316,6 +318,9 @@ class EpgPanel(QWidget):
         self.list = QListWidget()
         self.list.setUniformItemSizes(True)
         self.list.itemActivated.connect(self._activated)
+        self.list.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.list.customContextMenuRequested.connect(self._menu)
+        self.marks = lambda prog: ""              # ana pencere: programın kayıt/hatırlatıcı işareti (⏺ / 🔔)
         self.list.currentItemChanged.connect(self._selected)
         lay.addWidget(self.list, 1)
         self.desc = QLabel("")
@@ -380,6 +385,7 @@ class EpgPanel(QWidget):
             live = p["start"] <= now < p["stop"]
             can_archive = past and archive_days and p["start"] >= now - archive_days * 86400
             prefix = "⟲ " if can_archive else ("● " if live else "")
+            prefix = (self.marks(p) or "") + prefix
             it = QListWidgetItem(f"{prefix}{hhmm(p['start'])}–{hhmm(p['stop'])}   {p['title']}")
             it.setData(Qt.UserRole, p)
             it.setData(Qt.UserRole + 1, bool(can_archive))
@@ -402,6 +408,28 @@ class EpgPanel(QWidget):
     def _selected(self, cur: QListWidgetItem, _prev) -> None:
         p = cur.data(Qt.UserRole) if cur else None
         self.desc.setText(p.get("desc", "") if p else "")
+
+    def _menu(self, pos) -> None:
+        from PySide6.QtWidgets import QMenu
+        it = self.list.itemAt(pos)
+        p = it.data(Qt.UserRole) if it else None
+        if not p or not self.item:
+            return
+        now = time.time()
+        m = QMenu(self)
+        if it.data(Qt.UserRole + 1):
+            m.addAction("⟲ Geri izle", lambda: self.catchup_requested.emit(self.item, p))
+        if p["stop"] > now:
+            m.addAction("⏺ Bu programı kaydet" if p["start"] > now else "⏺ Şimdi kaydet (program bitene kadar)",
+                        lambda: self.record_requested.emit(self.item, p))
+        if p["start"] > now:
+            m.addAction("🔔 Başlayınca hatırlat", lambda: self.remind_requested.emit(self.item, p))
+        if m.actions():
+            m.exec(self.list.viewport().mapToGlobal(pos))
+
+    def refresh_marks(self) -> None:
+        if self.item is not None:
+            self.show_channel(self.item)
 
     def _activated(self, it: QListWidgetItem) -> None:
         p = it.data(Qt.UserRole)

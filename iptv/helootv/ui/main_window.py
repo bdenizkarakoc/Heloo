@@ -11,7 +11,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, Qt, QTimer, Signal
 from PySide6.QtGui import QGuiApplication, QKeySequence, QShortcut
-from PySide6.QtWidgets import (QFileDialog, QInputDialog, QMenu, QButtonGroup, QFrame, QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMessageBox,
+from PySide6.QtWidgets import (QApplication, QFileDialog, QInputDialog, QMenu, QButtonGroup, QFrame, QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMessageBox,
                                QPushButton, QSplitter, QStackedWidget, QVBoxLayout, QWidget)
 
 from .. import APP_NAME, __version__, catalog, epg, gpu, paths, upscale, weburl
@@ -30,6 +30,13 @@ from .workers import run_task
 log = logging.getLogger("helootv.ui")
 TABS = [("live", "📺  Canlı TV"), ("movie", "🎬  Filmler"), ("series", "🎞  Diziler"), ("fav", "⭐  Favoriler"),
         ("settings", "⚙  Ayarlar")]
+
+
+def fmt_clock_secs(sec: float) -> str:
+    s = int(sec)
+    h, rem = divmod(s, 3600)
+    m, x = divmod(rem, 60)
+    return f"{h}:{m:02d}:{x:02d}" if h else f"{m}:{x:02d}"
 
 
 class EngineBridge(QObject):
@@ -65,6 +72,13 @@ class MainWindow(QMainWindow):
         self._file_index = 0
         self._ai_task: dict | None = None
         self._ls_active = False
+        self._pip = False
+        self._pre_pip: dict = {}
+        from ..recorder import Recorder, Scheduler
+        self.recorder = Recorder(folder=self.settings["record"].get("folder") or None,
+                                 user_agent=self.settings["network"]["user_agent"])
+        self.scheduler = Scheduler()
+        self._rec_current: str | None = None      # şu an oynayan yayının kaydının kimliği
         self._ls_pending = False
         self._ls_tries = 0
         self._picture_dlg = None
@@ -182,6 +196,9 @@ class MainWindow(QMainWindow):
         fp.open_series.connect(self.open_series)
         fp.play_history.connect(self.play_history)
         self.epg_panel.catchup_requested.connect(self.play_catchup)
+        self.epg_panel.record_requested.connect(self.schedule_record)
+        self.epg_panel.remind_requested.connect(self.schedule_reminder)
+        self.epg_panel.marks = self._prog_mark
         st.settings_changed.connect(self._on_settings_changed)
         st.sources_changed.connect(self._on_sources_changed)
         st.refresh_requested.connect(lambda sid: self.refresh(sid))
@@ -200,6 +217,8 @@ class MainWindow(QMainWindow):
         pl.volume_changed.connect(self._on_volume)
         pl.prev_clicked.connect(lambda: self._on_key("prev", []))
         pl.next_clicked.connect(lambda: self._on_key("next", []))
+        pl.record_clicked.connect(self.toggle_record)
+        pl.pip_clicked.connect(lambda: self._set_pip(not self._pip))
         pl.seek_to.connect(lambda sec: self.engine and self.engine.seek_abs(sec))
         pl.seek_by.connect(lambda d: self.engine and self.engine.seek(d))
         pl.menus["audio"].aboutToShow.connect(self._fill_audio_menu)
@@ -219,6 +238,8 @@ class MainWindow(QMainWindow):
             ("Ctrl+D", lambda: self.current_item and self.toggle_favorite(self.current_item)),
             ("Ctrl+P", self.picture_dialog),
             ("Ctrl+G", self.toggle_lossless),
+            ("Ctrl+R", self.toggle_record),
+            ("Ctrl+M", lambda: self._set_pip(not self._pip)),
         ]
         shortcuts += [("Ctrl+O", self.open_file_dialog), ("Ctrl+U", self.open_url_dialog),
                       ("Ctrl+E", lambda: self.export_dialog())]
@@ -239,6 +260,9 @@ class MainWindow(QMainWindow):
         run_task(gpu.query_gpus, on_done=self._on_gpu)
         self._schedule_auto_refresh()
         QTimer.singleShot(300, self._resume_last_channel)
+        self._sched_timer = QTimer(self, interval=15000, timeout=self._sched_tick)
+        self._sched_timer.start()
+        QTimer.singleShot(2000, self._sched_tick)
 
     # ================================================================== motor
     def _init_engine(self) -> None:
@@ -769,6 +793,10 @@ class MainWindow(QMainWindow):
                 self._commit_digits()
             else:
                 self._show_info()
+        elif action == "esc" and self._pip:
+            self._set_pip(False)
+        elif action == "fullscreen" and self._pip:
+            self._set_pip(False)
         elif action == "esc":
             if self._fs:
                 self._set_fullscreen(False)
@@ -886,7 +914,7 @@ class MainWindow(QMainWindow):
 
     def _set_theater(self, on: bool) -> None:
         self._theater = bool(on)
-        self.player.btn_theater.setText("▭ Listeler" if on else "▭ Sinema")
+        self.player.btn_theater.setToolTip("Listeleri göster (T)" if on else "Sinema modu: listeleri gizle (T)")
         self._update_layout()
 
     def _set_fullscreen(self, on: bool) -> None:
@@ -1330,6 +1358,161 @@ class MainWindow(QMainWindow):
                 and self.current_req and self.current_req.kind != "image":
             self.toggle_lossless(quiet=True, want=True)
 
+    # ------------------------------------------------------------------ kayıt (DVR), zamanlanmış kayıt, hatırlatıcı
+    def toggle_record(self) -> None:
+        """Oynayan yayını kaydet / kaydı durdur (yeniden kodlamadan, kayıpsız MPEG-TS)."""
+        if self._rec_current and self._rec_current in self.recorder.active:
+            rec = self.recorder.stop(self._rec_current)
+            self._rec_current = None
+            self.player.set_recording(None)
+            if rec:
+                self._status(f"Kayıt durdu: {rec.path}")
+                if self.engine:
+                    self.engine.show_text("Kayıt durdu", 1500)
+            return
+        req = self.current_req
+        if not req or req.kind in ("image", "file"):
+            self._status("Kaydetmek için önce bir kanal, film ya da bölüm açın.")
+            return
+        try:
+            rec = self.recorder.start(req.url, req.title, req.headers)
+        except Exception as e:  # noqa: BLE001
+            QMessageBox.warning(self, "Kayıt", str(e))
+            return
+        self._rec_current = rec.id
+        self.player.set_recording("0:00")
+        self._status(f"Kaydediliyor: {rec.path}")
+        if self.engine:
+            self.engine.show_text("⏺ Kayıt başladı", 1500)
+
+    def _item_play_info(self, item: Item) -> tuple[str, dict]:
+        src = self.ctx.source(item.source_id)
+        return catalog.play_url(self.store, item, self.settings, src), catalog.item_headers(item, src)
+
+    def schedule_record(self, item: Item, prog: dict) -> None:
+        url, headers = self._item_play_info(item)
+        job = self.scheduler.add("record", prog, item.name, item.key, url, headers)
+        self._status(f"⏺ Kayıt zamanlandı: {job.label()}")
+        self.epg_panel.refresh_marks()
+        self._sched_tick()
+
+    def schedule_reminder(self, item: Item, prog: dict) -> None:
+        job = self.scheduler.add("remind", prog, item.name, item.key)
+        self._status(f"🔔 Hatırlatıcı kuruldu: {job.label()}")
+        self.epg_panel.refresh_marks()
+
+    def _prog_mark(self, prog: dict) -> str:
+        item = self.epg_panel.item
+        if item is None:
+            return ""
+        if self.scheduler.find("record", item.key, prog["start"]):
+            return "⏺ "
+        if self.scheduler.find("remind", item.key, prog["start"]):
+            return "🔔 "
+        return ""
+
+    def _sched_tick(self) -> None:
+        # biten kayıtlar
+        for rec, err in self.recorder.reap():
+            if rec.id == self._rec_current:
+                self._rec_current = None
+                self.player.set_recording(None)
+            self._status(f"⚠ Kayıt durdu: {rec.title} — {err}" if err else f"Kayıt tamamlandı: {rec.path}")
+            for job in self.scheduler.jobs:
+                if job.state == "running" and job.id == getattr(rec, "job_id", None):
+                    self.scheduler.mark(job, "failed" if err else "done")
+        # oynayan kaydın süresi
+        if self._rec_current and self._rec_current in self.recorder.active:
+            r = self.recorder.active[self._rec_current]
+            self.player.set_recording(fmt_clock_secs(time.time() - r.started))
+        # zamanı gelen işler
+        for job in self.scheduler.due():
+            if job.kind == "record":
+                try:
+                    rec = self.recorder.start(job.url, f"{job.channel} - {job.title}", job.headers,
+                                              duration=self.scheduler.record_duration(job))
+                    rec.job_id = job.id
+                    self.scheduler.mark(job, "running")
+                    self._status(f"⏺ Zamanlanmış kayıt başladı: {job.label()}")
+                except Exception as e:  # noqa: BLE001
+                    self.scheduler.mark(job, "failed")
+                    self._status(f"⚠ Zamanlanmış kayıt başlatılamadı: {e}")
+            else:
+                self.scheduler.mark(job, "done")
+                self._remind(job)
+
+    def _remind(self, job) -> None:
+        if self.engine and self.current_req:
+            self.engine.show_text(f"🔔 Birazdan: {job.title} ({job.channel})", 6000)
+        box = QMessageBox(QMessageBox.Information, "Hatırlatıcı",
+                          f"{time.strftime('%H:%M', time.localtime(job.start))} — {job.title}\n{job.channel}",
+                          parent=self)
+        watch = box.addButton("Kanalı aç", QMessageBox.AcceptRole)
+        box.addButton("Kapat", QMessageBox.RejectRole)
+        box.setModal(False)
+
+        def done(_r=None):
+            if box.clickedButton() is watch:
+                it = self.store.item(int(job.key[0]), job.key[1], str(job.key[2])) if len(job.key) == 3 else None
+                if it:
+                    self.play_live(it)
+        box.finished.connect(done)
+        box.show()
+        QApplication.alert(self)
+
+    # ------------------------------------------------------------------ resim içinde resim (mini oynatıcı)
+    def _set_pip(self, on: bool) -> None:
+        if on == self._pip:
+            return
+        if on and self._fs:
+            self._set_fullscreen(False)
+        self._pip = on
+        if on:
+            self._pre_pip = {"geom": self.saveGeometry(), "max": self.isMaximized(), "theater": self._theater}
+            for w in (self.topbar, self.pages, self.epg_panel, self.player.bar):
+                w.hide()
+            self.statusBar().hide()
+            self.right.show()
+            self.showNormal()
+            # gizlenen parçalar en küçük boyuttan düşsün diye yerleşim önce güncellenir
+            self.centralWidget().layout().activate() if self.centralWidget().layout() else None
+            self.layout().activate()
+            scr = self.screen().availableGeometry() if self.screen() else None
+            w, h = 512, 288
+            self.setMinimumSize(320, 180)
+            self.resize(w, h)
+            if scr is not None:
+                self.move(scr.right() - w - 24, scr.bottom() - h - 48)
+            self._set_topmost(True)
+            if self.engine:
+                self.engine.show_text("Mini oynatıcı — çift tık ya da Esc: geri dön", 2500)
+        else:
+            self._set_topmost(False)
+            self.setMinimumSize(0, 0)
+            self.topbar.show()
+            self.statusBar().show()
+            self.player.bar.show()
+            self.restoreGeometry(self._pre_pip.get("geom") or self.saveGeometry())
+            if self._pre_pip.get("max"):
+                self.showMaximized()
+            self._theater = self._pre_pip.get("theater", False)
+            self._update_layout()
+
+    def _set_topmost(self, on: bool) -> None:
+        """Her zaman üstte. Windows'ta pencere yeniden oluşturulmadan (SetWindowPos) — mpv'nin gömülü penceresi
+        bozulmasın; diğer sistemlerde Qt bayrağı."""
+        if os.name == "nt":
+            try:
+                import ctypes
+                HWND_TOPMOST, HWND_NOTOPMOST, SWP_NOMOVE, SWP_NOSIZE = -1, -2, 0x0002, 0x0001
+                ctypes.windll.user32.SetWindowPos(int(self.winId()), HWND_TOPMOST if on else HWND_NOTOPMOST,
+                                                  0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE)
+                return
+            except Exception:
+                pass
+        self.setWindowFlag(Qt.WindowStaysOnTopHint, on)
+        self.show()
+
     def _nudge(self, prop: str, delta: float, label: str) -> None:
         if not self.engine:
             return
@@ -1481,6 +1664,13 @@ class MainWindow(QMainWindow):
             if st.get("pos"):
                 self.store.save_progress(self.current_req.key, self.current_req.title, self.current_req.logo,
                                          st["pos"], st.get("duration") or 0, self.current_req.meta)
+        if self.recorder.active:
+            names = ", ".join(r.title for r in self.recorder.active.values())
+            if QMessageBox.question(self, APP_NAME, f"Kayıt sürüyor ({names}). Kapatılırsa kayıt durur "
+                                    "(o ana kadarki kısım kaydedilmiş olur). Kapatılsın mı?") != QMessageBox.Yes:
+                event.ignore()
+                return
+            self.recorder.stop_all()
         self._save_settings()
         if self.engine:
             self.engine.shutdown()

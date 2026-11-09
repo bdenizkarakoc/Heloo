@@ -111,6 +111,21 @@ Uygulama genelinde: **Ctrl+F** ara, **F5** yenile, **Ctrl+↑/↓** kanal, **Ctr
 **İleri / geri sarma:** film, dizi ve dosyalarda alt çubukta ilerleme çubuğu (sürükleyin ya da tıklayın), geçen/toplam
 süre ve **−1 dk / −10 / +10 / +1 dk** düğmeleri vardır. Canlı yayında çubuk gizlenir; ←/→ zaman kaydırma yapar.
 
+## Kayıt, zamanlanmış kayıt, hatırlatıcı, mini oynatıcı
+
+TiviMate / IPTVnator / OTT Navigator'daki özelliklerin karşılıkları:
+
+- **⏺ Kaydet (Ctrl+R)**: oynayan canlı yayını, filmi ya da geri izlemeyi kaydeder. FFmpeg akışı yeniden kodlamadan
+  (`-c copy`) MPEG-TS'ye yazar: işlemci yükü ve kalite kaybı yok, kayıt kesilse de dosya oynatılır. Kayıt sürerken
+  düğme kırmızıdır ve süreyi gösterir. Kayıtlar: `Videolar\Heloo TV Kayıtlar` (Ayarlar'dan değiştirilebilir).
+- **Zamanlanmış kayıt**: yayın akışında bir programa sağ tık → "⏺ Bu programı kaydet". Kayıt 1 dk önce başlar,
+  program bitiminden 2 dk sonra biter; uygulama açık olmalıdır. Programın yanında ⏺ işareti görünür.
+- **Hatırlatıcı**: sağ tık → "🔔 Başlayınca hatırlat": program başlamadan 1 dk önce bildirim ve "Kanalı aç".
+- **⧉ Resim içinde resim (Ctrl+M)**: yalnız video, her zaman üstte, ekranın sağ altında küçük pencere; başka bir işle
+  uğraşırken izlemek için. Esc ya da çift tık: geri döner.
+- Oynatıcı çubuğu iki satıra bölündü (sarma düğmeleri ilerleme çubuğunun yanında; ses ve pencere düğmeleri başlık
+  satırında): pencerenin en küçük genişliği 2157 → 1328 piksel (1366 px dizüstü ekrana sığar).
+
 ## Altyazı ve ses izi
 
 Alt çubuktaki **💬 Altyazı** menüsü:

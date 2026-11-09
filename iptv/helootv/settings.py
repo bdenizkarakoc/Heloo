@@ -67,6 +67,9 @@ DEFAULTS: dict[str, Any] = {
         "exe": "",                # boş: Steam kütüphanelerinde aranır
         "tips_shown": False,
     },
+    "record": {
+        "folder": "",             # boş: Videolar\Heloo TV Kayıtlar
+    },
     "network": {
         "user_agent": "VLC/3.0.21 LibVLC/3.0.21",
         "timeout": 15,

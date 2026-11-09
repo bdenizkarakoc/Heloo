@@ -49,6 +49,9 @@ python -m pytest tests -q              # testler (libmpv2/ffmpeg/7z varsa başs�
   `CHASE_SUSTAIN` sn sürekli aşımda, ileri atlama yalnız ≥`JUMP_MIN` sn. `fflags=nobuffer`/latency-hacks yalnız ultra.
   hwdec kopyası yalnız gürültü azaltılan kaynakta (`engine._ensure_hwdec`); geçmeli bilgisi kanal başına yapışkan.
   Ayar göçleri `settings._migrate` (`meta.version`).
+- Kayıt: `recorder.py` (Qt'siz; `Recorder` FFmpeg `-c copy` MPEG-TS, `Scheduler` `schedule.json`, `due()` arayüzde
+  15 sn'de bir). Mini oynatıcı `MainWindow._set_pip`: Windows'ta her zaman üstte `SetWindowPos` ile (pencere bayrağı
+  değiştirmek pencereyi yeniden oluşturur, gömülü mpv bozulur).
 - Veritabanı: `store.py` (iş parçacığı başına bağlantı, WAL). EPG ayrı dosyada (`*-epg.db`); uzun EPG içe aktarımı
   katalog/geçmiş yazmalarını bekletmez. Arayüzden uzun sorguları `ui/workers.run_task` ile arka planda çalıştır.
 - Kullanıcı metinleri Türkçe. `.ps1`/`.bat` dosyaları yalnız ASCII (Windows kod sayfası sorunları).

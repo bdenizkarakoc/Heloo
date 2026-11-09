@@ -71,6 +71,8 @@ class PlayerPanel(QWidget):
     next_clicked = Signal()
     seek_to = Signal(float)          # mutlak saniye
     seek_by = Signal(float)          # göreli saniye
+    record_clicked = Signal()
+    pip_clicked = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -106,6 +108,15 @@ class PlayerPanel(QWidget):
         for b in (self.live_badge, self.vsr_badge, self.info_badge):
             b.hide()
             top.addWidget(b)
+        # uzun etiketler (başlık, iyileştirme) dar pencerede kısalabilsin: pencerenin en küçük genişliğini büyütmesin
+        for lab in (self.title, self.vsr_badge, self.info_badge):
+            lab.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)   # doğal boyut; yer yoksa küçülür
+            lab.setMinimumWidth(40)
+        self.title.setMinimumWidth(110)
+        self.subtitle.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+        self.subtitle.setMinimumWidth(0)
+        self.vsr_badge.setMaximumWidth(560)
+        self._top = top
         bl.addLayout(top)
         # ilerleme çubuğu (film/dizi/dosya; canlıda zaman kaydırma tamponu)
         seek_row = QHBoxLayout()
@@ -133,18 +144,19 @@ class PlayerPanel(QWidget):
         row = QHBoxLayout()
         row.setSpacing(6)
 
-        def btn(text, tip, sig, obj="Flat"):
+        def btn(text, tip, sig, obj="Flat", where=None):
             b = QPushButton(text)
             b.setObjectName(obj)
             b.setToolTip(tip)
             b.setCursor(Qt.PointingHandCursor)
             b.clicked.connect(sig.emit)
-            row.addWidget(b)
+            (where if where is not None else row).addWidget(b)
             return b
 
         self.btn_prev = btn("⏮", "Önceki kanal / bölüm (Yukarı ok)", self.prev_clicked)
         self.btn_pause = btn("⏯", "Duraklat / sürdür (Boşluk)", self.pause_clicked)
         self.btn_next = btn("⏭", "Sonraki kanal / bölüm (Aşağı ok)", self.next_clicked)
+        # sarma düğmeleri ilerleme çubuğunun iki yanında (çubuk dar pencerede de sığsın)
         for text, delta, tip in (("−1 dk", -60, "1 dakika geri"), ("−10", -10, "10 saniye geri (Sol ok)"),
                                  ("+10", 10, "10 saniye ileri (Sağ ok)"), ("+1 dk", 60, "1 dakika ileri")):
             b = QPushButton(text)
@@ -152,9 +164,13 @@ class PlayerPanel(QWidget):
             b.setToolTip(tip)
             b.setCursor(Qt.PointingHandCursor)
             b.clicked.connect(lambda _c=False, d=delta: self.seek_by.emit(float(d)))
-            row.addWidget(b)
+            if delta < 0:
+                seek_row.insertWidget(0 if delta == -60 else 1, b)
+            else:
+                seek_row.addWidget(b)
         self.btn_stop = btn("⏹", "Durdur", self.stop_clicked)
-        self.btn_live = btn("⦿ Canlıya dön", "Zaman kaydırmadan çık, canlı yayına atla (L)", self.live_clicked)
+        self.btn_rec = btn("⏺", "Bu yayını kaydet (Ctrl+R) — yeniden kodlamadan, kayıpsız", self.record_clicked)
+        self.btn_live = btn("⦿ Canlı", "Zaman kaydırmadan çık, canlı yayına atla (L)", self.live_clicked)
         row.addStretch(1)
         # Ses izi / Altyazı / Görüntü menüleri (içerikleri ana pencere doldurur)
         from PySide6.QtWidgets import QMenu, QToolButton
@@ -175,14 +191,19 @@ class PlayerPanel(QWidget):
             self.menus[key] = m
         self.vol = QSlider(Qt.Horizontal)
         self.vol.setRange(0, 150)
-        self.vol.setFixedWidth(110)
+        self.vol.setFixedWidth(90)
         self.vol.setToolTip("Ses (fare tekerleği)")
         self.vol.valueChanged.connect(self.volume_changed.emit)
-        row.addWidget(QLabel("🔊"))
-        row.addWidget(self.vol)
-        self.btn_external = btn("↗", "Ayrı mpv penceresinde aç (aynı RTX ayarlarıyla)", self.external_clicked)
-        self.btn_theater = btn("▭ Sinema", "Sinema modu (T)", self.theater_clicked)
-        self.btn_fs = btn("⛶ Tam ekran", "Tam ekran (F / çift tık)", self.fullscreen_clicked)
+        # ses ve pencere düğmeleri başlık satırının sağında (alt satır dar pencereye sığsın)
+        top = self._top
+        top.addSpacing(8)
+        top.addWidget(QLabel("🔊"))
+        top.addWidget(self.vol)
+        self.btn_external = btn("↗", "Ayrı mpv penceresinde aç (aynı RTX ayarlarıyla)", self.external_clicked, where=top)
+        self.btn_pip = btn("⧉", "Resim içinde resim: her zaman üstte küçük pencere (Ctrl+M)", self.pip_clicked,
+                           where=top)
+        self.btn_theater = btn("▭", "Sinema modu: listeleri gizle (T)", self.theater_clicked, where=top)
+        self.btn_fs = btn("⛶", "Tam ekran (F / çift tık)", self.fullscreen_clicked, where=top)
         bl.addLayout(row)
         lay.addWidget(self.bar)
         self.set_idle()
@@ -240,20 +261,14 @@ class PlayerPanel(QWidget):
         enh = st.get("enhance") or []
         if enh:
             # her zaman görünür: canlı yayında da hangi iyileştirmelerin çalıştığı
-            self.vsr_badge.setText("✦ " + " · ".join(enh))
-            self.vsr_badge.setToolTip("Görüntü iyileştirme açık (canlı yayın dahil her kaynakta).\n"
-                                      + (plan.get("reason") or ""))
+            self.vsr_badge.setText("✦ " + " · ".join(_short(e) for e in enh))
+            self.vsr_badge.setToolTip("Görüntü iyileştirme açık (canlı yayın dahil her kaynakta):\n• "
+                                      + "\n• ".join(enh) + ("\n" + plan["reason"] if plan.get("reason") else ""))
             self.vsr_badge.show()
         else:
             self.vsr_badge.hide()
+        # çözünürlük/fps durum çubuğunda; burada yalnız canlı yayına özgü bilgi (gecikme, arabellek)
         parts = []
-        if st.get("w"):
-            parts.append(f"{st['w']}×{st['h']}")
-        if st.get("fps"):
-            try:
-                parts.append(f"{float(st['fps']):.0f} fps")
-            except (TypeError, ValueError):
-                pass
         if st.get("kind") == "live" and st.get("cache") is not None:
             if st.get("user_paused"):
                 parts.append(f"zaman kaydırma −{st['cache']:.0f} sn")
@@ -262,11 +277,36 @@ class PlayerPanel(QWidget):
         if st.get("buffering"):
             parts.append("arabelleğe alınıyor…")
         self.info_badge.setText("  ·  ".join(parts))
+        self.info_badge.setToolTip("\n".join(parts))
         self.info_badge.setVisible(bool(parts))
         if st.get("volume") is not None and not self.vol.isSliderDown():
             self.vol.blockSignals(True)
             self.vol.setValue(int(st["volume"]))
             self.vol.blockSignals(False)
+
+
+    def set_recording(self, rec_text: str | None) -> None:
+        """Kayıt düğmesi: kayıt sürüyorsa kırmızı ve süre."""
+        if rec_text:
+            self.btn_rec.setText(f"⏺ {rec_text}")
+            self.btn_rec.setStyleSheet("color: #ff5c7a; font-weight: 600;")
+            self.btn_rec.setToolTip("Kaydı durdur (Ctrl+R)")
+        else:
+            self.btn_rec.setText("⏺")
+            self.btn_rec.setStyleSheet("")
+            self.btn_rec.setToolTip("Bu yayını kaydet (Ctrl+R) — yeniden kodlamadan, kayıpsız")
+
+
+_SHORT = {"Gürültü azaltma": "Gürültü↓", "Keskinlik": "Keskin", "Bant yumuşatma": "Deband",
+          "Lossless Scaling kare üretimi": "LSFG", "AMD FSR büyütme": "AMD FSR",
+          "Yüksek kaliteli büyütme": "HQ büyütme"}
+
+
+def _short(label: str) -> str:
+    """Çubuktaki iyileştirme etiketinin kısa hali (tam liste ipucunda)."""
+    if label.startswith("Yapay zekâ büyütme (") and label.endswith(")"):
+        return label[len("Yapay zekâ büyütme ("):-1]
+    return _SHORT.get(label, label)
 
 
 def _clock(sec) -> str:
