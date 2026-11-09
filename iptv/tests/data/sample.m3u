@@ -1,0 +1,25 @@
+#EXTM3U url-tvg="http://epg.example.com/guide.xml.gz" tvg-shift="0" catchup="shift"
+#EXTINF:-1 tvg-id="TRT1.tr" tvg-name="TRT 1" tvg-logo="http://logo/trt1.png" group-title="Ulusal, HD",TRT 1 HD
+http://example.com/live/trt1.m3u8
+#EXTINF:-1 tvg-id="" tvg-logo="http://logo/atv.png" group-title="Ulusal",ATV
+#EXTVLCOPT:http-user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)
+#EXTVLCOPT:http-referrer=https://www.atv.com.tr/
+http://example.com/live/atv/index.m3u8
+#EXTINF:-1 group-title="Movies",Film Kanalı (720p)
+https://example.com/filmkanali/playlist.m3u8
+#EXTINF:-1 tvg-logo="http://logo/xxx.png" group-title="XXX Adult",Gece Kanalı
+http://example.com/adult.ts
+#EXTINF:0,Radyo|Spor
+#EXTGRP:Radyo
+http://example.com/radyo.mp3|User-Agent=KodiUA&Referer=https%3A%2F%2Fref.example%2F
+#EXTINF:-1 tvg-logo="http://img/inception.jpg" group-title="VOD | Bilim Kurgu",Başlangıç (2010)
+http://host:8080/movie/user/pass/1001.mkv
+#EXTINF:-1 group-title="Dizi | Yerli",Kuruluş Osman S02 E05
+http://host:8080/series/user/pass/5005.mp4
+#EXTINF:-1 group-title="Dizi | Yerli",Kuruluş Osman S02 E04
+http://host:8080/series/user/pass/5004.mp4
+#EXTINF:-1 group-title="Diziler",Yalı Çapkını 2. Sezon 14. Bölüm
+http://cdn.example.com/yali/s2e14.mp4
+#EXTINF:-1 tvg-id="DRMKanal" group-title="Ulusal",DRM Kanal
+#KODIPROP:inputstream.adaptive.license_type=com.widevine.alpha
+http://example.com/drm/manifest.mpd

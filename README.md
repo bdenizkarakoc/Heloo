@@ -8,3 +8,8 @@ Türkçe, seslendirmeli, altyazılı, hareketli ve paylaşıma hazır dikey vide
 **Premiere Pro MCP** (v1.25.0, MIT, [leancoderkavy/premiere-pro-mcp](https://github.com/leancoderkavy/premiere-pro-mcp)) → [`premiere-pro-mcp/`](premiere-pro-mcp/README.md)
 
 Adobe Premiere Pro için yerel MCP sunucusu; Claude ile Premiere'de kurgu yapmayı sağlar. Değiştirilmeden eklenmiştir.
+
+**Heloo TV** (IPTV oynatıcı) → [`iptv/`](iptv/README.md)
+
+Canlı TV, Filmler ve Diziler; Xtream Codes / M3U / EPG. NVIDIA RTX Video Super Resolution ile 4K'ya yükseltme,
+GPU deinterlace, isteğe bağlı RTX Video HDR, düşük gecikme (canlıya yetişme). Windows'ta `iptv\Heloo TV.bat`.

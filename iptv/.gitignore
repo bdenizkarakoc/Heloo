@@ -1,0 +1,6 @@
+# Yerel ortam ve indirilen bileşenler (install.ps1 / fetch_mpv üretir)
+.venv/
+bin/
+__pycache__/
+*.pyc
+.pytest_cache/

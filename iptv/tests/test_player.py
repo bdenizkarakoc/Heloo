@@ -1,0 +1,231 @@
+"""Oynatıcı: RTX VSR ölçek planı, gecikme kipleri ve (libmpv varsa) başsız gerçek oynatma testleri."""
+import functools
+import http.server
+import shutil
+import subprocess
+import threading
+import time
+from pathlib import Path
+
+import pytest
+
+from helootv import settings as settings_mod
+from helootv.player import options as opt
+
+
+def S(**over):
+    s = settings_mod.merged_defaults()
+    for path, val in over.items():
+        sec, key = path.split("__")
+        s[sec][key] = val
+    return s
+
+
+# ---------------------------------------------------------------- RTX VSR planı
+
+@pytest.mark.parametrize("w,h,scale,out", [
+    (1920, 1080, 2.0, (3840, 2160)),
+    (1280, 720, 3.0, (3840, 2160)),
+    (720, 576, 3.75, (2700, 2160)),   # anamorfik SD: dw=1024 → 16:9 görüntü 3840×2160
+    (640, 360, 6.0, (3840, 2160)),
+])
+def test_vsr_plan_4k(w, h, scale, out):
+    dw = 1024 if (w, h) == (720, 576) else w
+    plan = opt.vsr_plan(S(), {"w": w, "h": h, "dw": dw, "dh": h}, (2560, 1440), platform="win32")
+    assert plan["scale"] == scale and plan["out"] == out
+    assert plan["vf"].startswith("@helootv:d3d11vpp=") and "scaling-mode=nvidia" in plan["vf"]
+    assert "deint=yes" in plan["vf"] and "interlaced-only=yes" in plan["vf"]
+    assert "nvidia-true-hdr" not in plan["vf"]
+
+
+def test_vsr_plan_variants():
+    vp = {"w": 1920, "h": 1080, "dw": 1920, "dh": 1080}
+    # sinemaskop: genişlik sınırı (3840) aşılmaz
+    wide = opt.vsr_plan(S(), {"w": 1920, "h": 800, "dw": 1920, "dh": 800}, None, "win32")
+    assert wide["scale"] == 2.0 and wide["out"] == (3840, 1600)
+    # 4K kaynak: büyütme yok, yalnız deinterlace
+    uhd = opt.vsr_plan(S(), {"w": 3840, "h": 2160}, None, "win32")
+    assert uhd["scale"] is None and "scale=" not in uhd["vf"] and "deint=yes" in uhd["vf"]
+    # ekran çözünürlüğü hedefi
+    scr = opt.vsr_plan(S(video__vsr_target="screen"), vp, (2560, 1440), "win32")
+    assert scr["scale"] == pytest.approx(1.3333, abs=1e-3)
+    # RTX HDR yalnız SDR kaynakta
+    hdr = opt.vsr_plan(S(video__rtx_hdr=True), vp, None, "win32")
+    assert "nvidia-true-hdr=yes" in hdr["vf"]
+    hdr_src = opt.vsr_plan(S(video__rtx_hdr=True), dict(vp, gamma="pq"), None, "win32")
+    assert "nvidia-true-hdr" not in hdr_src["vf"]
+    # kapalı + deinterlace yok → filtre yok
+    off = opt.vsr_plan(S(video__rtx_vsr=False, video__deinterlace="no"), vp, None, "win32")
+    assert off["vf"] == ""
+    # Windows dışı: filtre yok
+    assert opt.vsr_plan(S(), vp, None, "linux")["vf"] == ""
+
+
+def test_latency_and_vod_options():
+    hls = opt.play_options(S(), "live", "http://x/live/index.m3u8?token=1", {"user_agent": "UA", "origin": "https://o"})
+    assert hls["demuxer-lavf-o"] == "fflags=+nobuffer,live_start_index=-2"
+    assert hls["user-agent"] == "UA" and hls["http-header-fields"] == ["Origin: https://o"]
+    assert hls["video-sync"] == "audio" and hls["interpolation"] == "no"
+    ultra = opt.play_options(S(latency__mode="ultra"), "live", "http://x/live/u/p/1.ts")
+    assert ultra["demuxer-lavf-o"] == "fflags=+nobuffer" and ultra["audio-buffer"] == "0"
+    assert ultra["cache-pause"] == "no" and ultra["demuxer-lavf-probe-info"] == "nostreams"
+    stable = opt.play_options(S(latency__mode="stable"), "live", "http://x/1.ts")
+    assert stable["cache-pause-initial"] == "yes" and stable["demuxer-lavf-o"] == ""
+    vod = opt.play_options(S(), "movie", "http://x/movie/u/p/1.mkv")
+    assert vod["video-sync"] == "display-resample" and vod["interpolation"] == "yes"
+    assert vod["demuxer-max-bytes"] == "400MiB" and vod["af"] == ""
+    assert "dynaudnorm" in opt.play_options(S(audio__normalize=True), "episode", "http://x/1.mp4")["af"]
+    q = opt.quality_options(S(), "win32")
+    assert q["hwdec-codecs"] == "all" and q["deinterlace"] == "no" and q["alang"].startswith("tur")
+    assert opt.create_options(S(), wid=123, platform="win32")["gpu-api"] == "d3d11"
+    assert opt.create_options(S(), platform="win32")["hwdec"] == "d3d11va"
+    args = opt.cli_args({"vf": "@x:d3d11vpp=scale=2", "http-header-fields": ["A: 1"], "referrer": ""})
+    assert args == ["--vf=@x:d3d11vpp=scale=2", "--http-header-fields-append=A: 1", "--referrer="]
+
+
+def test_external_profiles_and_input_conf(tmp_path):
+    from helootv.player import engine
+    text = engine.external_profiles(S(), "win32")
+    assert "profile-cond=height and height > 620 and height <= 800" in text
+    assert "vf=@helootv:d3d11vpp=scale=3:scaling-mode=nvidia" in text
+    conf = engine.write_input_conf(tmp_path)
+    content = conf.read_text(encoding="utf-8")
+    assert "UP            script-message helootv up" in content and "KP5  script-message helootv digit 5" in content
+    assert engine.describe_mpv_error(["[ffmpeg] http: HTTP error 403 Forbidden"]).startswith("Sunucu erişimi")
+
+
+# ---------------------------------------------------------------- gerçek libmpv (başsız)
+
+def _libmpv_available() -> bool:
+    try:
+        import mpv  # noqa: F401
+        return True
+    except Exception:
+        return False
+
+
+needs_mpv = pytest.mark.skipif(not _libmpv_available(), reason="libmpv yok")
+needs_ffmpeg = pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg yok")
+
+
+class Recorder:
+    def __init__(self):
+        self.events = []
+        self.cv = threading.Condition()
+
+    def __call__(self, name, data):
+        with self.cv:
+            self.events.append((name, data))
+            self.cv.notify_all()
+
+    def wait(self, name, timeout=10, count=1):
+        end = time.time() + timeout
+        with self.cv:
+            while sum(1 for n, _ in self.events if n == name) < count:
+                left = end - time.time()
+                if left <= 0:
+                    return False
+                self.cv.wait(left)
+        return True
+
+    def names(self):
+        return [n for n, _ in self.events]
+
+
+@pytest.fixture
+def engine(tmp_path, monkeypatch):
+    monkeypatch.setenv("HELOOTV_HOME", str(tmp_path))
+    from helootv.player.engine import MpvEngine
+    rec = Recorder()
+    eng = MpvEngine(S(), headless=True, on_event=rec, extra_options={"ao": "null"})
+    eng.start()
+    eng.rec = rec
+    yield eng
+    eng.shutdown()
+
+
+@needs_mpv
+def test_engine_plays_live_lavfi(engine):
+    from helootv.player.engine import PlayRequest
+    engine.play(PlayRequest(url="av://lavfi:testsrc2=size=1280x720:rate=25", title="Test Kanal", kind="live"))
+    assert engine.rec.wait("file-loaded", 10)
+    deadline = time.time() + 10
+    st = {}
+    while time.time() < deadline:
+        st = engine.tick()
+        if st.get("w"):
+            break
+        time.sleep(0.2)
+    assert st["w"] == 1280 and st["h"] == 720 and st["title"] == "Test Kanal"
+    assert engine.version_tuple >= (0, 35, 0)
+    # tuş iletisi uygulamaya ulaşır
+    engine.command("script-message", "helootv", "digit", "7")
+    assert engine.rec.wait("key", 5)
+    key = next(d for n, d in engine.rec.events if n == "key")
+    assert key == {"action": "digit", "args": ["7"]}
+    # canlıya yetişme: tampon sınırı aşılınca hızlanır, hedefe inince normale döner
+    fake = dict(st, paused=False, buffering=False, seeking=False, hls=False, cache=5.0)
+    engine._user_paused = False
+    engine._chase(fake)
+    assert engine._boost and float(engine._get("speed")) == pytest.approx(1.08)
+    engine._chase(dict(fake, cache=0.5))
+    assert not engine._boost and float(engine._get("speed")) == pytest.approx(1.0)
+    engine.stop()
+    assert engine.rec.wait("stopped", 5)
+
+
+def _serve(directory: Path):
+    handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(directory))
+    httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    t = threading.Thread(target=httpd.serve_forever, daemon=True)
+    t.start()
+    return httpd
+
+
+@needs_mpv
+@needs_ffmpeg
+def test_engine_reconnects_live_and_resumes_vod(engine, tmp_path):
+    from helootv.player.engine import PlayRequest
+    media = tmp_path / "media"
+    media.mkdir()
+    subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=640x360:rate=25", "-f", "lavfi",
+                    "-i", "sine=frequency=440", "-t", "2", "-c:v", "libx264", "-preset", "ultrafast", "-g", "25",
+                    "-c:a", "aac", "-f", "mpegts", str(media / "live.ts")], check=True)
+    subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=640x360:rate=25", "-f", "lavfi",
+                    "-i", "sine=frequency=440", "-t", "20", "-c:v", "libx264", "-preset", "ultrafast", "-g", "25",
+                    "-c:a", "aac", str(media / "film.mp4")], check=True)
+    httpd = _serve(media)
+    base = f"http://127.0.0.1:{httpd.server_address[1]}"
+    try:
+        # 2 sn'lik "canlı" yayın biter → motor kendiliğinden yeniden bağlanır
+        engine.play(PlayRequest(url=f"{base}/live.ts", title="Kopan Kanal", kind="live"))
+        assert engine.rec.wait("reconnecting", 15)
+        assert engine.rec.wait("file-loaded", 15, count=2)
+        data = next(d for n, d in engine.rec.events if n == "reconnecting")
+        assert data["attempt"] == 1 and data["max"] >= 3
+
+        # film: kaldığın yerden (12. sn) başlar, sonunda "ended" gelir
+        loaded = engine.rec.names().count("file-loaded")
+        # (test sunucusu HTTP Range desteklemediği için film yerel dosyadan açılır)
+        engine.play(PlayRequest(url=str(media / "film.mp4"), title="Film", kind="movie", start=12,
+                                key=(1, "movie", "9")))
+        assert engine.rec.wait("file-loaded", 10, count=loaded + 1)
+        deadline = time.time() + 10
+        pos = None
+        while time.time() < deadline:
+            pos = engine.status()["pos"]
+            if pos is not None and pos > 0:
+                break
+            time.sleep(0.1)
+        assert pos is not None and pos >= 11.5
+        assert engine.rec.wait("ended", 20)
+        ended = next(d for n, d in engine.rec.events if n == "ended")
+        assert ended["key"] == (1, "movie", "9")
+
+        # olmayan adres → hata iletisi (canlı değilse yeniden denemez)
+        engine.play(PlayRequest(url=f"{base}/yok.mp4", title="Yok", kind="movie"))
+        assert engine.rec.wait("error", 15)
+        err = [d for n, d in engine.rec.events if n == "error"][-1]
+        assert err["message"]
+    finally:
+        httpd.shutdown()

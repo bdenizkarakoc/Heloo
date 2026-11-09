@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<tv generator-info-name="test">
+  <channel id="TRT1.tr"><display-name lang="tr">TRT 1</display-name><icon src="http://logo/trt1.png"/></channel>
+  <channel id="atv.tr"><display-name>ATV HD</display-name></channel>
+  <programme start="20261109180000 +0300" stop="20261109190000 +0300" channel="TRT1.tr">
+    <title lang="en">Evening News</title><title lang="tr">Akşam Haberleri</title><desc lang="tr">Günün özeti</desc>
+  </programme>
+  <programme start="20261109190000 +0300" stop="20261109210000 +0300" channel="TRT1.tr"><title>Film</title></programme>
+  <programme start="20261109150000" stop="20261109160000" channel="atv.tr"><title>Öğle Haberleri</title></programme>
+</tv>

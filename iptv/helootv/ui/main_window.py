@@ -1,0 +1,943 @@
+"""Ana pencere: sekmeler, oynatma akışı, kanal geçişi, tam ekran/sinema modu, yenileme ve durum çubuğu."""
+from __future__ import annotations
+
+import logging
+import math
+import time
+
+from PySide6.QtCore import QObject, Qt, QTimer, Signal
+from PySide6.QtGui import QGuiApplication, QKeySequence, QShortcut
+from PySide6.QtWidgets import (QButtonGroup, QFrame, QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMessageBox,
+                               QPushButton, QSplitter, QStackedWidget, QVBoxLayout, QWidget)
+
+from .. import APP_NAME, __version__, catalog, epg, gpu, paths
+from ..player import options as opt
+from ..player.engine import EngineError, MpvEngine, PlayRequest, launch_external
+from ..settings import save_settings
+from ..store import Item, Store
+from . import theme
+from .context import AppContext
+from .images import ImageLoader
+from .pages import EpgPanel, FavoritesPage, LivePage, MoviesPage, SeriesPage, fmt_clock
+from .player_panel import PlayerPanel
+from .settings_page import SettingsPage
+from .workers import run_task
+
+log = logging.getLogger("helootv.ui")
+TABS = [("live", "📺  Canlı TV"), ("movie", "🎬  Filmler"), ("series", "🎞  Diziler"), ("fav", "⭐  Favoriler"),
+        ("settings", "⚙  Ayarlar")]
+
+
+class EngineBridge(QObject):
+    event = Signal(str, dict)
+
+
+class MainWindow(QMainWindow):
+    def __init__(self, store: Store, settings: dict, debug: bool = False, headless: bool = False):
+        super().__init__()
+        self.store = store
+        self.settings = settings
+        self.debug = debug
+        self.headless = headless
+        self.images = ImageLoader(self)
+        self.ctx = AppContext(store, settings, self.images)
+        self.engine: MpvEngine | None = None
+        self.bridge = EngineBridge()
+        self.bridge.event.connect(self._on_engine_event)
+        self.current_req: PlayRequest | None = None
+        self.current_item: Item | None = None
+        self.prev_item: Item | None = None
+        self._episode_ctx: dict | None = None
+        self._fs = False
+        self._theater = False
+        self._pre_fs: dict = {}
+        self._digits = ""
+        self._last_save = 0.0
+        self._refresh_jobs: list[tuple[str, int]] = []
+        self._refreshing = False
+        self._gpu: dict | None = None
+        self._gpu_assess: dict = {}
+        self._build_ui()
+        self._wire()
+        self._save_timer = QTimer(self, singleShot=True, interval=600, timeout=self._save_settings)
+        self._search_timer = QTimer(self, singleShot=True, interval=280, timeout=self._apply_search)
+        self._digit_timer = QTimer(self, singleShot=True, interval=1600, timeout=self._commit_digits)
+        self._tick_timer = QTimer(self, interval=500, timeout=self._tick)
+        self._tick_timer.start()
+        QTimer.singleShot(0, self._post_show)
+
+    # ================================================================== kurulum
+    def _build_ui(self) -> None:
+        self.setWindowTitle(APP_NAME)
+        self.setWindowIcon(theme.app_icon())
+        self.resize(1520, 920)
+        central = QWidget()
+        v = QVBoxLayout(central)
+        v.setContentsMargins(0, 0, 0, 0)
+        v.setSpacing(0)
+        self.topbar = QFrame()
+        self.topbar.setObjectName("TopBar")
+        h = QHBoxLayout(self.topbar)
+        h.setContentsMargins(14, 8, 14, 8)
+        h.setSpacing(6)
+        logo = QLabel()
+        logo.setPixmap(theme.draw_logo(30))
+        logo.setStyleSheet("background: transparent;")
+        brand = QLabel(APP_NAME)
+        brand.setObjectName("Brand")
+        h.addWidget(logo)
+        h.addWidget(brand)
+        self.nav = QButtonGroup(self)
+        for i, (_key, label) in enumerate(TABS):
+            b = QPushButton(label)
+            b.setObjectName("Nav")
+            b.setCheckable(True)
+            b.setCursor(Qt.PointingHandCursor)
+            self.nav.addButton(b, i)
+            h.addWidget(b)
+        h.addStretch(1)
+        self.gpu_badge = QLabel("")
+        self.gpu_badge.setObjectName("Badge")
+        self.gpu_badge.hide()
+        h.addWidget(self.gpu_badge)
+        self.search = QLineEdit()
+        self.search.setObjectName("Search")
+        self.search.setPlaceholderText("Ara: kanal, film, dizi…  (Ctrl+F)")
+        self.search.setClearButtonEnabled(True)
+        h.addWidget(self.search)
+        self.refresh_btn = QPushButton("⟳")
+        self.refresh_btn.setObjectName("Flat")
+        self.refresh_btn.setToolTip("Listeleri ve yayın akışını yenile (F5)")
+        h.addWidget(self.refresh_btn)
+        v.addWidget(self.topbar)
+
+        self.body = QSplitter(Qt.Horizontal)
+        self.body.setChildrenCollapsible(False)
+        self.pages = QStackedWidget()
+        self.live_page = LivePage(self.ctx)
+        self.movies_page = MoviesPage(self.ctx)
+        self.series_page = SeriesPage(self.ctx)
+        self.fav_page = FavoritesPage(self.ctx)
+        self.settings_page = SettingsPage(self.ctx)
+        for p in (self.live_page, self.movies_page, self.series_page, self.fav_page, self.settings_page):
+            self.pages.addWidget(p)
+        self.right = QSplitter(Qt.Vertical)
+        self.right.setChildrenCollapsible(False)
+        self.player = PlayerPanel()
+        self.epg_panel = EpgPanel(self.ctx)
+        self.right.addWidget(self.player)
+        self.right.addWidget(self.epg_panel)
+        self.right.setStretchFactor(0, 1)
+        self.right.setSizes([560, 280])
+        self.body.addWidget(self.pages)
+        self.body.addWidget(self.right)
+        self.body.setStretchFactor(0, 1)
+        self.body.setStretchFactor(1, 1)
+        self.body.setSizes([800, 700])
+        v.addWidget(self.body, 1)
+        self.setCentralWidget(central)
+        self.status_msg = QLabel("")
+        self.status_stats = QLabel("")
+        self.statusBar().addWidget(self.status_msg, 1)
+        self.statusBar().addPermanentWidget(self.status_stats)
+
+    def _wire(self) -> None:
+        self.nav.idClicked.connect(self._on_tab)
+        self.search.textChanged.connect(lambda _t: self._search_timer.start())
+        self.refresh_btn.clicked.connect(lambda: self.refresh(None))
+        lp, mp, sp, fp, st = self.live_page, self.movies_page, self.series_page, self.fav_page, self.settings_page
+        lp.play_requested.connect(self.play_live)
+        lp.channel_selected.connect(lambda it: self.epg_panel.show_channel(it) if it else None)
+        lp.favorite_toggled.connect(self.toggle_favorite)
+        lp.external_requested.connect(self.open_external)
+        lp.onboarding.add_xtream.connect(lambda: self._add_source("xtream"))
+        lp.onboarding.add_m3u.connect(lambda: self._add_source("m3u"))
+        lp.onboarding.add_free.connect(self.settings_page.add_free)
+        mp.play_requested.connect(self.play_movie)
+        mp.favorite_toggled.connect(self.toggle_favorite)
+        mp.external_requested.connect(self.open_external)
+        sp.play_episode.connect(self.play_episode)
+        sp.favorite_toggled.connect(self.toggle_favorite)
+        fp.play_live.connect(self.play_live)
+        fp.play_movie.connect(lambda it, start: self.play_movie(it, self._resume_of(it)))
+        fp.open_series.connect(self.open_series)
+        fp.play_history.connect(self.play_history)
+        self.epg_panel.catchup_requested.connect(self.play_catchup)
+        st.settings_changed.connect(self._on_settings_changed)
+        st.sources_changed.connect(self._on_sources_changed)
+        st.refresh_requested.connect(lambda sid: self.refresh(sid))
+        st.epg_refresh_requested.connect(lambda sid: self.refresh(sid, epg_only=True))
+        st.fetch_mpv_requested.connect(self.fetch_mpv)
+        st.clear_history_requested.connect(self._clear_history)
+        pl = self.player
+        pl.pause_clicked.connect(lambda: self.engine and self.engine.toggle_pause())
+        pl.stop_clicked.connect(self.stop)
+        pl.live_clicked.connect(lambda: self.engine and self.engine.go_live())
+        pl.theater_clicked.connect(lambda: self._set_theater(not self._theater))
+        pl.fullscreen_clicked.connect(lambda: self._set_fullscreen(not self._fs))
+        pl.external_clicked.connect(lambda: self.open_external(None))
+        pl.volume_changed.connect(self._on_volume)
+        pl.prev_clicked.connect(lambda: self._on_key("prev", []))
+        pl.next_clicked.connect(lambda: self._on_key("next", []))
+        shortcuts = [
+            ("F11", lambda: self._set_fullscreen(not self._fs)),
+            ("Esc", lambda: self._on_key("esc", [])),
+            ("Ctrl+F", self._focus_search),
+            ("F5", lambda: self.refresh(None)),
+            ("Ctrl+Up", lambda: self.zap(-1)),
+            ("Ctrl+Down", lambda: self.zap(1)),
+            ("Ctrl+Space", lambda: self.engine and self.engine.toggle_pause()),
+            ("Ctrl+L", lambda: self.engine and self.engine.go_live()),
+            ("Ctrl+I", self._show_info),
+            ("Ctrl+T", lambda: self._set_theater(not self._theater)),
+            ("Ctrl+D", lambda: self.current_item and self.toggle_favorite(self.current_item)),
+        ]
+        shortcuts += [(f"Ctrl+{i + 1}", (lambda i=i: self._select_tab(i))) for i in range(len(TABS))]
+        for keys, fn in shortcuts:
+            sc = QShortcut(QKeySequence(keys), self)
+            sc.activated.connect(fn)
+
+    def _post_show(self) -> None:
+        tab = next((i for i, (k, _l) in enumerate(TABS) if k == self.settings["ui"].get("last_tab")), 0)
+        self._select_tab(tab if tab != 4 else 0)
+        self._reload_pages()
+        if not self.headless:
+            self._init_engine()
+            handle = self.windowHandle()
+            if handle is not None:
+                handle.screenChanged.connect(lambda _s: self._update_screen())
+        run_task(gpu.query_gpus, on_done=self._on_gpu)
+        self._schedule_auto_refresh()
+        QTimer.singleShot(300, self._resume_last_channel)
+
+    # ================================================================== motor
+    def _init_engine(self) -> None:
+        wid = self.player.host.native_id()
+        eng = MpvEngine(self.settings, wid=wid, debug=self.debug,
+                        on_event=lambda n, d: self.bridge.event.emit(n, d))
+        try:
+            eng.start()
+        except EngineError as e:
+            self.engine = None
+            log.error("oynatıcı başlatılamadı: %s", e)
+            self.player.set_idle("Oynatıcı bileşeni (libmpv) eksik",
+                                 "Ayarlar → Sistem → 'mpv bileşenlerini indir' ile GitHub'dan indirin ya da "
+                                 f"install.ps1'i çalıştırın.\n\n{e}")
+            self._status(f"Oynatıcı başlatılamadı: {e}")
+            return
+        self.engine = eng
+        self._update_screen()
+        self._status(f"mpv {eng.version} hazır")
+        self._update_system_info()
+
+    def _update_screen(self) -> None:
+        handle = self.windowHandle()
+        screen = handle.screen() if handle else QGuiApplication.primaryScreen()
+        if screen and self.engine:
+            dpr = screen.devicePixelRatio()
+            size = screen.size()
+            self.engine.set_screen(int(size.width() * dpr), int(size.height() * dpr))
+
+    def _on_engine_event(self, name: str, data: dict) -> None:
+        req = self.current_req
+        if name == "loading":
+            self.player.show_video()
+            self._status(f"Açılıyor: {data.get('title', '')}…")
+        elif name in ("file-loaded", "playing"):
+            if req:
+                self._status(f"Oynatılıyor: {req.title}")
+        elif name == "reconnecting":
+            msg = f"Bağlantı koptu — yeniden bağlanılıyor ({data['attempt']}/{data['max']})…"
+            if data.get("error"):
+                msg += f"  {data['error']}"
+            self._status(msg)
+            if self.engine:
+                self.engine.show_text(msg, 2500)
+        elif name == "error":
+            msg = data.get("message") or "Yayın açılamadı."
+            self._status(f"⚠ {msg}")
+            self.player.set_idle("Yayın açılamadı", msg)
+            if req:
+                self.player.set_now_playing(req.title, "", False)
+        elif name == "ended":
+            self._on_ended()
+        elif name == "stopped":
+            self.player.set_idle()
+        elif name == "key":
+            self._on_key(data.get("action", ""), data.get("args", []))
+        elif name == "fullscreen":
+            if data.get("value") != self._fs:
+                self._set_fullscreen(bool(data.get("value")))
+        elif name == "shutdown":
+            self.engine = None
+            self.player.set_idle("Oynatıcı kapandı", "Uygulamayı yeniden başlatın.")
+
+    def _tick(self) -> None:
+        if not self.engine or not self.current_req:
+            return
+        st = self.engine.tick()
+        if not st:
+            return
+        self.player.set_status(st)
+        if st.get("volume") is not None and int(st["volume"]) != self.settings["audio"]["volume"]:
+            self.settings["audio"]["volume"] = int(st["volume"])
+            self._save_timer.start()
+        self.status_stats.setText(self._stats_text(st))
+        req = self.current_req
+        now = time.time()
+        if req.kind in ("movie", "episode") and st.get("pos") and now - self._last_save > 10:
+            self._last_save = now
+            self.store.save_progress(req.key, req.title, req.logo, st["pos"], st.get("duration") or 0, req.meta)
+
+    def _stats_text(self, st: dict) -> str:
+        parts = []
+        plan = st.get("vsr") or {}
+        if st.get("vsr_active") and plan.get("out"):
+            parts.append(f"<span style='color:{theme.NVIDIA}'>● RTX VSR {st['w']}×{st['h']} → "
+                         f"{plan['out'][0]}×{plan['out'][1]}</span>")
+        elif st.get("vsr_driver_failed"):
+            parts.append("RTX VSR sürücüde kapalı (NVIDIA App → Video)")
+        elif st.get("w"):
+            parts.append(f"{st['w']}×{st['h']}")
+        codec = str(st.get("codec") or "").upper()
+        if codec:
+            parts.append(codec + (f" ({st['hwdec']})" if st.get("hwdec") and st["hwdec"] != "no" else " (yazılım)"))
+        if st.get("fps"):
+            try:
+                parts.append(f"{float(st['fps']):.0f} fps")
+            except (TypeError, ValueError):
+                pass
+        if st.get("bitrate"):
+            parts.append(f"{float(st['bitrate']) / 1e6:.1f} Mb/s")
+        if st.get("kind") == "live" and st.get("cache") is not None:
+            mode = opt.LATENCY_MODES[self.settings["latency"]["mode"]]["label"]
+            parts.append(f"gecikme {st['cache']:.1f} sn · {mode}")
+        if st.get("dropped"):
+            parts.append(f"{st['dropped']} kare atlandı")
+        return "  ·  ".join(parts)
+
+    # ================================================================== oynatma
+    def _start(self, req: PlayRequest) -> bool:
+        if not req.url:
+            self._status("⚠ Bu öğe için yayın adresi yok.")
+            return False
+        if not self.engine:
+            try:
+                launch_external(req, self.settings)
+                self._status(f"Harici mpv ile açıldı: {req.title}")
+                return True
+            except EngineError as e:
+                QMessageBox.warning(self, APP_NAME, f"Oynatıcı hazır değil.\n\n{e}")
+                return False
+        self.current_req = req
+        self._last_save = time.time()
+        self.player.show_video()
+        self.player.set_now_playing(req.title, req.subtitle, req.kind == "live")
+        try:
+            self.engine.play(req)
+        except EngineError as e:
+            self._status(f"⚠ {e}")
+            return False
+        self._update_layout()
+        return True
+
+    def play_live(self, item: Item | None) -> None:
+        if item is None:
+            return
+        src = self.ctx.source(item.source_id)
+        url = catalog.play_url(self.store, item, self.settings, src)
+        if item.extra_dict().get("drm"):
+            self._status("⚠ Bu kanal DRM korumalı olabilir; oynatılamayabilir.")
+        cur, nxt = self._now_next(item)
+        sub = f"Şimdi: {cur['title']}" if cur else ""
+        req = PlayRequest(url=url, title=item.name, kind="live", key=item.key, logo=item.logo,
+                          headers=catalog.item_headers(item, src), subtitle=sub)
+        if self.current_item and self.current_item.key != item.key:
+            self.prev_item = self.current_item
+        self.current_item = item
+        self._episode_ctx = None
+        if not self._start(req):
+            return
+        self.store.save_progress(item.key, item.name, item.logo, 0, 0)
+        self.settings["ui"]["last_channel"] = [item.source_id, item.item_id]
+        self._save_timer.start()
+        self.live_page.model.set_playing(item.key)
+        if self.epg_panel.item is None or self.epg_panel.item.key != item.key:
+            self.epg_panel.show_channel(item)
+        if self._theater and not self._fs:
+            self._set_theater(False)
+        self._osd_channel(item, cur, nxt)
+
+    def _now_next(self, item: Item):
+        cur, nxt = self.live_page.model.now_next(item)
+        if cur is None and item.epg_id:
+            nn = self.store.epg_now_next([(item.source_id, item.epg_id)])
+            cur, nxt = nn.get((item.source_id, item.epg_id), (None, None))
+        return cur, nxt
+
+    def _osd_channel(self, item: Item, cur, nxt) -> None:
+        if not self.engine:
+            return
+        row = self.live_page.model.row_of(item.key)
+        num = f"{row + 1}  " if row >= 0 else ""
+        lines = [f"{num}{item.name}"]
+        if cur:
+            lines.append(f"▶ {cur['title']}  ({time.strftime('%H:%M', time.localtime(cur['start']))}–"
+                         f"{time.strftime('%H:%M', time.localtime(cur['stop']))})")
+        if nxt:
+            lines.append(f"Sonra: {nxt['title']}  ({time.strftime('%H:%M', time.localtime(nxt['start']))})")
+        self.engine.show_text("\n".join(lines), 3500)
+
+    def play_movie(self, item: Item | None, start=None) -> None:
+        if item is None:
+            return
+        src = self.ctx.source(item.source_id)
+        title = item.name if (not item.year or item.year in item.name) else f"{item.name} ({item.year})"
+        req = PlayRequest(url=catalog.play_url(self.store, item, self.settings, src), title=title, kind="movie",
+                          key=item.key, logo=item.logo, headers=catalog.item_headers(item, src),
+                          start=float(start or 0), subtitle="Film")
+        self.current_item = None
+        self._episode_ctx = None
+        self.live_page.model.set_playing(None)
+        if self._start(req):
+            self._set_theater(True)
+
+    def play_episode(self, series: Item, ep: dict, episodes: list, start=None) -> None:
+        src = self.ctx.source(series.source_id)
+        url = ep.get("url") or ""
+        if not url and src and src.get("kind") == "xtream":
+            url = catalog.client_for(src, self.settings).episode_url(ep["id"], ep.get("ext"))
+        label = f"S{int(ep.get('season') or 1):02d}B{int(ep.get('episode') or 0):02d}"
+        ep_title = (ep.get("title") or "").strip()
+        title = f"{series.name} — {label}" + (f" · {ep_title}" if ep_title and series.name not in ep_title else "")
+        meta = {"series_id": series.item_id, "season": ep.get("season"), "episode": ep.get("episode"),
+                "ext": ep.get("ext", ""), "url": ep.get("url", ""), "ep_title": ep_title}
+        headers = catalog.item_headers({"headers": ep.get("headers") or {}}, src)
+        req = PlayRequest(url=url, title=title, kind="episode", key=(series.source_id, "episode", ep["id"]),
+                          logo=ep.get("image") or series.logo, headers=headers, start=float(start or 0),
+                          subtitle=f"{label}", meta=meta)
+        self.current_item = None
+        self.live_page.model.set_playing(None)
+        idx = next((i for i, e in enumerate(episodes) if e["id"] == ep["id"]), 0)
+        self._episode_ctx = {"series": series, "episodes": episodes, "index": idx}
+        if self._start(req):
+            self._set_theater(True)
+
+    def _step_episode(self, delta: int) -> bool:
+        ctx = self._episode_ctx
+        if not ctx:
+            return False
+        i = ctx["index"] + delta
+        if 0 <= i < len(ctx["episodes"]):
+            self.play_episode(ctx["series"], ctx["episodes"][i], ctx["episodes"], 0)
+            return True
+        return False
+
+    def play_catchup(self, item: Item, prog: dict) -> None:
+        src = self.ctx.source(item.source_id) or {}
+        dur_min = max(1, math.ceil((prog["stop"] - prog["start"]) / 60))
+        url = None
+        if src.get("kind") == "xtream":
+            tz = ((src.get("info") or {}).get("account") or {}).get("timezone")
+            url = catalog.client_for(src, self.settings).timeshift_url(item.item_id, prog["start"], dur_min, tz)
+        else:
+            catch = item.extra_dict().get("catchup") or {}
+            url = epg.catchup_url(item.url, catch, prog["start"], prog["stop"])
+        if not url:
+            self._status("⚠ Bu kanal için geri izleme adresi oluşturulamadı.")
+            return
+        req = PlayRequest(url=url, title=f"{item.name} — {prog['title']}", kind="catchup",
+                          key=(item.source_id, "catchup", item.item_id), logo=item.logo,
+                          headers=catalog.item_headers(item, src),
+                          subtitle=f"Geri izleme · {time.strftime('%d.%m %H:%M', time.localtime(prog['start']))}")
+        if self._start(req):
+            self.player.set_now_playing(req.title, req.subtitle, False)
+
+    def play_history(self, h: dict | None) -> None:
+        if not isinstance(h, dict):
+            return
+        sid, kind, item_id = h["source_id"], h["kind"], h["item_id"]
+        finished = h.get("duration") and h["position"] >= h["duration"] * 0.94
+        start = 0 if finished else h.get("position") or 0
+        if kind == "live":
+            self.play_live(self.store.item(sid, "live", item_id))
+        elif kind == "movie":
+            self.play_movie(self.store.item(sid, "movie", item_id), start)
+        elif kind == "episode":
+            extra = h.get("extra") or {}
+            series = self.store.item(sid, "series", extra.get("series_id", ""))
+            if series is None:
+                self._status("⚠ Dizi artık listede yok.")
+                return
+            ep = {"id": item_id, "season": extra.get("season") or 1, "episode": extra.get("episode") or 0,
+                  "ext": extra.get("ext") or "", "url": extra.get("url") or "", "title": extra.get("ep_title", "")}
+            cached = self.ctx.series_cache.get(series.key)
+            episodes = (cached or {}).get("episodes") or [ep]
+            ep = next((e for e in episodes if e["id"] == item_id), ep)
+            self.play_episode(series, ep, episodes if ep in episodes else [ep], start)
+
+    def open_series(self, item: Item | None) -> None:
+        if item is None:
+            return
+        self._select_tab(2)
+        self.series_page.details_widget.show_item(item)
+        self.series_page.select_key(item.key)
+
+    def _on_ended(self) -> None:
+        req = self.current_req
+        if not req:
+            return
+        if req.kind in ("movie", "episode"):
+            st_dur = self.engine.status().get("duration") if self.engine else None
+            dur = st_dur or 1
+            self.store.save_progress(req.key, req.title, req.logo, dur, dur, req.meta)
+        if req.kind == "episode" and self.settings["ui"]["auto_next_episode"] and self._step_episode(1):
+            self._status("Sonraki bölüm oynatılıyor…")
+            return
+        self.current_req = None
+        self.player.set_idle("Bitti", f"{req.title}")
+        if self._fs:
+            self._set_fullscreen(False)
+        self._set_theater(False)
+        self._refresh_progress_views()
+
+    def stop(self) -> None:
+        if self.engine:
+            self.engine.stop()
+        self.current_req = None
+        self.current_item = None
+        self.live_page.model.set_playing(None)
+        if self._fs:
+            self._set_fullscreen(False)
+        self._set_theater(False)
+        self.player.set_idle()
+        self.status_stats.setText("")
+        self._refresh_progress_views()
+
+    def open_external(self, item: Item | None) -> None:
+        req = self.current_req
+        if item is not None:
+            src = self.ctx.source(item.source_id)
+            req = PlayRequest(url=catalog.play_url(self.store, item, self.settings, src), title=item.name,
+                              kind="live" if item.kind == "live" else "movie", key=item.key,
+                              headers=catalog.item_headers(item, src))
+        if req is None:
+            return
+        try:
+            launch_external(req, self.settings)
+            self._status(f"Ayrı mpv penceresinde açıldı: {req.title}")
+        except EngineError as e:
+            QMessageBox.warning(self, APP_NAME, str(e))
+
+    def _resume_of(self, item: Item | None) -> float:
+        if item is None:
+            return 0.0
+        prog = self.store.get_progress(item.key)
+        if prog and prog[0] > 60 and (not prog[1] or prog[0] < prog[1] * 0.94):
+            return prog[0]
+        return 0.0
+
+    def _resume_last_channel(self) -> None:
+        last = self.settings["ui"].get("last_channel")
+        if not (self.settings["ui"]["resume_last_channel"] and self.engine and isinstance(last, list) and len(last) == 2):
+            return
+        item = self.store.item(int(last[0]), "live", str(last[1]))
+        if item:
+            self.play_live(item)
+            self.live_page.select_key(item.key)
+
+    # ================================================================== tuşlar
+    def _on_key(self, action: str, args: list) -> None:
+        req = self.current_req
+        live = bool(req and req.kind == "live")
+        eng = self.engine
+        if action in ("up", "down"):
+            if live:
+                self.zap(-1 if action == "up" else 1)
+            elif eng:
+                eng.seek(60 if action == "up" else -60)
+        elif action in ("next", "prev"):
+            if live:
+                self.zap(1 if action == "next" else -1)
+            elif not self._step_episode(1 if action == "next" else -1) and eng:
+                eng.seek(60 if action == "next" else -60)
+        elif action in ("pgup", "pgdn"):
+            if live:
+                self.zap(-10 if action == "pgup" else 10)
+            elif eng:
+                eng.seek(600 if action == "pgup" else -600)
+        elif action in ("left", "right") and eng:
+            eng.seek(-10 if action == "left" else 10)
+        elif action == "digit" and args:
+            if live or not req:
+                self._digits = (self._digits + args[0])[-4:]
+                if eng:
+                    eng.show_text(f"Kanal: {self._digits}_", 1700)
+                self._digit_timer.start()
+            elif eng:
+                eng.command("seek", str(int(args[0]) * 10), "absolute-percent")
+        elif action == "enter":
+            if self._digits:
+                self._commit_digits()
+            else:
+                self._show_info()
+        elif action == "esc":
+            if self._fs:
+                self._set_fullscreen(False)
+            elif self._theater:
+                self._set_theater(False)
+        elif action == "fullscreen":
+            self._set_fullscreen(not self._fs)
+        elif action == "theater":
+            self._set_theater(not self._theater)
+        elif action == "last":
+            if self.prev_item:
+                self.play_live(self.prev_item)
+        elif action == "info":
+            self._show_info()
+        elif action == "epg":
+            self._show_epg_osd()
+        elif action == "live" and eng:
+            eng.go_live()
+            eng.show_text("Canlı yayına dönüldü", 1500)
+        elif action == "pause" and eng:
+            eng.toggle_pause()
+        elif action == "stop":
+            self.stop()
+
+    def zap(self, delta: int) -> None:
+        items = self.live_page.model.items
+        if not items:
+            return
+        i = self.live_page.model.row_of(self.current_item.key) if self.current_item else -1
+        if i < 0:
+            i = self.live_page.view.currentIndex().row()
+        j = (i + delta) % len(items) if i >= 0 else 0
+        item = items[j]
+        self.play_live(item)
+        self.live_page.select_key(item.key)
+
+    def _commit_digits(self) -> None:
+        digits, self._digits = self._digits, ""
+        self._digit_timer.stop()
+        if not digits:
+            return
+        n = int(digits)
+        items = self.live_page.model.items
+        if 1 <= n <= len(items):
+            self.play_live(items[n - 1])
+            self.live_page.select_key(items[n - 1].key)
+        elif self.engine:
+            self.engine.show_text(f"Kanal {n} yok (1–{len(items)})", 1800)
+
+    def _show_info(self) -> None:
+        if not self.engine or not self.current_req:
+            return
+        st = self.engine.status()
+        plan = st.get("vsr") or {}
+        lines = [self.current_req.title]
+        if self.current_req.subtitle:
+            lines.append(self.current_req.subtitle)
+        lines.append(plan.get("reason") or "")
+        tech = [str(st.get("codec") or "").upper(), st.get("hwdec") or "yazılım"]
+        if st.get("fps"):
+            tech.append(f"{float(st['fps']):.0f} fps")
+        if st.get("bitrate"):
+            tech.append(f"{float(st['bitrate']) / 1e6:.1f} Mb/s")
+        lines.append(" · ".join(t for t in tech if t))
+        if st.get("kind") == "live" and st.get("cache") is not None:
+            lines.append(f"Gecikme: {st['cache']:.1f} sn ({opt.LATENCY_MODES[self.settings['latency']['mode']]['label']})")
+        elif st.get("duration"):
+            lines.append(f"{fmt_clock(st.get('pos'))} / {fmt_clock(st['duration'])}")
+        self.engine.show_text("\n".join(l for l in lines if l), 5000)
+
+    def _show_epg_osd(self) -> None:
+        if not self.engine or not self.current_item:
+            return
+        cur, nxt = self._now_next(self.current_item)
+        self._osd_channel(self.current_item, cur, nxt)
+
+    # ================================================================== düzen
+    def _select_tab(self, i: int) -> None:
+        b = self.nav.button(i)
+        if b:
+            b.setChecked(True)
+        self._on_tab(i)
+
+    def _tab_key(self) -> str:
+        return TABS[self.pages.currentIndex()][0]
+
+    def _on_tab(self, i: int) -> None:
+        self.pages.setCurrentIndex(i)
+        key = TABS[i][0]
+        if key != "settings":
+            self.settings["ui"]["last_tab"] = key
+            self._save_timer.start()
+        if self._theater:
+            self._set_theater(False)
+        page = self._search_page()
+        self.search.blockSignals(True)
+        self.search.setText(getattr(page, "_search", "") if page else "")
+        self.search.blockSignals(False)
+        self.search.setEnabled(page is not None)
+        if key == "fav":
+            self.fav_page.reload()
+        elif key == "settings":
+            self.settings_page.reload_sources()
+            self._update_system_info()
+        self._update_layout()
+
+    def _update_layout(self) -> None:
+        if self._fs:
+            return
+        key = self._tab_key()
+        playing = self.current_req is not None
+        self.pages.setVisible(not self._theater)
+        self.right.setVisible(key == "live" or playing or self._theater)
+        self.epg_panel.setVisible(key == "live" and not self._theater)
+
+    def _set_theater(self, on: bool) -> None:
+        self._theater = bool(on)
+        self.player.btn_theater.setText("▭ Listeler" if on else "▭ Sinema")
+        self._update_layout()
+
+    def _set_fullscreen(self, on: bool) -> None:
+        if on == self._fs:
+            return
+        self._fs = on
+        if on:
+            self._pre_fs = {"max": self.isMaximized(), "theater": self._theater}
+            for w in (self.topbar, self.pages, self.epg_panel, self.player.bar):
+                w.hide()
+            self.statusBar().hide()
+            self.right.show()
+            self.showFullScreen()
+            self.player.host.setFocus()
+        else:
+            self.topbar.show()
+            self.statusBar().show()
+            self.player.bar.show()
+            if self._pre_fs.get("max"):
+                self.showMaximized()
+            else:
+                self.showNormal()
+            self._theater = self._pre_fs.get("theater", False)
+            self._update_layout()
+        if self.engine:
+            self.engine.sync_fullscreen(on)
+
+    def _focus_search(self) -> None:
+        if self._fs:
+            self._set_fullscreen(False)
+        self.search.setFocus()
+        self.search.selectAll()
+
+    def _search_page(self):
+        return {"live": self.live_page, "movie": self.movies_page, "series": self.series_page}.get(self._tab_key())
+
+    def _apply_search(self) -> None:
+        page = self._search_page()
+        if page:
+            page.set_search(self.search.text())
+
+    # ================================================================== veri / yenileme
+    def _reload_pages(self) -> None:
+        has = bool(self.store.list_sources())
+        self.live_page.set_has_sources(has)
+        for p in (self.live_page, self.movies_page, self.series_page):
+            p.reload()
+        if self._tab_key() == "fav":
+            self.fav_page.reload()
+        self.settings_page.reload_sources()
+
+    def _on_sources_changed(self) -> None:
+        self.ctx.invalidate()
+        self._reload_pages()
+
+    def _schedule_auto_refresh(self) -> None:
+        hours = self.settings["ui"]["auto_refresh_hours"]
+        now = time.time()
+        for s in self.store.list_sources(enabled_only=True):
+            if not s.get("last_refresh") or (hours and now - s["last_refresh"] > hours * 3600):
+                self._refresh_jobs.append(("catalog", s["id"]))
+            elif not s.get("last_epg") or now - s["last_epg"] > 12 * 3600:
+                self._refresh_jobs.append(("epg", s["id"]))
+        self._run_refresh()
+
+    def refresh(self, source_id, epg_only: bool = False) -> None:
+        ids = [source_id] if source_id else [s["id"] for s in self.store.list_sources(enabled_only=True)]
+        for sid in ids:
+            job = ("epg" if epg_only else "catalog", sid)
+            if job not in self._refresh_jobs:
+                self._refresh_jobs.append(job)
+        self._run_refresh()
+
+    def _run_refresh(self) -> None:
+        if self._refreshing or not self._refresh_jobs:
+            return
+        kind, sid = self._refresh_jobs.pop(0)
+        src = self.store.get_source(sid)
+        if not src:
+            self._run_refresh()
+            return
+        self._refreshing = True
+        self.refresh_btn.setEnabled(False)
+        fn = catalog.refresh_epg if kind == "epg" else catalog.refresh_source
+
+        def done(result):
+            self._refreshing = False
+            self.refresh_btn.setEnabled(True)
+            self.ctx.invalidate()
+            if kind == "catalog":
+                c = result or {}
+                self._status(f"✔ {src['name']}: {c.get('live', 0)} kanal, {c.get('movie', 0)} film, "
+                             f"{c.get('series', 0)} dizi")
+                self._reload_pages()
+                if ("epg", sid) not in self._refresh_jobs and catalog.epg_url_for(src, self.settings):
+                    self._refresh_jobs.append(("epg", sid))
+            else:
+                n_prog = (result or (0, 0))[0]
+                self._status(f"✔ {src['name']}: yayın akışı güncellendi ({n_prog} program)")
+                self.live_page.refresh_epg()
+                if self.epg_panel.item:
+                    self.epg_panel.show_channel(self.epg_panel.item)
+            self._run_refresh()
+
+        def fail(err):
+            self._refreshing = False
+            self.refresh_btn.setEnabled(True)
+            self._status(f"⚠ {src['name']}: {err}")
+            self.settings_page.reload_sources()
+            self._run_refresh()
+
+        run_task(fn, self.store, src, self.settings, on_done=done, on_error=fail, on_progress=self._status)
+
+    def toggle_favorite(self, item: Item | None) -> None:
+        if item is None:
+            return
+        on = self.store.toggle_favorite(item.key)
+        self._status(f"{'★ Favorilere eklendi' if on else '☆ Favorilerden çıkarıldı'}: {item.name}")
+        for p in (self.live_page, self.movies_page, self.series_page):
+            p.refresh_favs()
+        self.movies_page.details_widget.refresh_buttons()
+        if self.series_page.details_widget.item and self.series_page.details_widget.item.key == item.key:
+            self.series_page.details_widget.btn_fav.setText("★" if on else "☆")
+        if self._tab_key() == "fav":
+            self.fav_page.reload()
+
+    def _refresh_progress_views(self) -> None:
+        self.movies_page.after_items()
+        self.movies_page.details_widget.refresh_buttons()
+        if self._tab_key() == "fav":
+            self.fav_page.reload()
+
+    def _clear_history(self) -> None:
+        if QMessageBox.question(self, APP_NAME, "İzleme geçmişi ve kaldığın yer bilgileri silinsin mi?") == QMessageBox.Yes:
+            self.store.clear_history()
+            self._refresh_progress_views()
+            self._status("İzleme geçmişi temizlendi.")
+
+    # ================================================================== ayarlar / sistem
+    def _on_settings_changed(self) -> None:
+        self._save_timer.start()
+        if self.engine:
+            self.engine.apply_settings(self.settings)
+        hide = self.settings["ui"]["hide_adult"]
+        if getattr(self, "_last_hide_adult", hide) != hide:
+            self._reload_pages()
+        self._last_hide_adult = hide
+
+    def _save_settings(self) -> None:
+        try:
+            self.settings["ui"]["geometry"] = bytes(self.saveGeometry().toBase64()).decode("ascii")
+            save_settings(self.settings, paths.settings_path())
+        except OSError as e:
+            log.warning("ayarlar kaydedilemedi: %s", e)
+
+    def restore_geometry(self) -> None:
+        from PySide6.QtCore import QByteArray
+        geo = self.settings["ui"].get("geometry")
+        if isinstance(geo, str) and geo:
+            self.restoreGeometry(QByteArray.fromBase64(geo.encode("ascii")))
+
+    def _on_gpu(self, gpus: list) -> None:
+        self._gpu = gpus[0] if gpus else None
+        self._gpu_assess = gpu.assess(self._gpu)
+        if self._gpu:
+            ok = self._gpu_assess.get("vsr")
+            self.gpu_badge.setObjectName("BadgeNv" if ok else "Badge")
+            self.gpu_badge.setText(f"{self._gpu['name'].replace('NVIDIA GeForce ', '')} · "
+                                   f"{'RTX VSR hazır' if ok else 'VSR yok'}")
+            self.gpu_badge.setToolTip("\n".join(self._gpu_assess.get("notes", [])))
+            self.gpu_badge.style().unpolish(self.gpu_badge)
+            self.gpu_badge.style().polish(self.gpu_badge)
+            self.gpu_badge.show()
+        self._update_system_info()
+
+    def _update_system_info(self) -> None:
+        g = self._gpu
+        a = self._gpu_assess or gpu.assess(g)
+        lines = [f"<b>{APP_NAME} {__version__}</b>"]
+        if g:
+            lines.append(f"Ekran kartı: <b>{g['name']}</b> · sürücü {g['driver']} · {g.get('memory_mb', 0)} MB")
+            lines.append(f"RTX Video Super Resolution: <b>{'kullanılabilir' if a.get('vsr') else 'kullanılamıyor'}</b> · "
+                         f"RTX Video HDR: <b>{'kullanılabilir' if a.get('hdr') else 'kullanılamıyor'}</b>")
+        else:
+            lines.append("Ekran kartı: NVIDIA bulunamadı.")
+        for n in a.get("notes", []):
+            lines.append(f"• {n}")
+        if self.engine:
+            v = self.engine.version_tuple
+            warn = "" if v >= (0, 39, 0) else " — <span style='color:#ff5c7a'>RTX VSR için mpv ≥ 0.39 gerekir; güncelleyin</span>"
+            lines.append(f"Oynatıcı: {self.engine.version}{warn}")
+        else:
+            lines.append("Oynatıcı: libmpv yüklenemedi — 'mpv bileşenlerini indir' düğmesini kullanın.")
+        screen = QGuiApplication.primaryScreen()
+        if screen:
+            dpr = screen.devicePixelRatio()
+            lines.append(f"Ekran: {int(screen.size().width() * dpr)}×{int(screen.size().height() * dpr)} @ "
+                         f"{screen.refreshRate():.0f} Hz")
+        lines.append(f"Veri klasörü: {paths.data_dir()}")
+        self.settings_page.set_system_info("<br>".join(lines))
+
+    def fetch_mpv(self) -> None:
+        from ..tools import fetch_mpv as fm
+        self._status("mpv bileşenleri GitHub'dan indiriliyor…")
+
+        def done(info):
+            self._status(f"✔ mpv indirildi: {info.get('tag', '')}")
+            if self.engine is None:
+                self._init_engine()
+                QMessageBox.information(self, APP_NAME, "mpv bileşenleri kuruldu." +
+                                        ("" if self.engine else " Uygulamayı yeniden başlatın."))
+            else:
+                QMessageBox.information(self, APP_NAME, "mpv güncellendi. Yeni sürüm uygulama yeniden başlatılınca "
+                                                        "kullanılır.")
+
+        run_task(fm.install, on_done=done, on_error=lambda e: self._status(f"⚠ mpv indirilemedi: {e}"),
+                 on_progress=self._status)
+
+    def _on_volume(self, value: int) -> None:
+        if self.engine:
+            self.engine._set("volume", str(value))
+        self.settings["audio"]["volume"] = int(value)
+        self._save_timer.start()
+
+    def _add_source(self, kind: str) -> None:
+        self.settings_page.add_source(kind)
+
+    def _status(self, text: str) -> None:
+        self.status_msg.setText(text)
+        log.info(text)
+
+    def closeEvent(self, event) -> None:
+        if self.engine and self.current_req and self.current_req.kind in ("movie", "episode"):
+            st = self.engine.status()
+            if st.get("pos"):
+                self.store.save_progress(self.current_req.key, self.current_req.title, self.current_req.logo,
+                                         st["pos"], st.get("duration") or 0, self.current_req.meta)
+        self._save_settings()
+        if self.engine:
+            self.engine.shutdown()
+            self.engine = None
+        super().closeEvent(event)

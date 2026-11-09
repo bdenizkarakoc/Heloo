@@ -1,0 +1,4 @@
+# Heloo TV — Windows 10/11 (NVIDIA RTX önerilir), Python 3.10+
+PySide6-Essentials>=6.7      # arayüz (Qt 6)
+mpv>=1.0.7                   # python-mpv: libmpv bağlayıcısı (libmpv-2.dll'i tools/fetch_mpv.py GitHub'dan indirir)
+tzdata>=2024.1; sys_platform == "win32"   # geri izleme (catch-up) için sunucu saat dilimi
