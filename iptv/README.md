@@ -255,9 +255,10 @@ Hedef "Ekran çözünürlüğü" ya da "1440p" yapılabilir (daha az GPU yükü)
 
 | Kip | Ne yapar |
 |---|---|
+| **Akıllı (önerilen, varsayılan)** | Kendini ayarlar: iyi bağlantıda ~1 sn tampon; takılan kanalda tampon o kanal için büyür (en çok 6 sn) ve hatırlanır; 1 dk sorunsuz geçince küçülür ve gecikme %4 hızla (fark edilmez) geri alınır. Ölçüm: sorunsuz bağlantıda gecikme 3,2 → **1,3 sn**. |
 | **Ultra düşük** | ~1 sn tampon, `fflags=+nobuffer`, HLS'de canlı kenardan 2 parça geride. Kablolu ve çok iyi internet ister. |
 | **Düşük** | ~1,5 sn tampon, HLS'de 3 parça geride. İyi internet ister. |
-| **Dengeli (önerilen, varsayılan)** | TiviMate/IPTV Smarters gibi ~3 sn tampon: kanal hızlı açılır, dalgalanmada donmaz. |
+| **Dengeli** | TiviMate/IPTV Smarters gibi sabit ~3 sn tampon: dalgalanmada donmaz, gecikme biraz daha fazla. |
 | **Kararlı** | Açılışta 3 sn tampon; zayıf/kablosuz bağlantılar için. |
 
 **Donmaya karşı (IPTV uygulamalarının yaptığı gibi):**

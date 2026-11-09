@@ -32,6 +32,7 @@ SPEED_BOOST = 1.04          # canlıya yetişme hızı: %4 göze/kulağa fark ed
 CHASE_SUSTAIN = 8.0         # tampon bu kadar sn sürekli üst sınırı aşarsa hızlanılır (anlık dalgalanmada değil)
 JUMP_MIN = 25.0             # tampon içinde ileri atlama yalnız gecikme bu kadar büyürse (atlama görüntüyü dondurur)
 EXTRA_STEP, EXTRA_MAX, EXTRA_DECAY = 1.0, 6.0, 180.0   # takılmada tampona eklenen pay, üst sınırı, azalma süresi
+EXTRA_DECAY_AUTO = 60.0     # Akıllı kipte: 1 dk sorunsuz geçince pay 0,5 sn küçülür (gecikme yeniden azalır)
 # bekçi: canlı yayın takılı kalırsa (TiviMate'in "takılınca yeniden bağlan"ı gibi) yayını yeniden açar
 STUCK_FROZEN = 6.0          # duraklatılmadan ve arabelleğe almadan konum bu kadar sn ilerlemezse
 STUCK_BUFFERING = 10.0      # tampon bu kadar sn boş kalırsa (veri yavaş da gelse)
@@ -155,7 +156,8 @@ class MpvEngine:
         self._last_jump = 0.0
         self._over_since = 0.0
         self._was_buffering = False
-        self._extra = 0.0            # takılma oldukça büyüyen tampon payı (kanal başına sıfırlanır)
+        self._extra = 0.0            # takılma oldukça büyüyen tampon payı (kanal başına)
+        self._extra_mem: dict[str, float] = {}   # Akıllı kip: kanal adresine göre öğrenilen pay (oturum boyunca)
         self._last_underrun = 0.0
         self.underruns = 0
         self._hw_copy = False
@@ -328,7 +330,7 @@ class MpvEngine:
             self._boost = False
             self._over_since = 0.0
             self._was_buffering = False
-            self._extra = 0.0
+            self._extra = self._extra_mem.get(req.url, 0.0) if self._adaptive() else 0.0
             self._interlaced = False
             self._il_checked = False
             self._wd_pos = None
@@ -383,6 +385,10 @@ class MpvEngine:
                                      external_framegen=getattr(self, "external_framegen", False)).items():
             self._set(k, v)
         self._set("force-media-title", req.title)
+        if req.kind == "live" and self._extra:
+            # bu kanal daha önce takıldı: öğrenilen payla başla (yeniden doldurmayı da uzat)
+            base = float(opt.LATENCY_MODES[self.settings["latency"]["mode"]]["cache-pause-wait"])
+            self._set("cache-pause-wait", f"{base + self._extra:g}")
         self._set("audio-files", [req.meta["audio"]] if req.meta.get("audio") else [])
         self._set("speed", "1")
         self._set("pause", "no")
@@ -738,6 +744,9 @@ class MpvEngine:
             self._retry = 0
         return st
 
+    def _adaptive(self) -> bool:
+        return bool(opt.LATENCY_MODES.get(self.settings["latency"]["mode"], {}).get("adaptive"))
+
     def _watchdog(self, st: dict) -> None:
         """Takılı kalan canlı yayını yeniden açar: görüntü donduysa ya da tampon uzun süre boşsa."""
         now = time.monotonic()
@@ -811,14 +820,21 @@ class MpvEngine:
             self.underruns += 1
             self._last_underrun = now
             self._extra = min(EXTRA_MAX, self._extra + EXTRA_STEP)
+            if self.request is not None:
+                self._extra_mem[self.request.url] = self._extra
             base = float(opt.LATENCY_MODES[self.settings["latency"]["mode"]]["cache-pause-wait"])
             self._set("cache-pause-wait", f"{base + self._extra:g}")
             log.info("canlı yayın takıldı (%d): tampon payı %.1f sn", self.underruns, self._extra)
         self._was_buffering = buffering
-        if self._extra and now - self._last_underrun > EXTRA_DECAY:
+        adaptive = self._adaptive()
+        if self._extra and now - max(self._last_underrun, self._loaded_at) > (EXTRA_DECAY_AUTO if adaptive
+                                                                              else EXTRA_DECAY):
             self._extra = max(0.0, self._extra - 0.5)
             self._last_underrun = now
-        enabled = self.settings["latency"]["chase"]
+            if self.request is not None:
+                self._extra_mem[self.request.url] = self._extra
+        # Akıllı kipte canlıya yaklaşma hep açık: pay küçüldükçe gecikme %4 hızla (fark edilmez) geri alınır
+        enabled = self.settings["latency"]["chase"] or adaptive
         hls_unknown = st["hls"] and not self._hls_td
         if (not enabled or self._user_paused or st["paused"] or buffering or st["seeking"] or hls_unknown
                 or st["cache"] is None):

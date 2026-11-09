@@ -38,6 +38,7 @@ def test_parse_and_pick_best():
 
 def test_chase_targets_scale_with_segments():
     s = settings_mod.merged_defaults()
+    s["latency"]["mode"] = "balanced"
     assert opt.chase_targets(s) == (3.0, 9.0)
     assert opt.chase_targets(s, 6.0) == (pytest.approx(7.2), pytest.approx(18.0))
     # takılmadan sonra eklenen pay hedefi ve üst sınırı büyütür

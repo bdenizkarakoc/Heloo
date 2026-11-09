@@ -223,8 +223,8 @@ def test_settings_roundtrip(tmp_path):
     p.write_text(json.dumps({"latency": {"mode": "bogus", "chase": "evet"}, "audio": {"volume": 999},
                              "video": "bozuk"}), encoding="utf-8")
     s = settings_mod.load_settings(p)
-    # bozuk değerler varsayılana döner: Dengeli (≈3 sn tampon), canlıya yetişme kapalı
-    assert s["latency"]["mode"] == "balanced" and s["latency"]["chase"] is False
+    # bozuk değerler varsayılana döner: Akıllı (kendini ayarlayan tampon), canlıya yetişme ayarı kapalı
+    assert s["latency"]["mode"] == "auto" and s["latency"]["chase"] is False
     assert s["audio"]["volume"] == 150 and s["video"]["rtx_vsr"] is True
     s["video"]["vsr_target"] = "1440"
     settings_mod.save_settings(s, p)

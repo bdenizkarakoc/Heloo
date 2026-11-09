@@ -24,6 +24,15 @@ MIN_VSR_SCALE = 1.1      # bundan küçük büyütmede VSR anlamsız
 # saniyelik dalgalanır; 1 sn'den küçük tampon her dalgada donma yapar. fflags=nobuffer ve video-latency-hacks zaman
 # damgası sapmasına ve kare atlamaya yol açtığı için yalnız "ultra" kipte açıktır.
 LATENCY_MODES: dict[str, dict] = {
+    "auto": {
+        "label": "Akıllı (önerilen)",
+        "desc": "Bağlantıya göre kendini ayarlar: iyi bağlantıda ~1 sn gecikme, takılan kanalda tamponu büyütür, "
+                "düzelince fark edilmeden (%4 hız) yeniden canlıya yaklaşır. Kanalları ayrı ayrı hatırlar.",
+        "audio-buffer": "0.1", "cache-pause": "yes", "cache-pause-wait": "1", "cache-pause-initial": "no",
+        "probe-info": "nostreams", "analyzeduration": "1", "nobuffer": False, "latency-hacks": "no",
+        "hls-start": -2, "stream-buffer-size": "128KiB", "curl-buffer-size": "2MiB", "chase": (1.0, 2.5),
+        "adaptive": True,
+    },
     "ultra": {
         "label": "Ultra düşük gecikme",
         "desc": "En hızlı kanal açılışı, en az tampon. Kablolu ve çok iyi internet ister; dalgalanırsa takılabilir.",
@@ -39,7 +48,7 @@ LATENCY_MODES: dict[str, dict] = {
         "hls-start": -3, "stream-buffer-size": "128KiB", "curl-buffer-size": "2MiB", "chase": (1.5, 5.0),
     },
     "balanced": {
-        "label": "Dengeli (önerilen)",
+        "label": "Dengeli",
         "desc": "TiviMate/Smarters gibi ~3 sn tampon: kanal hızlı açılır, dalgalanmada donmaz.",
         "audio-buffer": "0.2", "cache-pause": "yes", "cache-pause-wait": "3", "cache-pause-initial": "no",
         "probe-info": "auto", "analyzeduration": "1", "nobuffer": False, "latency-hacks": "no",

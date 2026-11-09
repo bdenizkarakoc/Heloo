@@ -106,13 +106,13 @@ def test_interlaced_denoise_and_migration(tmp_path):
     p = tmp_path / "settings.json"
     p.write_text(json.dumps({"video": {"vsr_target": "2160", "sharpen": "strong"}}), encoding="utf-8")
     s = settings_mod.load_settings(p)
-    assert s["video"]["vsr_target"] == "screen" and s["video"]["sharpen"] == "strong" and s["meta"]["version"] == 3
+    assert s["video"]["vsr_target"] == "screen" and s["video"]["sharpen"] == "strong" and s["meta"]["version"] == 4
     p.write_text(json.dumps({"meta": {"version": 2}, "video": {"vsr_target": "2160"}}), encoding="utf-8")
     assert settings_mod.load_settings(p)["video"]["vsr_target"] == "2160"   # yeni sürümde seçilen 4K kalır
     # v2 → v3: 1,5 sn tampon donma yapıyordu → Dengeli, canlıya yetişme kapalı; v3'te seçilen "low" korunur
     p.write_text(json.dumps({"meta": {"version": 2}, "latency": {"mode": "low", "chase": True}}), encoding="utf-8")
     lat = settings_mod.load_settings(p)["latency"]
-    assert lat["mode"] == "balanced" and lat["chase"] is False
+    assert lat["mode"] == "auto" and lat["chase"] is False          # v2 → v3 Dengeli → v4 Akıllı
     p.write_text(json.dumps({"meta": {"version": 3}, "latency": {"mode": "low", "chase": True}}), encoding="utf-8")
     lat = settings_mod.load_settings(p)["latency"]
     assert lat["mode"] == "low" and lat["chase"] is True
@@ -128,7 +128,8 @@ def test_interlaced_denoise_and_migration(tmp_path):
 
 
 def test_latency_and_vod_options():
-    hls = opt.play_options(S(), "live", "http://x/live/index.m3u8?token=1", {"user_agent": "UA", "origin": "https://o"})
+    hls = opt.play_options(S(latency__mode="low"), "live", "http://x/live/index.m3u8?token=1",
+                           {"user_agent": "UA", "origin": "https://o"})
     # önerilen kip: nobuffer yok (zaman damgası sapması/kare atlama yapıyordu), HLS'de 3 parça geriden
     assert hls["demuxer-lavf-o"] == "live_start_index=-3" and hls["video-latency-hacks"] == "no"
     assert hls["cache-pause"] == "yes" and float(hls["cache-pause-wait"]) >= 1
@@ -325,7 +326,7 @@ def test_live_reconnect_options():
     assert "reconnect_streamed=1" in live["stream-lavf-o"] and "reconnect_on_network_error=1" in live["stream-lavf-o"]
     assert "stream-lavf-o" not in opt.play_options(S(), "live", "udp://239.0.0.1:1234")
     assert "stream-lavf-o" not in opt.play_options(S(), "movie", "http://x/movie/1.mkv")
-    bal = opt.play_options(S(), "live", "http://x/1.ts")
+    bal = opt.play_options(S(latency__mode="balanced"), "live", "http://x/1.ts")
     assert bal["cache-pause-wait"] == "3" and bal["demuxer-lavf-o"] == ""   # Dengeli: nobuffer yok
 
 
@@ -418,3 +419,43 @@ def test_frame_drops_lighten_enhancement(monkeypatch):
     clock[0] += 11
     e._watch_drops(dict(st, dropped=400))
     assert e.lighten == 2
+
+
+def test_auto_latency_adapts_per_channel(monkeypatch):
+    """Akıllı kip: takılınca kanalın payı büyür ve hatırlanır; 1 dk sorunsuzsa küçülür; yetişme hep açık."""
+    from helootv.player import engine as eng_mod
+    from helootv.player.engine import MpvEngine, PlayRequest
+    clock = [1000.0]
+    monkeypatch.setattr(eng_mod.time, "monotonic", lambda: clock[0])
+    e = MpvEngine.__new__(MpvEngine)
+    e.settings = S()
+    assert e.settings["latency"]["mode"] == "auto" and e.settings["latency"]["chase"] is False
+    sets = {}
+    e._set = lambda k, v: sets.__setitem__(k, v)
+    e.command = lambda *a: None
+    e.request = PlayRequest(url="http://x/kanal1.ts", title="K1")
+    e._was_buffering, e._loaded_at, e.underruns, e._last_underrun = False, 900.0, 0, 0.0
+    e._extra, e._extra_mem, e._user_paused, e._hls_td = 0.0, {}, False, None
+    e._boost, e._over_since, e._last_jump = False, 0.0, 0.0
+    st = {"paused": False, "buffering": False, "seeking": False, "hls": False, "cache": 1.0}
+    e._chase(dict(st, buffering=True, cache=0.0))
+    assert e._extra == 1.0 and e._extra_mem["http://x/kanal1.ts"] == 1.0 and sets["cache-pause-wait"] == "2"
+    e._chase(st)
+    # yetişme ayarı kapalı olsa da Akıllı kipte gecikme büyürse fark edilmeden geri alınır
+    for _ in range(3):
+        clock[0] += 5
+        e._chase(dict(st, cache=6.0))
+    assert e._boost and sets["speed"] == "1.04"
+    e._chase(dict(st, cache=1.5))
+    assert not e._boost
+    # 1 dk sorunsuz → pay küçülür (gecikme yeniden azalır)
+    clock[0] += 61
+    e._chase(st)
+    assert e._extra == 0.5 and e._extra_mem["http://x/kanal1.ts"] == 0.5
+    # Dengeli kipte yetişme ayarı kapalıysa hiç hızlanmaz
+    e.settings["latency"]["mode"] = "balanced"
+    e._boost, e._over_since = False, 0.0
+    for _ in range(3):
+        clock[0] += 5
+        e._chase(dict(st, cache=20.0))
+    assert not e._boost

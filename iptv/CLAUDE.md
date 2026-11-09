@@ -43,7 +43,8 @@ python -m pytest tests -q              # testler (libmpv2/ffmpeg/7z varsa başs�
   AMD/Intel'de `shaders.pick` AMD FSR (`helootv/glsl/fsr.glsl`, MIT, pakette) seçer; FSR her zaman son yedektir.
 - Donma koruması: canlı HTTP'de `opt.LAVF_RECONNECT` (stream-lavf-o), `engine._watchdog` (dondu 6 sn / ölü bağlantı
   4 sn: tampon dolmuyor / boş tampon 10 sn → `_schedule_retry`), `engine._watch_drops` (kare atlama → `lighten`
-  kademesi, `_effective_settings`). Varsayılan kip `balanced`, chase kapalı (ayar göçü v3).
+  kademesi, `_effective_settings`). Varsayılan kip `auto` (Akıllı: `adaptive`, kanal başına `_extra_mem`, 60 sn'de pay azalır, yetişme hep açık;
+  ayar göçü v4), chase ayarı kapalı.
 - Canlı tampon: `engine._chase` takılmada `_extra` payını büyütür (cache-pause-wait de), %4 hızlanma yalnız
   `CHASE_SUSTAIN` sn sürekli aşımda, ileri atlama yalnız ≥`JUMP_MIN` sn. `fflags=nobuffer`/latency-hacks yalnız ultra.
   hwdec kopyası yalnız gürültü azaltılan kaynakta (`engine._ensure_hwdec`); geçmeli bilgisi kanal başına yapışkan.

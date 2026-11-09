@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 # Varsayılanlar "en iyi" deneyim içindir: RTX VSR ile 4K, düşük gecikme, canlıya yetişme, otomatik yeniden bağlanma.
-SETTINGS_VERSION = 3
+SETTINGS_VERSION = 4
 
 DEFAULTS: dict[str, Any] = {
     "meta": {"version": SETTINGS_VERSION},
@@ -42,7 +42,7 @@ DEFAULTS: dict[str, Any] = {
         "deband": 1,              # 0..3 renk bandı yumuşatma gücü
     },
     "latency": {
-        "mode": "balanced",       # ultra | low | balanced (≈3 sn tampon, önerilen) | stable
+        "mode": "auto",           # auto (akıllı, önerilen) | ultra | low | balanced (≈3 sn) | stable
         "chase": False,           # canlıya yetişme: gecikme çok büyürse %4 hızlanır (kapalı: hiç oynamaz, en akıcı)
         "live_format": "ts",      # Xtream canlı yayın biçimi: ts (en düşük gecikme) | m3u8
     },
@@ -100,7 +100,7 @@ CHOICES: dict[tuple[str, str], tuple] = {
     ("export", "model"): ("fsrcnnx", "artcnn", "fsr", "off"),
     ("export", "quality"): ("fast", "high", "max"),
     ("video", "hwdec"): ("auto", "d3d11va", "nvdec", "auto-copy", "no"),
-    ("latency", "mode"): ("ultra", "low", "balanced", "stable"),
+    ("latency", "mode"): ("auto", "ultra", "low", "balanced", "stable"),
     ("latency", "live_format"): ("ts", "m3u8"),
     ("lossless", "mode"): ("always", "fullscreen", "manual"),
     ("audio", "prefer"): ("tr", "original"),
@@ -178,6 +178,10 @@ def _migrate(s: dict, version) -> None:
         if s["latency"].get("mode") in ("low", "ultra"):
             s["latency"]["mode"] = "balanced"
         s["latency"]["chase"] = False
+    if not isinstance(version, int) or version < 4:
+        # v3 varsayılanı "Dengeli" (sabit 3 sn) → kendini ayarlayan "Akıllı": iyi bağlantıda ~1 sn gecikme
+        if s["latency"].get("mode") == "balanced":
+            s["latency"]["mode"] = "auto"
     s["meta"]["version"] = SETTINGS_VERSION
 
 
