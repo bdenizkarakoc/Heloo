@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hoparlör Ses Ayarı</title>
+<style>
+  :root { --bg:#0b0f1a; --card:#141b2d; --line:#253049; --ink:#eef2fb; --muted:#9aa6c2; --acc:#ffd23f; --acc2:#4fd1c5; --bad:#ff6b6b; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.45 system-ui, "Segoe UI", sans-serif; }
+  header { display: flex; align-items: center; gap: 14px; padding: 14px 22px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  header h1 { font-size: 19px; margin: 0; } header a { color: var(--acc2); text-decoration: none; font-weight: 600; }
+  main { max-width: 1100px; margin: 0 auto; padding: 18px 16px 40px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px; margin-bottom: 16px; }
+  .card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 10px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  button { cursor: pointer; border: 0; border-radius: 10px; padding: 9px 13px; font: 600 14px system-ui, sans-serif; background: var(--acc); color: #111; }
+  button.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+  .chip { background: #0e1424; color: var(--ink); border: 1px solid var(--line); border-radius: 999px; padding: 8px 14px; }
+  .chip.on { background: var(--acc); color: #111; border-color: var(--acc); }
+  .spk { display: flex; flex-direction: column; align-items: flex-start; border-radius: 12px; min-width: 170px; text-align: left; }
+  .spk small { font-weight: 400; opacity: .75; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .ok { color: var(--acc2); } .bad { color: var(--bad); }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; } @media (max-width: 860px) { .two { grid-template-columns: 1fr; } }
+  .sl { display: grid; grid-template-columns: 150px 1fr 64px; gap: 10px; align-items: center; margin: 8px 0; }
+  .sl b { font-weight: 600; } .sl span { text-align: right; font-variant-numeric: tabular-nums; color: var(--acc); }
+  .sl small { display: block; color: var(--muted); font-size: 12px; font-weight: 400; }
+  input[type=range] { width: 100%; accent-color: var(--acc); }
+  .eq { display: grid; grid-template-columns: repeat(10, 1fr); gap: 6px; text-align: center; margin-top: 8px; }
+  .eq input { writing-mode: vertical-lr; direction: rtl; height: 160px; width: 28px; }
+  .eq div { display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); }
+  .eq .v { color: var(--acc); font-variant-numeric: tabular-nums; }
+  @media (max-width: 600px) { .sl { grid-template-columns: 105px 1fr 58px; } .eq { gap: 2px; } .eq input { width: 20px; } .eq div { font-size: 10px; } }
+  canvas { width: 100%; height: 170px; display: block; background: #0e1424; border-radius: 10px; }
+  select, input[type=text] { padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); background: #0e1424; color: var(--ink); font: inherit; }
+  .switch { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+  ul { margin: 6px 0 0 18px; padding: 0; } li { margin: 4px 0; }
+  pre { white-space: pre-wrap; font-size: 12px; background: #0e1424; padding: 10px; border-radius: 10px; max-height: 240px; overflow: auto; }
+  .hide { display: none !important; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🔊 Hoparlör Ses Ayarı</h1>
+  <span class="muted" id="status"></span>
+  <span style="flex:1"></span>
+  <a href="/">Kontrol paneli</a><a href="/kesim">✂ Kesim</a><a href="/voice">🎙️ Sesim</a>
+</header>
+<main>
+  <div class="card">
+    <h2>Hoparlör</h2>
+    <div class="row" id="speakers"></div>
+    <div class="row" style="margin-top:10px">
+      <label class="switch"><input type="checkbox" id="acik"> Ses ayarı açık</label>
+      <span style="flex:1"></span>
+      <button class="ghost" id="addBtn">+ Hoparlör ekle</button>
+    </div>
+    <div class="row hide" id="addBox" style="margin-top:10px">
+      <input type="text" id="addName" placeholder="Ad (ör. Masa hoparlörü)">
+      <select id="addKind"></select>
+      <button id="addOk">Ekle</button>
+    </div>
+  </div>
+
+  <div class="card hide" id="apoCard">
+    <h2>Kurulum</h2>
+    <div id="apoMsg"></div>
+    <div class="row" style="margin-top:10px">
+      <a id="apoLink" target="_blank" rel="noopener"><button class="ghost">Equalizer APO'yu indir</button></a>
+      <button id="izin" class="hide">İzin ver (bir kez)</button>
+      <button class="ghost" id="showCfg">Ayar dosyasını göster</button>
+    </div>
+    <pre id="cfg" class="hide"></pre>
+  </div>
+
+  <div class="card">
+    <h2>Müzik türü</h2>
+    <div class="row" id="presets"></div>
+  </div>
+
+  <div class="two">
+    <div class="card">
+      <h2>Sesini kendin ayarla</h2>
+      <div id="simple"></div>
+      <div id="chans"></div>
+    </div>
+    <div class="card">
+      <h2>Ses eğrisi</h2>
+      <canvas id="curve" width="900" height="340"></canvas>
+      <div class="muted" id="pre" style="margin-top:6px"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Gelişmiş ekolayzır (10 bant)</h2>
+    <div class="eq" id="eq"></div>
+    <div class="row" style="margin-top:10px"><button class="ghost" id="reset">Sıfırla</button></div>
+  </div>
+
+  <div class="card hide" id="tryCard">
+    <h2>Kurmadan dene</h2>
+    <div class="muted">Bir şarkı seç; bu sayfadaki ayarla tarayıcıda çalınır (Equalizer APO kurulunca bütün bilgisayara uygulanır).</div>
+    <div class="row" style="margin-top:8px"><input type="file" id="tryFile" accept="audio/*"><audio id="tryAudio" controls></audio></div>
+  </div>
+
+  <div class="card">
+    <h2>Bu hoparlörün ayarı</h2>
+    <div class="row">
+      <input type="text" id="spName">
+      <select id="spKind"></select>
+      <select id="spDev"><option value="">Windows'ta seçili çıkış</option></select>
+      <button class="ghost" id="devRefresh">Çıkışları bul</button>
+      <span style="flex:1"></span>
+      <button class="ghost" id="spDel">Sil</button>
+    </div>
+    <div class="muted" style="margin-top:6px">Birden çok hoparlörün varsa her birine Windows çıkışını seç: hangisinden ses çıkıyorsa onun ayarı çalışır.</div>
+    <ul class="muted" id="tips"></ul>
+  </div>
+</main>
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const el = (tag, props = {}, kids = []) => { const e = Object.assign(document.createElement(tag), props); kids.forEach((k) => e.append(k)); return e; };
+const post = async (p, body) => { const r = await (await fetch(p, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) })).json(); if (r.error) throw new Error(r.error); return r; };
+const fmt = (v) => (v > 0 ? "+" : "") + Number(v).toFixed(1) + " dB";
+const fq = (f) => f >= 1000 ? (f / 1000) + "k" : String(f);
+
+const SIMPLE = [["bas", "Bas", "Davul, bas gitar"], ["orta", "Orta", "Gövde, sıcaklık"], ["vokal", "Vokal / netlik", "Şarkıcı, konuşma, bağlama"], ["tiz", "Tiz", "Zil, parlaklık"], ["yukseklik", "Ses seviyesi", "Genel kısma/açma", -20, 6]];
+const CHANS = [["sub", "Subwoofer", "Z607 bas kutusu"], ["merkez", "Merkez", "Diyalog, vokal"], ["arka", "Arka hoparlörler", "Çevresel ses"]];
+let INFO = null, ST = null, SP = null, AN = null, timer = null, devs = [];
+
+function kindOf(sp) { return INFO.kinds.find((k) => k.id === sp.kind) || INFO.kinds[0]; }
+
+function slider(key, label, hint, lo = -12, hi = 12) {
+  const v = el("span"), inp = el("input", { type: "range", min: lo, max: hi, step: 0.5 });
+  inp.value = SP.settings[key]; v.textContent = fmt(inp.value);
+  inp.oninput = () => { v.textContent = fmt(inp.value); SP.settings[key] = +inp.value; schedule(); };
+  const name = el("b", { textContent: label }); name.append(el("small", { textContent: hint }));
+  return el("div", { className: "sl" }, [name, inp, v]);
+}
+
+function render() {
+  SP = ST.speakers.find((s) => s.id === ST.active) || ST.speakers[0];
+  const k = kindOf(SP);
+  $("speakers").replaceChildren(...ST.speakers.map((s) => {
+    const b = el("button", { className: "chip spk" + (s.id === SP.id ? " on" : "") });
+    b.append(el("span", { textContent: s.ad }), el("small", { textContent: s.device_ad || kindOf(s).ad }));
+    b.onclick = () => send({ active: s.id, speaker: s.id }, true);
+    return b;
+  }));
+  $("acik").checked = SP.settings.acik !== false;
+  $("presets").replaceChildren(...INFO.presets.map((p) => {
+    const b = el("button", { className: "chip" + (SP.settings.preset === p.id ? " on" : ""), textContent: p.ad });
+    b.onclick = () => send({ speaker: SP.id, preset: p.id }, true);
+    return b;
+  }), el("button", { className: "chip" + (SP.settings.preset === "ozel" ? " on" : ""), textContent: "Özel", disabled: true }));
+  $("simple").replaceChildren(...SIMPLE.map((a) => slider(...a)));
+  $("chans").replaceChildren(...(k.kanal === "5.1" ? [el("div", { className: "muted", textContent: "5.1 kanal düzeyleri" }), ...CHANS.map((a) => slider(...a))] : []));
+  $("eq").replaceChildren(...INFO.bands.map((f, i) => {
+    const v = el("span", { className: "v", textContent: SP.settings.bands[i] });
+    const inp = el("input", { type: "range", min: -12, max: 12, step: 0.5 });
+    inp.value = SP.settings.bands[i];
+    inp.oninput = () => { SP.settings.bands[i] = +inp.value; v.textContent = inp.value; SP.settings.preset = "ozel"; schedule(); };
+    return el("div", {}, [v, inp, el("span", { textContent: fq(f) + " Hz" })]);
+  }));
+  $("spName").value = SP.ad;
+  $("spKind").replaceChildren(...INFO.kinds.map((x) => el("option", { value: x.id, textContent: x.ad, selected: x.id === SP.kind })));
+  fillDevs();
+  $("tips").replaceChildren(...(INFO.tips[SP.kind] || []).map((t) => el("li", { textContent: t })));
+}
+
+function fillDevs() {
+  const opts = [el("option", { value: "", textContent: "Windows'ta seçili çıkış" })];
+  const list = devs.slice();
+  if (SP.device && !list.some((d) => d.guid === SP.device)) list.push({ guid: SP.device, ad: SP.device_ad || SP.device });
+  list.forEach((d) => opts.push(el("option", { value: d.guid, textContent: d.ad + (d.oneri ? " (Logitech)" : ""), selected: d.guid === SP.device })));
+  $("spDev").replaceChildren(...opts);
+}
+
+function draw() {
+  const c = $("curve"), g = c.getContext("2d"), W = c.width, H = c.height, R = 15;
+  g.clearRect(0, 0, W, H);
+  const x = (f) => Math.log(f / 20) / Math.log(1000) * W, y = (d) => H / 2 - d / R * (H / 2 - 12);
+  g.strokeStyle = "#253049"; g.fillStyle = "#9aa6c2"; g.font = "20px system-ui"; g.lineWidth = 1;
+  [50, 100, 200, 500, 1000, 2000, 5000, 10000].forEach((f) => { g.beginPath(); g.moveTo(x(f), 0); g.lineTo(x(f), H); g.stroke(); g.fillText(fq(f), x(f) + 4, H - 6); });
+  [-12, -6, 0, 6, 12].forEach((d) => { g.beginPath(); g.moveTo(0, y(d)); g.lineTo(W, y(d)); g.stroke(); g.fillText((d > 0 ? "+" : "") + d, 4, y(d) - 4); });
+  if (!AN) return;
+  g.strokeStyle = SP.settings.acik === false ? "#9aa6c2" : "#ffd23f"; g.lineWidth = 4; g.beginPath();
+  AN.freqs.forEach((f, i) => { const v = SP.settings.acik === false ? 0 : AN.curve[i]; i ? g.lineTo(x(f), y(v)) : g.moveTo(x(f), y(v)); });
+  g.stroke();
+  $("pre").textContent = "Ön kısma: " + fmt(AN.preamp) + " (yükseltilen yerde cızırtı olmasın diye otomatik)";
+}
+
+function showApply(a) {
+  if (!a) return;
+  const card = $("apoCard"), msg = $("apoMsg");
+  $("cfg").textContent = a.config || "";
+  if (a.ok) { card.classList.add("hide"); $("tryCard").classList.add("hide"); $("status").className = "ok"; $("status").textContent = "✔ Uygulandı — ses anında değişti"; return; }
+  card.classList.remove("hide");
+  msg.textContent = a.msg || "";
+  $("apoLink").classList.toggle("hide", !a.needs_apo);
+  $("izin").classList.toggle("hide", !a.needs_admin);
+  $("tryCard").classList.toggle("hide", !a.needs_apo);
+  $("status").className = "bad"; $("status").textContent = a.needs_apo ? "Equalizer APO kurulu değil" : "İzin gerekiyor";
+}
+
+async function send(body, rerender) {
+  try {
+    const r = await post("/api/hoparlor/update", body);
+    ST = r.state; AN = r.analysis;
+    if (rerender) render();
+    draw(); showApply(r.apply); tryUpdate();
+  } catch (e) { $("status").className = "bad"; $("status").textContent = e.message; }
+}
+function schedule() { clearTimeout(timer); timer = setTimeout(() => send({ speaker: SP.id, settings: SP.settings }, false), 250); }
+
+// --- kurmadan dene: aynı süzgeçler Web Audio ile
+let ctx = null, srcNode = null, chain = [];
+function tryUpdate() {
+  if (!ctx || !srcNode || !AN) return;
+  srcNode.disconnect(); chain.forEach((n) => n.disconnect());
+  const T = { PK: "peaking", LSC: "lowshelf", HSC: "highshelf", HP: "highpass" };
+  const on = SP.settings.acik !== false;
+  chain = on ? AN.filters.map(([t, f, gain, q]) => { const b = ctx.createBiquadFilter(); b.type = T[t]; b.frequency.value = f; b.gain.value = gain; b.Q.value = q; return b; }) : [];
+  const pre = ctx.createGain(); pre.gain.value = on ? Math.pow(10, AN.preamp / 20) : 1; chain.push(pre);
+  let n = srcNode; chain.forEach((c) => { n.connect(c); n = c; }); n.connect(ctx.destination);
+}
+$("tryFile").onchange = () => {
+  const f = $("tryFile").files[0]; if (!f) return;
+  $("tryAudio").src = URL.createObjectURL(f);
+  if (!ctx) { ctx = new AudioContext(); srcNode = ctx.createMediaElementSource($("tryAudio")); }
+  tryUpdate(); $("tryAudio").play(); ctx.resume();
+};
+
+$("acik").onchange = () => { SP.settings.acik = $("acik").checked; send({ speaker: SP.id, settings: SP.settings }, false); };
+$("reset").onclick = () => send({ speaker: SP.id, settings: { preset: "duz", bands: INFO.bands.map(() => 0), bas: 0, orta: 0, vokal: 0, tiz: 0, yukseklik: 0, sub: 0, merkez: 0, arka: 0, acik: true } }, true);
+$("addBtn").onclick = () => $("addBox").classList.toggle("hide");
+$("addOk").onclick = async () => {
+  const r = await post("/api/hoparlor/add", { ad: $("addName").value, kind: $("addKind").value });
+  ST = r.state; $("addBox").classList.add("hide"); $("addName").value = ""; await send({ speaker: r.speaker.id, active: r.speaker.id }, true);
+};
+$("spName").onchange = () => send({ speaker: SP.id, ad: $("spName").value }, true);
+$("spKind").onchange = () => send({ speaker: SP.id, kind: $("spKind").value }, true);
+$("spDev").onchange = () => { const o = $("spDev").selectedOptions[0]; send({ speaker: SP.id, device: o.value, device_ad: o.value ? o.textContent.replace(" (Logitech)", "") : "" }, true); };
+$("spDel").onclick = async () => {
+  if (ST.speakers.length < 2 || !confirm(SP.ad + " silinsin mi?")) return;
+  const r = await post("/api/hoparlor/remove", { speaker: SP.id }); ST = r.state; await send({ speaker: ST.active }, true);
+};
+$("devRefresh").onclick = async () => {
+  $("devRefresh").textContent = "Aranıyor…";
+  devs = (await (await fetch("/api/hoparlor/devices")).json()).devices || [];
+  $("devRefresh").textContent = devs.length ? devs.length + " çıkış bulundu" : "Çıkış bulunamadı (Windows'ta çalışır)";
+  fillDevs();
+};
+$("izin").onclick = async () => { $("izin").textContent = "Windows izin penceresine 'Evet' de…"; try { showApply(await post("/api/hoparlor/izin")); } finally { $("izin").textContent = "İzin ver (bir kez)"; } };
+$("showCfg").onclick = () => $("cfg").classList.toggle("hide");
+
+(async () => {
+  INFO = await (await fetch("/api/hoparlor")).json();
+  ST = INFO.state;
+  $("apoLink").href = INFO.apo.url;
+  $("addKind").replaceChildren(...INFO.kinds.map((x) => el("option", { value: x.id, textContent: x.ad, selected: x.id === "masaustu" })));
+  render();
+  const want = new URLSearchParams(location.search).get("preset");
+  await send(INFO.presets.some((p) => p.id === want) ? { speaker: SP.id, preset: want } : { speaker: SP.id }, !!want);
+  if (INFO.apo.windows) $("devRefresh").click();
+})();
+</script>
+</body>
+</html>

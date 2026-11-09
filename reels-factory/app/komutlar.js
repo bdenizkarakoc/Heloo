@@ -23,6 +23,7 @@
         await post("/api/new", { text: a, count: 1, kesim: !!page.kesim }); return "Metinden video sıraya alındı."; } },
       { name: "foto", alias: ["fotograf"], args: "[istek]", desc: "Fotoğraflarından müzikli montaj", run: (a) => page.foto ? page.foto("montaj", a) : go("/photos" + q({ istek: a })) },
       { name: "anlat", args: "<ne anlatsın>", desc: "Fotoğraflarından seslendirmeli, altyazılı video", run: (a) => page.foto ? page.foto("anlatim", a) : go("/photos" + q({ mode: "anlatim", istek: a })) },
+      { name: "hoparlor", alias: ["ses", "ekolayzir"], args: "[pop | rnb | caz | turku …]", desc: "Hoparlör ses ayarı: bas, tiz, müzik türü", run: (a) => go("/hoparlor" + q({ preset: a.trim() })) },
       { name: "fotolar", desc: "Fotoğraflarım klasörünü aç (fotoğrafları buraya at)", run: async () => "Klasör: " + (await post("/api/photos/open")).path },
       { name: "kesim", alias: ["montaj"], args: "[istek]", desc: "Kesim: video/fotoğraf bırak → montaj", run: (a) => page.kesimIstek ? page.kesimIstek(a) : go("/kesim" + q({ istek: a })) },
       { name: "ref", alias: ["benzet", "gibi"], args: "<bağlantı | video yolu> [istek]", needArgs: true, desc: "Şunun gibi yap: bağlantıdaki ya da bilgisayardaki videonun tarzıyla montaj", run: (a) => {

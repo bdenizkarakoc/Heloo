@@ -24,6 +24,7 @@ python scripts/factory.py mcp [--list]           # MCP sunucularını Claude Cod
 python scripts/factory.py anim-ses <metin> <klasör>   # animasyon kısa filmi için Türkçe voice.wav + words.json
 python scripts/factory.py anim-karakter <film> <Ad> "<tarif>" [--poz ...]  # Gemini ile özgün karakter kartları
 python scripts/factory.py gorsel <görsel> [--istek ".."] [--ses otomatik|benim|kadin|erkek] [--klip N]  # görselden video
+python scripts/factory.py hoparlor [pop|rnb|caz|turku…] [--bas 3 --tiz 2] [--list]  # hoparlör ses ayarı (Equalizer APO)
 python scripts/factory.py status [<görev>]
 python -m pytest tests -q                         # hızlı testler (her gönderimde GitHub Actions da çalıştırır)
 ```
@@ -77,6 +78,7 @@ python -m pytest tests -q                         # hızlı testler (her gönder
 | `scripts/reels/cancel.py` | "Durdur": iş kuyruğunun alt süreçlerini izler (Popen kancası `reels/__init__.py`), süreç ağacıyla sonlandırır; `job.stage` ve `util.run` durdurmayı denetler (`Cancelled`, StageError değil) |
 | `scripts/reels/design.py` | Tasarım temaları: `design.themes` ayar katmanı (renk, yazı tipi, altyazı biçimi, geçiş seti, efektler), son kullanılmayanı seçer; görevde `design` olarak saklanır |
 | `scripts/reels/gorsel.py` | Görselden video (`/gorsel` sayfası, `factory.py gorsel`): Claude görsel analizi (karakter/kişilik/ses tarifi, kimlik tespiti yok) → Gemini ile 9:16 kenar genişletme → konuşan başına ElevenLabs ses tasarımı (`eleven.py`; yoksa Edge sesi + perde) → Higgsfield görselden video klipleri (`higgsfield.py`) → fabrika hattı (sahne başına `voice_id`) |
+| `scripts/reels/hoparlor.py` | Hoparlör ses ayarı (`/hoparlor`, `app/hoparlor.html`): hoparlör seçimi (Logitech Z607 5.1 + eklenen hoparlörler, her biri Windows çıkış GUID'iyle), müzik türü hazırları, Bas/Orta/Vokal/Tiz, 5.1 kanal düzeyleri, 10 bant; Equalizer APO `config/heloo-hoparlor.txt` (otomatik ön kısma, hoparlör türüne göre derin bas koruması); ayarlar `studio/hoparlor/ayarlar.json` |
 | `scripts/reels/supa.py` | Supabase: biten video, kapak, paylaşım metni → Storage (`reels`) + `reels_videos` tablosu (`supabase/schema.sql`); `SUPABASE_URL` + `SUPABASE_SERVICE_KEY` |
 | `animasyon/` | Çizgi-3D animasyon kısa film (MIT, Mr omi'nin Claude Animated Shorts becerisi): `studio/` three.js + Remotion projesi, `SKILL.md` akış, **`TURKCE.md` fabrika kuralları (öncelikli)**; Türkçe ses `factory.py anim-ses`; Gemini karakter kartları `factory.py anim-karakter` (`scripts/reels/characters.py`, `GEMINI_API_KEY`) → sahnede `gemcast.ts`; Claude Code `/animasyon` |
 | `cizgi/` | Kodla çizilen 2D çizgi kısa filmler (özgün karakterler, ağız senkronu, karakter başına ses, efekt, müzik): her dosya bir bölüm (`burak_ve_kaan.py`, `kahvehane_bocekleri.py`); 3D `animasyon/` render edilemeyen ortamlarda hızlı yol |

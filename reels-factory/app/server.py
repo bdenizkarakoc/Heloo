@@ -32,7 +32,7 @@ from urllib.parse import unquote, urlparse
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from reels import audience, cancel, claude_setup, kesim, knowledge, llm, notes, photos, progress, cloud_sync, doctor, log, pipeline, publish, publish_sources, studio, voice  # noqa: E402
+from reels import audience, cancel, claude_setup, hoparlor, kesim, knowledge, llm, notes, photos, progress, cloud_sync, doctor, log, pipeline, publish, publish_sources, studio, voice  # noqa: E402
 from reels.config import load_config  # noqa: E402
 from reels.job import Job  # noqa: E402
 from reels.util import read_json, write_json  # noqa: E402
@@ -599,6 +599,12 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Location", "/publish?msg=" + quote(msg))
             self.end_headers()
             return None
+        if path in ("/hoparlor", "/hoparlor.html"):  # hoparlör ses ayarı (ekolayzır)
+            return self._file(ROOT / "app" / "hoparlor.html")
+        if path == "/api/hoparlor":
+            return self._json(hoparlor.info())
+        if path == "/api/hoparlor/devices":
+            return self._json({"devices": hoparlor.devices()})
         if path in ("/voice", "/voice.html"):
             return self._file(ROOT / "app" / "voice.html")
         if path == "/api/voice/styles":
@@ -850,6 +856,24 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_error(404)
         if path == "/api/stop":  # üretimi durdur: {task?: id} ya da {all: true}
             return self._json(FACTORY.stop(data.get("task") or None, bool(data.get("all"))))
+        if path.startswith("/api/hoparlor/"):
+            act = path[len("/api/hoparlor/"):]
+            try:
+                if act == "update":
+                    return self._json(hoparlor.update(data))
+                if act == "add":
+                    st = hoparlor.load_state()
+                    sp = hoparlor.add_speaker(st, str(data.get("ad") or ""), str(data.get("kind") or "masaustu"),
+                                              str(data.get("device") or ""), str(data.get("device_ad") or ""))
+                    hoparlor.save_state(st)
+                    return self._json({"speaker": sp, "state": st, "apply": hoparlor.apply(st)})
+                if act == "remove":
+                    return self._json(hoparlor.remove_speaker(str(data.get("speaker") or "")))
+                if act == "izin":
+                    return self._json(hoparlor.grant_permission())
+            except Exception as exc:  # noqa: BLE001
+                return self._json({"error": str(exc)}, 400)
+            return self.send_error(404)
         if path.startswith("/api/photos/"):
             act = path[len("/api/photos/"):]
             try:

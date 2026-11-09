@@ -215,6 +215,37 @@ def cmd_kesim(args, cfg) -> int:
     return 0 if proj.get("status") == "done" else 1
 
 
+def cmd_hoparlor(args, cfg) -> int:
+    """Hoparlör ses ayarı (Equalizer APO): hazır seç, bas/tiz ayarla, uygula."""
+    from reels import hoparlor
+    st = hoparlor.load_state()
+    if args.list:
+        for sp in st["speakers"]:
+            s = sp["settings"]
+            print(f"{'*' if sp['id'] == st['active'] else ' '} {sp['id']}: {sp['ad']} — {s['preset']} "
+                  f"(bas {s['bas']:+}, tiz {s['tiz']:+}){'' if s.get('acik', True) else ' [kapalı]'}")
+        print("Hazırlar: " + ", ".join(hoparlor.PRESETS))
+        return 0
+    data: dict = {"speaker": args.hoparlor or st["active"], "active": args.hoparlor or st["active"]}
+    if args.preset:
+        if args.preset not in hoparlor.PRESETS:
+            raise StageError(f"bilinmeyen hazır: {args.preset} ({', '.join(hoparlor.PRESETS)})")
+        data["preset"] = args.preset
+    sets = {k: getattr(args, k) for k in ("bas", "orta", "vokal", "tiz") if getattr(args, k) is not None}
+    if args.kapat or args.ac:
+        sets["acik"] = bool(args.ac)
+    if sets:
+        if args.preset:   # önce hazır, sonra sürgüler
+            hoparlor.update({**data, "apply": False})
+            data.pop("preset")
+        data["settings"] = sets
+    r = hoparlor.update(data)
+    a = r.get("apply") or {}
+    print(f"{r['speaker']['ad']}: {r['speaker']['settings']['preset']}, ön kısma {r['analysis']['preamp']} dB")
+    print("✔ Uygulandı: " + a["path"] if a.get("ok") else "· " + a.get("msg", ""))
+    return 0
+
+
 def cmd_foto(args, cfg) -> int:
     """Fotoğraflarım (Masaüstü/kesim/Fotoğraflarım) kutusundaki fotoğraflardan video."""
     from reels import photos
@@ -411,6 +442,14 @@ def main() -> int:
     p.add_argument("--istek", help='montaj isteği, ör. "neşeli müzik, 30 sn"')
     p.add_argument("--anlat", help="seslendirmeli, altyazılı video: ne anlatılacağı (uygulama açık olmalı)")
     p.add_argument("--list", action="store_true")
+    p = sub.add_parser("hoparlor", help="hoparlör ses ayarı: müzik türü hazırı, bas/tiz (Equalizer APO; sayfa /hoparlor)")
+    p.add_argument("preset", nargs="?", help="pop, rnb, caz, turku, rock, klasik, film, konusma, duz…")
+    p.add_argument("--hoparlor", help="hoparlör kimliği (--list)")
+    for k in ("bas", "orta", "vokal", "tiz"):
+        p.add_argument(f"--{k}", type=float, help="dB (-12…12)")
+    p.add_argument("--kapat", action="store_true", help="ayarı kapat (düz ses)")
+    p.add_argument("--ac", action="store_true")
+    p.add_argument("--list", action="store_true")
     p = sub.add_parser("mcp", help="MCP sunucularını Claude Code'a kaydet (reels-fabrikasi, playwright, github...)")
     p.add_argument("--list", action="store_true", help="yalnızca listele, kaydetme")
     p = sub.add_parser("anim-ses", help="animasyon kısa filmi için Türkçe voice.wav + words.json (kelime zamanları)")
@@ -447,7 +486,7 @@ def main() -> int:
     handlers = {"doctor": cmd_doctor, "new": cmd_new, "validate": cmd_validate, "produce": cmd_produce,
                 "run": cmd_run, "status": cmd_status, "candidates": cmd_candidates, "selftest": cmd_selftest,
                 "hook": cmd_hook, "title": cmd_title, "chapters": cmd_chapters, "mcp": cmd_mcp, "kesim": cmd_kesim,
-                "foto": cmd_foto, "anim-ses": cmd_anim_ses,
+                "foto": cmd_foto, "hoparlor": cmd_hoparlor, "anim-ses": cmd_anim_ses,
                 "anim-karakter": cmd_anim_karakter, "gorsel": cmd_gorsel,
                 "anahtar": cmd_anahtar}
     try:
