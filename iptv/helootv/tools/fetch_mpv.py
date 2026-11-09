@@ -205,6 +205,8 @@ def install_shaders(dest: Path | None = None, progress: Callable[[str], None] | 
     dest.mkdir(parents=True, exist_ok=True)
     done: list[str] = []
     for key, meta in shaders.SHADERS.items():
+        if meta.get("bundled"):
+            continue
         target = dest / meta["file"]
         if target.is_file() and target.stat().st_size > 1000:
             continue

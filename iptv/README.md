@@ -140,6 +140,22 @@ canlı yayının düşük gecikmesi korunur. Oynatıcı çubuğundaki yeşil **�
 zaman gösterir (ör. `✦ RTX VSR 576p→2160p · Gürültü azaltma · Keskinlik · Bant yumuşatma`). RTX VSR sürücüde
 kapalıysa ya da kart desteklemiyorsa Heloo TV kendiliğinden yapay zekâ büyütücüye geçer; iyileştirme kesilmez.
 
+## AMD (ve Intel) ekran kartları
+
+NVIDIA olmayan kartlarda RTX VSR yoktur; mpv'nin `d3d11vpp` filtresi yalnız NVIDIA ve Intel'in video yükseltmesini
+açabilir (AMD'nin video yükseltmesi sürücüde Windows medya hattına bağlıdır, mpv'ye açık değildir). Heloo TV
+açılışta kartı tanır (`Win32_VideoController`) ve AMD/Intel kartta:
+
+- Büyütmeyi **AMD FidelityFX Super Resolution (FSR 1.0.2)** ile yapar: AMD'nin MIT lisanslı kodu, mpv'ye
+  [agyild](https://gist.github.com/agyild/82219c545228d70c5604f865ce0b0ce5) tarafından uyarlanmış hali; pakette gelir
+  (`helootv/glsl/fsr.glsl`), indirme gerekmez. Tek karelik bir GPU işlemidir → canlı yayına gecikme eklemez.
+- Keskinlik AMD CAS tarzı shader'ımızla, gürültü azaltma ve deband her kartta aynıdır; deinterlace yine GPU'da.
+- Yeşil etiket `✦ AMD FSR büyütme · Gürültü azaltma · Keskinlik · Bant yumuşatma` gösterir; üst çubukta kart adı
+  ve "AMD FSR" yazar. Ayarlar → Görüntü → "AMD / Intel ekran kartında AMD FSR ile büyüt" ile kapatılabilir.
+- Akıcılık için: **AMD Software (Adrenalin) → Oyun → Grafik → AMD Fluid Motion Frames** (AFMF; RX 6000/7000/9000)
+  ya da Lossless Scaling. AFMF kullanırken Ayarlar → "Film/dizide akıcı oynatma"yı kapatın.
+- FSR, hiçbir yapay zekâ modeli indirilemediğinde her kartta yedek büyütücüdür; böylece iyileştirme hiç kesilmez.
+
 ## Görüntü ayarları ve karıncalanma
 
 **🎨 Görüntü** menüsü / **Ctrl+P** penceresi oynayan görüntüye anında uygulanır ve kaydedilir:

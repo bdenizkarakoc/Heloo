@@ -1,4 +1,8 @@
-"""NVIDIA ekran kartı algılama ve RTX Video (VSR / HDR) uygunluk değerlendirmesi."""
+"""Ekran kartı algılama (NVIDIA / AMD / Intel) ve görüntü iyileştirme uygunluk değerlendirmesi.
+
+NVIDIA RTX: RTX Video Super Resolution (d3d11vpp). AMD (ve diğerleri): AMD FidelityFX Super Resolution (FSR 1, MIT,
+pakette `glsl/fsr.glsl`) + CAS keskinleştirme mpv'nin GPU işleyicisinde; kare üretimi için AMD Fluid Motion Frames
+ya da Lossless Scaling."""
 from __future__ import annotations
 
 import os
@@ -29,10 +33,50 @@ def nvidia_smi_path() -> str | None:
     return None
 
 
+def vendor_of(name: str) -> str:
+    n = (name or "").lower()
+    if "nvidia" in n or "geforce" in n or "quadro" in n or re.search(r"\brtx\b", n):
+        return "nvidia"
+    if "amd" in n or "radeon" in n or "ati " in n:
+        return "amd"
+    if "intel" in n or "arc" in n.split():
+        return "intel"
+    return ""
+
+
+def query_adapters() -> list[dict]:
+    """Windows'taki bütün ekran kartları (Win32_VideoController): NVIDIA olmayan kartlar için."""
+    if not sys.platform.startswith("win"):
+        return []
+    cmd = ("Get-CimInstance Win32_VideoController | Select-Object Name,DriverVersion,AdapterRAM | "
+           "ConvertTo-Json -Compress")
+    try:
+        out = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", cmd], capture_output=True,
+                             text=True, timeout=15, creationflags=_creationflags()).stdout
+        import json
+        data = json.loads(out or "[]")
+    except Exception:
+        return []
+    rows = data if isinstance(data, list) else [data]
+    gpus = []
+    for r in rows:
+        name = str((r or {}).get("Name") or "").strip()
+        if not name or "basic display" in name.lower() or "remote" in name.lower():
+            continue
+        ram = (r or {}).get("AdapterRAM") or 0
+        gpus.append({"name": name, "driver": str(r.get("DriverVersion") or ""), "vendor": vendor_of(name),
+                     "memory_mb": int(ram) // (1 << 20) if isinstance(ram, int) else 0})
+    # öncelik: AMD (çoğunlukla harici kart) > Intel > diğer
+    rank = {"amd": 0, "intel": 1}
+    gpus.sort(key=lambda g: rank.get(g["vendor"], 2))
+    return gpus
+
+
 def query_gpus() -> list[dict]:
+    """Önce NVIDIA (nvidia-smi); yoksa Windows'taki AMD/Intel kartları."""
     exe = nvidia_smi_path()
     if not exe:
-        return []
+        return query_adapters()
     try:
         out = subprocess.run([exe, "--query-gpu=name,driver_version,memory.total", "--format=csv,noheader,nounits"],
                              capture_output=True, text=True, timeout=6, creationflags=_creationflags())
@@ -43,8 +87,8 @@ def query_gpus() -> list[dict]:
         parts = [p.strip() for p in line.split(",")]
         if len(parts) >= 2 and parts[0]:
             mem = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
-            gpus.append({"name": parts[0], "driver": parts[1], "memory_mb": mem})
-    return gpus
+            gpus.append({"name": parts[0], "driver": parts[1], "memory_mb": mem, "vendor": "nvidia"})
+    return gpus or query_adapters()
 
 
 def _driver_tuple(text: str) -> tuple[int, int]:
@@ -54,14 +98,24 @@ def _driver_tuple(text: str) -> tuple[int, int]:
 
 def assess(gpu: dict | None, platform: str = sys.platform) -> dict:
     """RTX VSR / RTX HDR uygunluğu ve kullanıcıya Türkçe öneriler."""
-    out = {"vsr": False, "hdr": False, "notes": []}
+    out = {"vsr": False, "hdr": False, "notes": [], "vendor": (gpu or {}).get("vendor") or vendor_of((gpu or {}).get("name", ""))}
     if not platform.startswith("win"):
         out["notes"].append("RTX Video Super Resolution yalnızca Windows'ta çalışır; bu sistemde mpv'nin yüksek kaliteli "
                             "ölçekleyicisi (ewa_lanczossharp) kullanılır.")
         return out
     if not gpu:
-        out["notes"].append("NVIDIA ekran kartı bulunamadı (nvidia-smi yok). RTX VSR için GeForce RTX 20/30/40/50 serisi "
-                            "ve güncel sürücü gerekir.")
+        out["notes"].append("Ekran kartı tanınamadı. Görüntü AMD FSR + keskinlik ile iyileştirilir (her kartta çalışır).")
+        return out
+    if out["vendor"] == "amd":
+        out["notes"].append(f"{gpu.get('name')}: AMD kartta görüntü AMD FidelityFX Super Resolution (FSR) + CAS keskinlik "
+                            "ile 4K'ya büyütülür (canlı yayın dahil), deinterlace GPU'da yapılır.")
+        out["notes"].append("Akıcılık için AMD Software (Adrenalin) → Oyun → Grafik → 'AMD Fluid Motion Frames' açılabilir "
+                            "ya da Lossless Scaling kullanılabilir. AFMF kullanırken Ayarlar → 'Film/dizide akıcı oynatma'yı "
+                            "kapatın (iki ara kare üretimi titreme yapar); Lossless Scaling'de Heloo TV bunu kendisi yapar.")
+        return out
+    if out["vendor"] == "intel":
+        out["notes"].append(f"{gpu.get('name')}: görüntü AMD FSR (her kartta çalışır) ya da yapay zekâ büyütücü + keskinlik "
+                            "ile iyileştirilir.")
         return out
     name = gpu.get("name", "")
     drv = _driver_tuple(gpu.get("driver", ""))

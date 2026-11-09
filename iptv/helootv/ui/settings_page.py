@@ -366,6 +366,7 @@ class SettingsPage(QScrollArea):
         for key, meta in _sh.SHADERS.items():
             self.ai.addItem(meta["label"], key)
         self.ai.addItem("Kapalı", "off")
+        self.amd_fsr = QCheckBox("AMD / Intel ekran kartında AMD FSR ile büyüt (canlı yayın dahil; NVIDIA'da RTX VSR)")
         self.ai.setToolTip("RTX VSR'nin büyütmediği durumlarda (fotoğraf, VSR kapalı, NVIDIA olmayan kart) 2 kat "
                            "yapay zekâ büyütmesi. GitHub'dan 'mpv bileşenlerini indir' ile gelir.")
         self.sharpen = QComboBox()
@@ -392,6 +393,7 @@ class SettingsPage(QScrollArea):
         lay.addWidget(self.hq, r, 0, 1, 2); r += 1
         lay.addWidget(self.smooth, r, 0, 1, 2); r += 1
         lay.addWidget(QLabel("Yapay zekâ büyütücü"), r, 0); lay.addWidget(self.ai, r, 1); r += 1
+        lay.addWidget(self.amd_fsr, r, 0, 1, 2); r += 1
         lay.addWidget(QLabel("Keskinlik (CAS)"), r, 0); lay.addWidget(self.sharpen, r, 1); r += 1
         lay.addWidget(QLabel("Karıncalanma azaltma"), r, 0); lay.addWidget(self.denoise, r, 1); r += 1
         lay.addWidget(self.low_boost, r, 0, 1, 2); r += 1
@@ -404,7 +406,7 @@ class SettingsPage(QScrollArea):
         note.setObjectName("Muted")
         lay.addWidget(note, r, 0, 1, 2)
         lay.setColumnStretch(1, 1)
-        for w in (self.vsr, self.hdr, self.deband, self.hq, self.smooth, self.low_boost):
+        for w in (self.vsr, self.hdr, self.deband, self.hq, self.smooth, self.low_boost, self.amd_fsr):
             w.toggled.connect(self._changed)
         for w in (self.target, self.deint, self.hwdec, self.ai, self.sharpen, self.denoise):
             w.currentIndexChanged.connect(self._changed)
@@ -618,6 +620,7 @@ class SettingsPage(QScrollArea):
         self.sharpen.setCurrentIndex(max(0, self.sharpen.findData(v["sharpen"])))
         self.denoise.setCurrentIndex(max(0, self.denoise.findData(s["picture"]["denoise"])))
         self.low_boost.setChecked(bool(v["low_boost"]))
+        self.amd_fsr.setChecked(bool(v["amd_fsr"]))
         ls = s["lossless"]
         self.ls_mode.setCurrentIndex(max(0, self.ls_mode.findData(ls["mode"])))
         self.ls_hotkey.setText(ls["hotkey"])
@@ -671,6 +674,7 @@ class SettingsPage(QScrollArea):
         v["sharpen"] = self.sharpen.currentData()
         pic["denoise"] = self.denoise.currentData()
         v["low_boost"] = self.low_boost.isChecked()
+        v["amd_fsr"] = self.amd_fsr.isChecked()
         from .. import lossless
         ls = s["lossless"]
         ls["mode"] = self.ls_mode.currentData()

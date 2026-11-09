@@ -19,7 +19,9 @@ DEFAULTS: dict[str, Any] = {
         "hq_scaling": True,       # VSR'nin yetmediği yerde ewa_lanczossharp
         "smooth_vod": True,       # film/dizide display-resample + interpolasyon (takılmasız akış)
         "hwdec": "auto",          # auto: Windows'ta d3d11va (VSR için şart), diğerlerinde auto
-        "ai_upscaler": "fsrcnnx",  # RTX VSR yokken yapay zekâ büyütücü: fsrcnnx | artcnn | off
+        "ai_upscaler": "fsrcnnx",  # RTX VSR yokken yapay zekâ büyütücü: fsrcnnx | artcnn | fsr | off
+        "amd_fsr": True,          # AMD/Intel kartta AMD FSR ile büyüt (NVIDIA'da RTX VSR)
+        "gpu_vendor": "",         # açılışta algılanır: nvidia | amd | intel
         "sharpen": "light",       # CAS keskinleştirme: off | light | medium | strong
         "low_boost": True,        # ≤576p düşük kaliteli kaynaklarda daha güçlü deband + keskinlik
     },
@@ -89,9 +91,10 @@ CHOICES: dict[tuple[str, str], tuple] = {
     ("subtitles", "style"): ("outline", "box"),
     ("subtitles", "color"): ("white", "yellow"),
     ("subtitles", "ai_model"): ("base", "small", "medium", "large-v3-turbo"),
-    ("video", "ai_upscaler"): ("fsrcnnx", "artcnn", "off"),
+    ("video", "ai_upscaler"): ("fsrcnnx", "artcnn", "fsr", "off"),
+    ("video", "gpu_vendor"): ("", "nvidia", "amd", "intel"),
     ("export", "target"): ("2160", "1440"),
-    ("export", "model"): ("fsrcnnx", "artcnn", "off"),
+    ("export", "model"): ("fsrcnnx", "artcnn", "fsr", "off"),
     ("export", "quality"): ("fast", "high", "max"),
     ("video", "hwdec"): ("auto", "d3d11va", "nvdec", "auto-copy", "no"),
     ("latency", "mode"): ("ultra", "low", "balanced", "stable"),

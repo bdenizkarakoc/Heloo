@@ -39,6 +39,8 @@ python -m pytest tests -q              # testler (libmpv2/ffmpeg/7z varsa başs�
   (canlı dahil) açılır; kısayol yalnız Heloo TV penceresi öndeyken gönderilir.
 - İyileştirme her kaynakta (canlı dahil) çalışır; çubuktaki etiket `opt.enhancement_summary` (engine.status
   `enhance`). Canlı yayına gecikme ekleyen bir iyileştirme (çok kareli filtre, interpolasyon) ekleme.
+- Kart üreticisi `gpu.query_gpus` (nvidia-smi, yoksa Win32_VideoController) → `settings.video.gpu_vendor`.
+  AMD/Intel'de `shaders.pick` AMD FSR (`helootv/glsl/fsr.glsl`, MIT, pakette) seçer; FSR her zaman son yedektir.
 - Veritabanı: `store.py` (iş parçacığı başına bağlantı, WAL). EPG ayrı dosyada (`*-epg.db`); uzun EPG içe aktarımı
   katalog/geçmiş yazmalarını bekletmez. Arayüzden uzun sorguları `ui/workers.run_task` ile arka planda çalıştır.
 - Kullanıcı metinleri Türkçe. `.ps1`/`.bat` dosyaları yalnız ASCII (Windows kod sayfası sorunları).

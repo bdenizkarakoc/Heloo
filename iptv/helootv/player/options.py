@@ -156,7 +156,7 @@ def quality_options(settings: dict, platform: str = sys.platform) -> dict:
     }
     # RTX VSR'nin büyütmediği her durumda (fotoğraf, sürücüde VSR kapalı, NVIDIA olmayan kart) yapay zekâ ile
     # 2 kat büyütme; shader yalnız mpv'nin kendisi ≥1,3 kat büyüttüğünde devreye girer (VSR 4K verince çalışmaz)
-    shader = shaders.resolve(v.get("ai_upscaler", "fsrcnnx"))
+    shader = shaders.resolve(shaders.pick(settings))
     sharp = shaders.SHARPNESS.get(v.get("sharpen", "light"), 0.3)
     o["glsl-shaders"] = ([str(shader)] if shader else []) + ([str(shaders.CAS)] if sharp > 0 else [])
     o["glsl-shader-opts"] = f"cas_sharpness={sharp:g}"
@@ -420,9 +420,14 @@ def enhancement_summary(settings: dict, plan: dict | None, vsr_active: bool, vp:
     if vsr_active and plan.get("out"):
         out.append(f"RTX VSR {h}p→{plan['out'][1]}p" if h else "RTX VSR")
     elif h and h < 1440:
-        shader = shaders.resolve(v.get("ai_upscaler", "fsrcnnx"))
-        name = {"fsrcnnx": "FSRCNNX", "artcnn": "ArtCNN"}.get(v.get("ai_upscaler"), "")
-        out.append(f"Yapay zekâ büyütme ({name})" if shader and name else "Yüksek kaliteli büyütme")
+        shader = shaders.resolve(shaders.pick(settings))
+        stem = shader.stem.lower() if shader else ""
+        if stem == "fsr":
+            out.append("AMD FSR büyütme")
+        elif shader:
+            out.append(f"Yapay zekâ büyütme ({'ArtCNN' if 'artcnn' in stem else 'FSRCNNX'})")
+        else:
+            out.append("Yüksek kaliteli büyütme")
     if plan.get("hdr"):
         out.append("RTX HDR")
     if plan.get("denoise"):

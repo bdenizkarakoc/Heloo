@@ -30,8 +30,10 @@ def test_vsr_fallback_and_images():
 def test_shader_resolution(tmp_path, monkeypatch):
     from helootv import shaders
     monkeypatch.setenv("HELOOTV_BIN", str(tmp_path))
-    assert shaders.resolve("fsrcnnx") is None
-    assert [p.rsplit("/", 1)[-1].rsplit("\\", 1)[-1] for p in opt.quality_options(S())["glsl-shaders"]] == ["cas.glsl"]
+    names = lambda st: [p.rsplit("/", 1)[-1].rsplit("\\", 1)[-1] for p in opt.quality_options(st)["glsl-shaders"]]
+    # hiçbir model indirilmemişse pakette gelen AMD FSR yedek olur: büyütme hiç kesilmez
+    assert shaders.resolve("fsrcnnx").name == "fsr.glsl"
+    assert names(S()) == ["fsr.glsl", "cas.glsl"]
     (tmp_path / "shaders").mkdir()
     (tmp_path / "shaders" / "ArtCNN_C4F16_DS.glsl").write_text("//!HOOK LUMA\n" + "x" * 2000)
     # FSRCNNX yoksa indirilmiş diğer model kullanılır
@@ -41,6 +43,34 @@ def test_shader_resolution(tmp_path, monkeypatch):
     off["video"]["sharpen"] = "off"
     assert len(opt.quality_options(off)["glsl-shaders"]) == 1
     assert shaders.resolve("off") is None
+    # AMD/Intel kartta AMD FSR seçilir (NVIDIA'da ve bilinmeyen kartta seçilen yapay zekâ modeli)
+    amd = S()
+    amd["video"]["gpu_vendor"] = "amd"
+    assert names(amd)[0] == "fsr.glsl"
+    amd["video"]["amd_fsr"] = False
+    assert names(amd)[0] == "ArtCNN_C4F16_DS.glsl"
+    nv = S()
+    nv["video"]["gpu_vendor"] = "nvidia"
+    assert names(nv)[0] == "ArtCNN_C4F16_DS.glsl"
+
+
+def test_gpu_vendor_detection_and_amd_notes():
+    from helootv import gpu
+    assert gpu.vendor_of("AMD Radeon RX 7800 XT") == "amd"
+    assert gpu.vendor_of("AMD Radeon(TM) Graphics") == "amd"
+    assert gpu.vendor_of("NVIDIA GeForce RTX 4070") == "nvidia"
+    assert gpu.vendor_of("Intel(R) Arc(TM) A770 Graphics") == "intel"
+    assert gpu.vendor_of("Intel(R) UHD Graphics 770") == "intel"
+    a = gpu.assess({"name": "AMD Radeon RX 6600", "driver": "31.0.24027.1012", "vendor": "amd"}, "win32")
+    assert a["vendor"] == "amd" and not a["vsr"] and any("FSR" in n for n in a["notes"])
+    assert any("Fluid Motion Frames" in n for n in a["notes"])
+    n = gpu.assess({"name": "NVIDIA GeForce RTX 4070", "driver": "566.36", "vendor": "nvidia"}, "win32")
+    assert n["vendor"] == "nvidia" and n["vsr"]
+    s = S()
+    s["video"]["gpu_vendor"] = "amd"
+    plan = opt.vsr_plan(s, {"w": 1280, "h": 720}, None, "win32", vsr_available=False, kind="live")
+    enh = opt.enhancement_summary(s, plan, False, {"w": 1280, "h": 720}, "win32")
+    assert enh[0] == "AMD FSR büyütme" and "Keskinlik" in enh
 
 
 def test_target_sizes_and_paths(tmp_path):

@@ -5,6 +5,7 @@ import hashlib
 import logging
 import math
 import os
+import re
 import time
 from pathlib import Path
 
@@ -1045,14 +1046,24 @@ class MainWindow(QMainWindow):
     def _on_gpu(self, gpus: list) -> None:
         self._gpu = gpus[0] if gpus else None
         self._gpu_assess = gpu.assess(self._gpu)
+        vendor = self._gpu_assess.get("vendor") or ""
+        if vendor != self.settings["video"].get("gpu_vendor"):
+            # AMD/Intel kartta büyütücü AMD FSR olur (canlı yayın dahil); ayarlar yeniden uygulanır
+            self.settings["video"]["gpu_vendor"] = vendor
+            self._save_timer.start()
+            if self.engine:
+                self.engine.apply_settings(self.settings)
         if self.engine and opt.is_windows():
             # RTX değilse d3d11vpp'nin sıradan ölçeklemesi yerine mpv + yapay zekâ büyütücü kullanılır
             self.engine.set_vsr_available(bool(self._gpu_assess.get("vsr")))
         if self._gpu:
             ok = self._gpu_assess.get("vsr")
             self.gpu_badge.setObjectName("BadgeNv" if ok else "Badge")
-            self.gpu_badge.setText(f"{self._gpu['name'].replace('NVIDIA GeForce ', '')} · "
-                                   f"{'RTX VSR hazır' if ok else 'VSR yok'}")
+            short = re.sub(r"^(NVIDIA GeForce|AMD Radeon\(TM\)|AMD Radeon|Intel\(R\))\s*", "", self._gpu["name"])
+            state = ("RTX VSR hazır" if ok else "AMD FSR" if vendor in ("amd", "intel")
+                     and self.settings["video"].get("amd_fsr", True) else "VSR yok")
+            self.gpu_badge.setText(f"{short} · {state}")
+            ok = ok or state == "AMD FSR"
             self.gpu_badge.setToolTip("\n".join(self._gpu_assess.get("notes", [])))
             self.gpu_badge.style().unpolish(self.gpu_badge)
             self.gpu_badge.style().polish(self.gpu_badge)
