@@ -38,8 +38,10 @@ def test_parse_and_pick_best():
 
 def test_chase_targets_scale_with_segments():
     s = settings_mod.merged_defaults()
-    assert opt.chase_targets(s) == (0.8, 2.0)
-    assert opt.chase_targets(s, 6.0) == (pytest.approx(7.2), pytest.approx(15.0))
+    assert opt.chase_targets(s) == (1.5, 5.0)
+    assert opt.chase_targets(s, 6.0) == (pytest.approx(7.2), pytest.approx(18.0))
+    # takılmadan sonra eklenen pay hedefi ve üst sınırı büyütür
+    assert opt.chase_targets(s, None, 2.0) == (3.5, 9.0)
 
 
 def _serve(directory):

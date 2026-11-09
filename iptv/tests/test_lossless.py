@@ -35,14 +35,14 @@ def test_find_exe_in_steam_libraries(tmp_path):
 
 def test_external_framegen_disables_mpv_interpolation():
     s = settings_mod.merged_defaults()
-    assert s["lossless"] == {"mode": "always", "hotkey": "Ctrl+Alt+S", "exe": "", "tips_shown": False}
+    assert s["lossless"] == {"mode": "fullscreen", "hotkey": "Ctrl+Alt+S", "exe": "", "tips_shown": False}
     vod = opt.play_options(s, "movie", "http://x/film.mkv")
     assert vod["interpolation"] == "yes" and vod["video-sync"] == "display-resample"
     ls = opt.play_options(s, "movie", "http://x/film.mkv", external_framegen=True)
     assert ls["interpolation"] == "no" and ls["video-sync"] == "audio"
     # bozuk değerler varsayılana döner
     bad = settings_mod._sanitize({"lossless": {"mode": "evet", "hotkey": 5}})
-    assert bad["lossless"]["mode"] == "always" and bad["lossless"]["hotkey"] == "Ctrl+Alt+S"
+    assert bad["lossless"]["mode"] == "fullscreen" and bad["lossless"]["hotkey"] == "Ctrl+Alt+S"
 
 
 def test_send_hotkey_requires_windows(monkeypatch):
@@ -66,10 +66,10 @@ def test_settings_page_lossless(tmp_path, monkeypatch):
     QApplication.instance() or QApplication([])
     s = settings_mod.merged_defaults()
     page = SettingsPage(AppContext(Store(tmp_path / "s.db"), s, ImageLoader()))
-    page.ls_mode.setCurrentIndex(page.ls_mode.findData("fullscreen"))
+    page.ls_mode.setCurrentIndex(page.ls_mode.findData("manual"))
     page.ls_hotkey.setText("Ctrl+Shift+L")
     page.ls_hotkey.editingFinished.emit()
-    assert s["lossless"]["mode"] == "fullscreen" and s["lossless"]["hotkey"] == "Ctrl+Shift+L"
+    assert s["lossless"]["mode"] == "manual" and s["lossless"]["hotkey"] == "Ctrl+Shift+L"
     page.ls_hotkey.setText("Bozuk+++")
     page.ls_hotkey.editingFinished.emit()
     assert s["lossless"]["hotkey"] == "Ctrl+Shift+L"   # geçersiz kısayol kaydedilmez

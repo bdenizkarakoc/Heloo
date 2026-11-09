@@ -20,27 +20,30 @@ MIN_VSR_SCALE = 1.1      # bundan küçük büyütmede VSR anlamsız
 
 # Canlı yayın gecikme kipleri. chase = (hedef tampon sn, üst sınır sn): tampon üst sınırı aşarsa oynatma hafifçe
 # hızlanır (ses perdesi korunur), çok büyürse tampon içinde ileri atlanır → gecikme kendiliğinden geri alınır.
+# chase: (hedef, üst sınır) sn tampon. Takılmayı önleyen asıl şey tampondur: IPTV sunucuları ve ev interneti
+# saniyelik dalgalanır; 1 sn'den küçük tampon her dalgada donma yapar. fflags=nobuffer ve video-latency-hacks zaman
+# damgası sapmasına ve kare atlamaya yol açtığı için yalnız "ultra" kipte açıktır.
 LATENCY_MODES: dict[str, dict] = {
     "ultra": {
         "label": "Ultra düşük gecikme",
-        "desc": "mpv low-latency profili: tampon yok, en hızlı kanal açılışı. İnternet dalgalanırsa takılabilir.",
-        "audio-buffer": "0", "cache-pause": "no", "cache-pause-wait": "0.2", "cache-pause-initial": "no",
-        "probe-info": "nostreams", "analyzeduration": "0.1", "nobuffer": True, "latency-hacks": "yes",
-        "hls-start": -1, "stream-buffer-size": "4KiB", "curl-buffer-size": "256KiB", "chase": (0.35, 1.0),
+        "desc": "En hızlı kanal açılışı, en az tampon. Kablolu ve çok iyi internet ister; dalgalanırsa takılabilir.",
+        "audio-buffer": "0.05", "cache-pause": "yes", "cache-pause-wait": "0.5", "cache-pause-initial": "no",
+        "probe-info": "nostreams", "analyzeduration": "0.5", "nobuffer": True, "latency-hacks": "yes",
+        "hls-start": -2, "stream-buffer-size": "64KiB", "curl-buffer-size": "1MiB", "chase": (1.0, 3.0),
     },
     "low": {
         "label": "Düşük gecikme (önerilen)",
-        "desc": "Hızlı kanal geçişi ve canlıya yakın yayın; kısa kopmalarda 0,4 sn tamponla toparlanır.",
-        "audio-buffer": "0.05", "cache-pause": "yes", "cache-pause-wait": "0.4", "cache-pause-initial": "no",
-        "probe-info": "nostreams", "analyzeduration": "0.5", "nobuffer": True, "latency-hacks": "yes",
-        "hls-start": -2, "stream-buffer-size": "64KiB", "curl-buffer-size": "1MiB", "chase": (0.8, 2.0),
+        "desc": "Canlıya yakın ve akıcı: ~1,5 sn tampon, takılma olursa tamponu kendiliğinden büyütür.",
+        "audio-buffer": "0.1", "cache-pause": "yes", "cache-pause-wait": "1", "cache-pause-initial": "no",
+        "probe-info": "nostreams", "analyzeduration": "1", "nobuffer": False, "latency-hacks": "no",
+        "hls-start": -3, "stream-buffer-size": "128KiB", "curl-buffer-size": "2MiB", "chase": (1.5, 5.0),
     },
     "balanced": {
         "label": "Dengeli",
-        "desc": "Biraz daha tampon; çoğu bağlantıda takılmasız.",
-        "audio-buffer": "0.2", "cache-pause": "yes", "cache-pause-wait": "1", "cache-pause-initial": "no",
+        "desc": "Biraz daha tampon (~3 sn); çoğu bağlantıda hiç takılmaz.",
+        "audio-buffer": "0.2", "cache-pause": "yes", "cache-pause-wait": "2", "cache-pause-initial": "no",
         "probe-info": "auto", "analyzeduration": "1", "nobuffer": False, "latency-hacks": "no",
-        "hls-start": -3, "stream-buffer-size": "128KiB", "curl-buffer-size": "4MiB", "chase": (2.0, 5.0),
+        "hls-start": -3, "stream-buffer-size": "128KiB", "curl-buffer-size": "4MiB", "chase": (3.0, 9.0),
     },
     "stable": {
         "label": "Kararlı (zayıf internet)",
@@ -72,11 +75,11 @@ def is_hls(url: str) -> bool:
     return ".m3u8" in low or "/hls/" in low or "format=m3u8" in low or low.endswith("/m3u8")
 
 
-def resolve_hwdec(settings: dict, platform: str = sys.platform) -> str:
+def resolve_hwdec(settings: dict, platform: str = sys.platform, need_copy: bool = False) -> str:
+    """need_copy: bu kaynakta işlemci filtresi (gürültü azaltma) var → kareler belleğe kopyalanır. Yalnız gerektiğinde
+    (SD/720p'de); HD/1080p'de kopya yok, kareler GPU'da kalır (kopya 1080p50'de kare atlamaya yol açıyordu)."""
     v = settings["video"]["hwdec"]
-    if v == "auto" and settings.get("picture", {}).get("denoise", "auto") != "off" and is_windows(platform):
-        # gürültü azaltma (CPU hqdn3d) kareleri belleğe ister; d3d11va-copy yine GPU'da çözer, VSR için
-        # d3d11vpp kareleri kendisi GPU'ya geri yükler
+    if v == "auto" and need_copy and is_windows(platform):
         return "d3d11va-copy,d3d11va"
     if v == "auto":
         # Windows: d3d11va (sıfır kopya D3D11 kareleri) → d3d11vpp/RTX VSR doğrudan GPU'da çalışır.
@@ -169,6 +172,9 @@ def quality_options(settings: dict, platform: str = sys.platform) -> dict:
                   "hdr-contrast-recovery": "0.30"})
     else:
         o.update({"scale": "lanczos", "scale-antiring": "0"})
+    # küçültme (VSR/FSR çıktısı pencereden büyükse) için hafif ve keskin filtre; ewa_* küçültmede GPU'yu boşa yorar
+    o["dscale"] = "mitchell"
+    o["correct-downscaling"] = "yes"
     if win:
         o["osd-font"] = "Segoe UI Semibold"
         o["sub-font"] = "Segoe UI Semibold"
@@ -251,14 +257,16 @@ def play_options(settings: dict, kind: str, url: str, headers: dict | None = Non
     return o
 
 
-def chase_targets(settings: dict, hls_target_duration: float | None = None) -> tuple[float, float]:
+def chase_targets(settings: dict, hls_target_duration: float | None = None,
+                  extra: float = 0.0) -> tuple[float, float]:
     """(hedef, üst sınır) sn. HLS'de tampon parça parça dolduğu için eşikler parça süresinin katlarıdır:
-    hedef ≥ 1,2 parça, üst sınır ≥ 2,5 parça (aksi halde her parça arasında arabelleğe alma olurdu)."""
+    hedef ≥ 1,2 parça, üst sınır ≥ 3 parça (aksi halde her parça arasında arabelleğe alma olurdu).
+    extra: takılma oldukça motorun kendiliğinden eklediği güvenlik payı (sn)."""
     target, limit = LATENCY_MODES[settings["latency"]["mode"]]["chase"]
     if hls_target_duration:
         target = max(target, 1.2 * hls_target_duration)
-        limit = max(limit, 2.5 * hls_target_duration)
-    return target, limit
+        limit = max(limit, 3.0 * hls_target_duration)
+    return target + extra, limit + 2 * extra
 
 
 def _is_hdr_source(vp: dict) -> bool:
@@ -275,12 +283,17 @@ def vsr_plan(settings: dict, vp: dict | None, screen: tuple[int, int] | None = N
     v = settings["video"]
     plan = {"vf": "", "scale": None, "out": None, "deint": False, "hdr": False, "reason": "", "denoise": None}
     dn = denoise_strength(settings, vp)
+    interlaced = bool((vp or {}).get("interlaced"))
     if dn and kind != "image":
         # gürültü VSR'den ÖNCE temizlenir: VSR karıncalanmayı değil temiz görüntüyü 4K'ya büyütür
         plan["denoise"] = dn
+    # geçmeli (576i/1080i) kaynakta gürültü azaltma alanlar ayrılmadan uygulanırsa tarak/bulanıklık yapar:
+    # önce bwdif (alan hızında, 50 fps akıcılık), sonra hqdn3d
+    dn_filter = (f"@helootv-dn:lavfi=[bwdif=mode=send_field:deint=interlaced,hqdn3d={dn}]" if interlaced
+                 else f"@helootv-dn:lavfi=[hqdn3d={dn}]") if plan["denoise"] else ""
     if not is_windows(platform):
         if plan["denoise"]:
-            plan["vf"] = f"@helootv-dn:lavfi=[hqdn3d={dn}]"
+            plan["vf"] = dn_filter
         plan["reason"] = "RTX VSR yalnızca Windows'ta (Direct3D 11) çalışır; yüksek kaliteli mpv ölçekleyici kullanılıyor."
         return plan
     if not vp or not vp.get("w") or not vp.get("h"):
@@ -309,7 +322,7 @@ def vsr_plan(settings: dict, vp: dict | None, screen: tuple[int, int] | None = N
             plan["reason"] = f"Kaynak zaten hedef çözünürlükte ({w}×{h}); büyütme gerekmiyor."
     else:
         plan["reason"] = "RTX VSR kapalı (Ayarlar > Görüntü)."
-    if v["deinterlace"] != "no":
+    if v["deinterlace"] != "no" and not (plan["denoise"] and interlaced):
         parts += ["deint=yes", "mode=adaptive"]
         if v["deinterlace"] == "auto":
             parts.append("interlaced-only=yes")
@@ -317,9 +330,11 @@ def vsr_plan(settings: dict, vp: dict | None, screen: tuple[int, int] | None = N
     if v["rtx_hdr"] and not _is_hdr_source(vp):
         parts.append("nvidia-true-hdr=yes")
         plan["hdr"] = True
+    if plan["denoise"] and interlaced:
+        plan["deint"] = True
     chain = []
     if plan["denoise"]:
-        chain.append(f"@helootv-dn:lavfi=[hqdn3d={dn}]")
+        chain.append(dn_filter)
     if parts:
         chain.append("@helootv:d3d11vpp=" + ":".join(parts))
     plan["vf"] = ",".join(chain)
@@ -367,7 +382,8 @@ DEBAND = {0: None, 1: ("2", "35", "16", "5"), 2: ("3", "48", "20", "8"), 3: ("4"
 
 
 def denoise_strength(settings: dict, vp: dict | None) -> str | None:
-    """auto: SD/720p ve altı kaynaklarda (karıncalanmanın en çok olduğu yer) orta, 1080p'de hafif, 4K'da kapalı."""
+    """auto: SD'de (karıncalanmanın asıl olduğu yer) orta, 720p'de hafif; 1080p ve üstünde kapalı — orada RTX VSR'nin
+    kendi sıkıştırma kusuru temizliği yeterli ve işlemci filtresi 1080p50'de kare atlatıyordu."""
     d = settings.get("picture", {}).get("denoise", "auto")
     if d == "off":
         return None
@@ -376,11 +392,12 @@ def denoise_strength(settings: dict, vp: dict | None) -> str | None:
     h = int((vp or {}).get("h") or 0)
     if not h:
         return None
-    return DENOISE["medium"] if h <= 576 else DENOISE["light"] if h <= 1080 else None
+    return DENOISE["medium"] if h <= 576 else DENOISE["light"] if h <= 720 else None
 
 
-def picture_options(settings: dict, vp: dict | None = None) -> dict:
-    """Anında değişebilen görüntü ayarları (parlaklık … deband). Düşük kaliteli kaynakta deband güçlenir."""
+def picture_options(settings: dict, vp: dict | None = None, vsr: bool = False) -> dict:
+    """Anında değişebilen görüntü ayarları (parlaklık … deband). Düşük kaliteli kaynakta deband güçlenir.
+    vsr: RTX VSR büyütüyor → VSR zaten keskinleştirir; CAS hafifletilir (aşırı keskinlik halesi olmasın)."""
     pic = settings.get("picture", {})
     o = {k: str(int(pic.get(k, 0))) for k in ("brightness", "contrast", "saturation", "gamma", "hue")}
     level = int(pic.get("deband", 1))
@@ -391,7 +408,10 @@ def picture_options(settings: dict, vp: dict | None = None) -> dict:
     if vals:
         o.update(dict(zip(("deband-iterations", "deband-threshold", "deband-range", "deband-grain"), vals)))
     sharp = shaders.SHARPNESS.get(settings["video"].get("sharpen", "light"), 0.3)
-    if settings["video"].get("low_boost", True) and vp and int(vp.get("h") or 9999) <= 576 and sharp > 0:
+    if vsr or shaders.pick(settings) == "fsr":
+        # RTX VSR ve AMD FSR (RCAS) kendileri keskinleştirir: CAS yarıya (çift keskinlik halesi olmasın)
+        sharp = round(sharp * 0.5, 3)
+    elif settings["video"].get("low_boost", True) and vp and int(vp.get("h") or 9999) <= 576 and sharp > 0:
         sharp = min(1.0, sharp + 0.15)
     o["glsl-shader-opts"] = f"cas_sharpness={sharp:g}"
     return o

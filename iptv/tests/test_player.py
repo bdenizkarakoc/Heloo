@@ -31,11 +31,15 @@ def S(**over):
 ])
 def test_vsr_plan_4k(w, h, scale, out):
     dw = 1024 if (w, h) == (720, 576) else w
-    plan = opt.vsr_plan(S(), {"w": w, "h": h, "dw": dw, "dh": h}, (2560, 1440), platform="win32")
+    plan = opt.vsr_plan(S(video__vsr_target="2160"), {"w": w, "h": h, "dw": dw, "dh": h}, (2560, 1440),
+                        platform="win32")
     assert plan["scale"] == scale and plan["out"] == out
     assert "@helootv:d3d11vpp=" in plan["vf"] and "scaling-mode=nvidia" in plan["vf"]
-    # karıncalanma: gürültü azaltma VSR'den önce (otomatik: ≤576p orta, ≤1080p hafif)
-    assert plan["vf"].startswith("@helootv-dn:lavfi=[hqdn3d=") and plan["denoise"]
+    # karıncalanma: gürültü azaltma VSR'den önce (otomatik: ≤576p orta, 720p hafif, 1080p kapalı — VSR yeter)
+    if h <= 720:
+        assert plan["vf"].startswith("@helootv-dn:lavfi=[hqdn3d=") and plan["denoise"]
+    else:
+        assert plan["denoise"] is None and plan["vf"].startswith("@helootv:d3d11vpp=")
     assert "deint=yes" in plan["vf"] and "interlaced-only=yes" in plan["vf"]
     assert "nvidia-true-hdr" not in plan["vf"]
 
@@ -76,18 +80,56 @@ def test_picture_presets_and_options():
     assert float(po["glsl-shader-opts"].split("=")[1]) > 0.5     # düşük kalite: keskinlik artar
     s["picture"]["deband"] = 0
     assert opt.picture_options(s, {"w": 1920, "h": 1080})["deband"] == "no"
-    assert opt.resolve_hwdec(S(), "win32").startswith("d3d11va-copy")   # gürültü azaltma CPU karesi ister
-    assert opt.resolve_hwdec(S(picture__denoise="off"), "win32") == "d3d11va"
+    # kareler yalnız gürültü azaltma gereken kaynakta belleğe kopyalanır; HD'de GPU'da kalır
+    assert opt.resolve_hwdec(S(), "win32") == "d3d11va"
+    assert opt.resolve_hwdec(S(), "win32", need_copy=True).startswith("d3d11va-copy")
+    # RTX VSR büyütürken CAS yarıya iner (VSR zaten keskinleştirir; hale olmasın)
+    n = S()
+    full = float(opt.picture_options(n, {"w": 1280, "h": 720})["glsl-shader-opts"].split("=")[1])
+    half = float(opt.picture_options(n, {"w": 1280, "h": 720}, vsr=True)["glsl-shader-opts"].split("=")[1])
+    assert half == pytest.approx(full / 2)
+
+
+def test_interlaced_denoise_and_migration(tmp_path):
+    # geçmeli SD: önce bwdif (alan hızında), sonra hqdn3d; d3d11vpp'de ikinci kez deinterlace yok
+    plan = opt.vsr_plan(S(), {"w": 720, "h": 576, "interlaced": True}, (3840, 2160), "win32")
+    assert plan["vf"].startswith("@helootv-dn:lavfi=[bwdif=mode=send_field:deint=interlaced,hqdn3d=")
+    assert "deint=yes" not in plan["vf"] and plan["deint"] and "scaling-mode=nvidia" in plan["vf"]
+    # 1080i: gürültü azaltma yok → GPU deinterlace
+    hd = opt.vsr_plan(S(), {"w": 1920, "h": 1080, "interlaced": True}, (3840, 2160), "win32")
+    assert hd["denoise"] is None and "deint=yes" in hd["vf"]
+    # ekran hedefi: 1080p ekranda 1080p kaynak büyütülmez (4K üretip geri küçültme yok)
+    assert opt.vsr_plan(S(), {"w": 1920, "h": 1080}, (1920, 1080), "win32")["scale"] is None
+    assert opt.vsr_plan(S(), {"w": 1280, "h": 720}, (1920, 1080), "win32")["scale"] == 1.5
+    # eski ayar dosyası: varsayılan 4K hedefi ekran hedefine taşınır, diğer seçimler korunur
+    import json
+    p = tmp_path / "settings.json"
+    p.write_text(json.dumps({"video": {"vsr_target": "2160", "sharpen": "strong"}}), encoding="utf-8")
+    s = settings_mod.load_settings(p)
+    assert s["video"]["vsr_target"] == "screen" and s["video"]["sharpen"] == "strong" and s["meta"]["version"] == 2
+    p.write_text(json.dumps({"meta": {"version": 2}, "video": {"vsr_target": "2160"}}), encoding="utf-8")
+    assert settings_mod.load_settings(p)["video"]["vsr_target"] == "2160"   # yeni sürümde seçilen 4K kalır
+    p.write_text(json.dumps({"lossless": {"mode": "always"}}), encoding="utf-8")
+    assert settings_mod.load_settings(p)["lossless"]["mode"] == "fullscreen"
+    # AMD FSR kendi keskinleştirmesini yapar → CAS yarıya; küçültmede hafif filtre
+    amd = S(video__gpu_vendor="amd")
+    nv = S(video__gpu_vendor="nvidia")
+    sa = float(opt.picture_options(amd, {"w": 1280, "h": 720})["glsl-shader-opts"].split("=")[1])
+    sn = float(opt.picture_options(nv, {"w": 1280, "h": 720})["glsl-shader-opts"].split("=")[1])
+    assert sa == pytest.approx(sn / 2)
+    assert opt.quality_options(S())["dscale"] == "mitchell"
 
 
 def test_latency_and_vod_options():
     hls = opt.play_options(S(), "live", "http://x/live/index.m3u8?token=1", {"user_agent": "UA", "origin": "https://o"})
-    assert hls["demuxer-lavf-o"] == "fflags=+nobuffer,live_start_index=-2"
+    # önerilen kip: nobuffer yok (zaman damgası sapması/kare atlama yapıyordu), HLS'de 3 parça geriden
+    assert hls["demuxer-lavf-o"] == "live_start_index=-3" and hls["video-latency-hacks"] == "no"
+    assert hls["cache-pause"] == "yes" and float(hls["cache-pause-wait"]) >= 1
     assert hls["user-agent"] == "UA" and hls["http-header-fields"] == ["Origin: https://o"]
     assert hls["video-sync"] == "audio" and hls["interpolation"] == "no"
     ultra = opt.play_options(S(latency__mode="ultra"), "live", "http://x/live/u/p/1.ts")
-    assert ultra["demuxer-lavf-o"] == "fflags=+nobuffer" and ultra["audio-buffer"] == "0"
-    assert ultra["cache-pause"] == "no" and ultra["demuxer-lavf-probe-info"] == "nostreams"
+    assert ultra["demuxer-lavf-o"] == "fflags=+nobuffer" and ultra["audio-buffer"] == "0.05"
+    assert ultra["cache-pause"] == "yes" and ultra["demuxer-lavf-probe-info"] == "nostreams"
     stable = opt.play_options(S(latency__mode="stable"), "live", "http://x/1.ts")
     assert stable["cache-pause-initial"] == "yes" and stable["demuxer-lavf-o"] == ""
     vod = opt.play_options(S(), "movie", "http://x/movie/u/p/1.mkv")
@@ -97,7 +139,7 @@ def test_latency_and_vod_options():
     q = opt.quality_options(S(), "win32")
     assert q["hwdec-codecs"] == "all" and q["deinterlace"] == "no" and q["alang"].startswith("tur")
     assert opt.create_options(S(), wid=123, platform="win32")["gpu-api"] == "d3d11"
-    assert opt.create_options(S(picture__denoise="off"), platform="win32")["hwdec"] == "d3d11va"
+    assert opt.create_options(S(), platform="win32")["hwdec"] == "d3d11va"
     args = opt.cli_args({"vf": "@x:d3d11vpp=scale=2", "http-header-fields": ["A: 1"], "referrer": ""})
     assert args == ["--vf=@x:d3d11vpp=scale=2", "--http-header-fields-append=A: 1", "--referrer="]
 
@@ -182,13 +224,33 @@ def test_engine_plays_live_lavfi(engine):
     assert engine.rec.wait("key", 5)
     key = next(d for n, d in engine.rec.events if n == "key")
     assert key == {"action": "digit", "args": ["7"]}
-    # canlıya yetişme: tampon sınırı aşılınca hızlanır, hedefe inince normale döner
-    fake = dict(st, paused=False, buffering=False, seeking=False, hls=False, cache=5.0)
-    engine._user_paused = False
-    engine._chase(fake)
-    assert engine._boost and float(engine._get("speed")) == pytest.approx(1.08)
-    engine._chase(dict(fake, cache=0.5))
-    assert not engine._boost and float(engine._get("speed")) == pytest.approx(1.0)
+    # canlıya yetişme: anlık dalgalanmada hızlanmaz; tampon 8 sn boyunca sınırı aşarsa %4 hızlanır,
+    # hedefe inince normale döner; ileri atlama yok (atlama görüntüyü dondurur)
+    from helootv.player import engine as eng_mod
+    clock = [1000.0]
+    monkey_time = eng_mod.time.monotonic
+    eng_mod.time.monotonic = lambda: clock[0]
+    try:
+        fake = dict(st, paused=False, buffering=False, seeking=False, hls=False, cache=8.0)
+        engine._user_paused = False
+        engine._loaded_at = 900.0
+        engine._boost, engine._over_since, engine._last_jump = False, 0.0, 0.0   # gerçek tick'lerin durumu
+        engine._set("speed", "1")
+        engine._chase(fake)
+        assert not engine._boost
+        clock[0] += 9
+        engine._chase(fake)
+        assert engine._boost and float(engine._get("speed")) == pytest.approx(1.04)
+        engine._chase(dict(fake, cache=1.0))
+        assert not engine._boost and float(engine._get("speed")) == pytest.approx(1.0)
+        # takılma: tampon payı büyür, mpv yeniden doldurmayı daha uzun bekler; hiç ileri atlanmaz
+        engine._chase(dict(fake, buffering=True, cache=0.0))
+        assert engine.underruns == 1 and engine._extra == 1.0
+        assert float(engine._get("cache-pause-wait")) == pytest.approx(2.0)
+        engine._chase(dict(fake, buffering=False, cache=12.0))
+        assert engine._last_jump == 0.0
+    finally:
+        eng_mod.time.monotonic = monkey_time
     engine.stop()
     assert engine.rec.wait("stopped", 5)
 

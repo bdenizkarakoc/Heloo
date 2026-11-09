@@ -28,7 +28,10 @@ from . import options as opt
 log = logging.getLogger("helootv.player")
 
 MAX_RETRIES = 6
-SPEED_BOOST = 1.08
+SPEED_BOOST = 1.04          # canlıya yetişme hızı: %4 göze/kulağa fark edilmez (%8 kare ritmini bozuyordu)
+CHASE_SUSTAIN = 8.0         # tampon bu kadar sn sürekli üst sınırı aşarsa hızlanılır (anlık dalgalanmada değil)
+JUMP_MIN = 25.0             # tampon içinde ileri atlama yalnız gecikme bu kadar büyürse (atlama görüntüyü dondurur)
+EXTRA_STEP, EXTRA_MAX, EXTRA_DECAY = 1.0, 6.0, 180.0   # takılmada tampona eklenen pay, üst sınırı, azalma süresi
 PIN_CACHE_SECONDS = 300
 
 
@@ -144,6 +147,14 @@ class MpvEngine:
         self._user_paused = False
         self._boost = False
         self._last_jump = 0.0
+        self._over_since = 0.0
+        self._was_buffering = False
+        self._extra = 0.0            # takılma oldukça büyüyen tampon payı (kanal başına sıfırlanır)
+        self._last_underrun = 0.0
+        self.underruns = 0
+        self._hw_copy = False
+        self._interlaced = False
+        self._il_checked = False
         self._vp: dict | None = None
         self._screen: tuple[int, int] | None = None
         self._plan: dict = {}
@@ -268,6 +279,7 @@ class MpvEngine:
         self.settings = settings
         for k, v in opt.quality_options(settings, self.platform).items():
             self._set(k, v)
+        self._hw_copy = False        # quality_options sıfır kopya hwdec kurdu; gerekirse _update_vf yeniden açar
         self._update_vf(force=True)
 
     def set_vsr_available(self, ok: bool) -> None:
@@ -298,6 +310,11 @@ class MpvEngine:
             self._retry = 0
             self._user_paused = False
             self._boost = False
+            self._over_since = 0.0
+            self._was_buffering = False
+            self._extra = 0.0
+            self._interlaced = False
+            self._il_checked = False
             self._errors.clear()
             self._vp = None          # önceki kanalın çözünürlüğü/yüklenme anı yeni kanalda görünmesin
             self._loaded_at = 0.0
@@ -482,7 +499,15 @@ class MpvEngine:
                 self._emit("error", {"message": msg or "Yayın açılamadı."})
 
     def _on_video_params(self, _name: str, value) -> None:
-        self._vp = value if isinstance(value, dict) else None
+        vp = dict(value) if isinstance(value, dict) else None
+        if vp is not None:
+            # geçmeli bilgisi kanal başına bir kez öğrenilir ve korunur: filtre (bwdif) devreye girince mpv kareleri
+            # aşamalı bildirir; yeniden okunursa filtre açılıp kapanır (görüntü takılırdı)
+            fi = self._get("video-frame-info")
+            if isinstance(fi, dict) and fi.get("interlaced"):
+                self._interlaced = True
+            vp["interlaced"] = self._interlaced
+        self._vp = vp
         self._update_vf()
 
     def _update_vf(self, force: bool = False) -> None:
@@ -491,8 +516,10 @@ class MpvEngine:
         self._plan = plan
         if self.mpv is None:
             return
-        # kaynağa göre değişen görüntü ayarları (düşük kalitede güçlü deband/keskinlik)
-        tuned = opt.picture_options(self.settings, self._vp)
+        if self._vp is not None:     # çözünürlük belli olmadan değiştirme (her kanal geçişinde iki kez yeniden başlardı)
+            self._ensure_hwdec(bool(plan.get("denoise")))
+        # kaynağa göre değişen görüntü ayarları (düşük kalitede güçlü deband/keskinlik; VSR varken hafif CAS)
+        tuned = opt.picture_options(self.settings, self._vp, vsr=bool(plan.get("scale")))
         key = tuple(sorted(tuned.items()))
         if key != getattr(self, "_tuned_key", None):
             self._tuned_key = key
@@ -503,6 +530,13 @@ class MpvEngine:
                 self._current_vf = plan["vf"]
                 self._set("vf", plan["vf"])
         self._emit("vsr", dict(plan))
+
+    def _ensure_hwdec(self, need_copy: bool) -> None:
+        """Kareleri belleğe yalnız işlemci filtresi (gürültü azaltma) gerektiğinde kopyala; HD'de GPU'da kalsın."""
+        if need_copy == self._hw_copy:
+            return
+        self._hw_copy = need_copy
+        self._set("hwdec", opt.resolve_hwdec(self.settings, self.platform, need_copy=need_copy))
 
     def _on_script_message(self, *args) -> None:
         vals = [a.decode("utf-8", "replace") if isinstance(a, bytes) else str(a) for a in args]
@@ -580,6 +614,7 @@ class MpvEngine:
         for k, v in opt.quality_options(settings, self.platform).items():
             if k in ("glsl-shaders", "glsl-shader-opts", "hwdec"):
                 self._set(k, v)
+        self._hw_copy = False
         self._update_vf(force=True)
 
     def set_external_framegen(self, on: bool) -> None:
@@ -637,6 +672,8 @@ class MpvEngine:
             "hls": "hls" in fmt or (opt.is_hls(req.url) if req else False),
             "user_paused": self._user_paused,
             "boost": self._boost,
+            "buffer_extra": self._extra,
+            "underruns": self.underruns,
             "vsr": plan,
             "vsr_active": vsr_active,
             "enhance": opt.enhancement_summary(self.settings, plan, vsr_active, vp, self.platform,
@@ -650,6 +687,14 @@ class MpvEngine:
         if self.mpv is None or self.request is None:
             return {}
         st = self.status()
+        if self._vp is not None and not self._interlaced and not self._il_checked and st.get("pos"):
+            # video-params geldiğinde ilk kare henüz çözülmemiş olabilir: geçmeli bilgisini bir kez daha yokla
+            self._il_checked = True
+            fi = self._get("video-frame-info")
+            if isinstance(fi, dict) and fi.get("interlaced"):
+                self._interlaced = True
+                self._vp = dict(self._vp, interlaced=True)
+                self._update_vf()
         if self.request.kind == "live":
             self._chase(st)
         if self._loaded_at and st["active"] and time.monotonic() - self._loaded_at > 20:
@@ -657,29 +702,52 @@ class MpvEngine:
         return st
 
     def _chase(self, st: dict) -> None:
+        """Canlı yayında tamponu yönetir. Öncelik akıcılık: takılma olursa tampon payını büyütür (bir daha takılmasın),
+        gecikme uzun süre büyük kalırsa %4 hızla yavaşça yetişir; ileri atlama yalnız çok büyük gecikmede."""
+        now = time.monotonic()
+        buffering = bool(st["buffering"])
+        if buffering and not self._was_buffering and not st["paused"] and self._loaded_at \
+                and now - self._loaded_at > 4:
+            # takılma: tampon yetmedi → payı artır ve mpv'nin yeniden doldurma süresini uzat
+            self.underruns += 1
+            self._last_underrun = now
+            self._extra = min(EXTRA_MAX, self._extra + EXTRA_STEP)
+            base = float(opt.LATENCY_MODES[self.settings["latency"]["mode"]]["cache-pause-wait"])
+            self._set("cache-pause-wait", f"{base + self._extra:g}")
+            log.info("canlı yayın takıldı (%d): tampon payı %.1f sn", self.underruns, self._extra)
+        self._was_buffering = buffering
+        if self._extra and now - self._last_underrun > EXTRA_DECAY:
+            self._extra = max(0.0, self._extra - 0.5)
+            self._last_underrun = now
         enabled = self.settings["latency"]["chase"]
         hls_unknown = st["hls"] and not self._hls_td
-        if (not enabled or self._user_paused or st["paused"] or st["buffering"] or st["seeking"] or hls_unknown
+        if (not enabled or self._user_paused or st["paused"] or buffering or st["seeking"] or hls_unknown
                 or st["cache"] is None):
+            self._over_since = 0.0
             if self._boost:
                 self._set("speed", "1")
                 self._boost = False
             return
-        target, limit = opt.chase_targets(self.settings, self._hls_td if st["hls"] else None)
+        target, limit = opt.chase_targets(self.settings, self._hls_td if st["hls"] else None, self._extra)
         cache = st["cache"]
-        now = time.monotonic()
-        if cache > limit * 3 and now - self._last_jump > 8:
+        if cache > max(JUMP_MIN, limit * 4) and now - self._last_jump > 60:
             self._last_jump = now
-            self.command("seek", f"{cache - target:.2f}", "relative+exact")
+            self._over_since = 0.0
+            self.command("seek", f"{cache - target:.2f}", "relative+keyframes")
             if self._boost:
                 self._set("speed", "1")
                 self._boost = False
         elif cache > limit and not self._boost:
-            self._set("speed", str(SPEED_BOOST))
-            self._boost = True
-        elif self._boost and cache <= target + 0.15:
+            self._over_since = self._over_since or now
+            if now - self._over_since >= CHASE_SUSTAIN:
+                self._set("speed", str(SPEED_BOOST))
+                self._boost = True
+        elif self._boost and cache <= target + 0.5:
             self._set("speed", "1")
             self._boost = False
+            self._over_since = 0.0
+        elif cache <= limit:
+            self._over_since = 0.0
 
 
 # ---------------------------------------------------------------------- harici mpv (yedek / ayrı pencere)

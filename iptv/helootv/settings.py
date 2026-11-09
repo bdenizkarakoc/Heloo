@@ -9,10 +9,13 @@ from pathlib import Path
 from typing import Any
 
 # Varsayılanlar "en iyi" deneyim içindir: RTX VSR ile 4K, düşük gecikme, canlıya yetişme, otomatik yeniden bağlanma.
+SETTINGS_VERSION = 2
+
 DEFAULTS: dict[str, Any] = {
+    "meta": {"version": SETTINGS_VERSION},
     "video": {
         "rtx_vsr": True,          # NVIDIA RTX Video Super Resolution (mpv d3d11vpp scaling-mode=nvidia)
-        "vsr_target": "2160",     # 2160 (4K) | 1440 | screen (ekran çözünürlüğü)
+        "vsr_target": "screen",   # screen (ekran: 4K ekranda 4K) | 2160 (her zaman 4K) | 1440
         "rtx_hdr": False,         # NVIDIA RTX Video HDR (SDR→HDR; Windows HDR açık olmalı)
         "deinterlace": "auto",    # auto (yalnız geçmeli kareler) | yes | no — Windows'ta GPU (d3d11vpp)
         "deband": True,           # IPTV sıkıştırmasındaki renk bantlarını yumuşatır
@@ -59,7 +62,7 @@ DEFAULTS: dict[str, Any] = {
     },
     # Lossless Scaling (Steam, ücretli; kuruluysa): kare üretimi ile akıcılık. Ölçekleme RTX VSR'de kalır.
     "lossless": {
-        "mode": "always",         # always: oynatma başlayınca (canlı dahil) her zaman | fullscreen | manual
+        "mode": "fullscreen",     # fullscreen: tam ekranda (canlı dahil) her zaman | always | manual
         "hotkey": "Ctrl+Alt+S",   # Lossless Scaling'deki "Ölçekle" kısayolu
         "exe": "",                # boş: Steam kütüphanelerinde aranır
         "tips_shown": False,
@@ -153,10 +156,24 @@ def load_settings(path: Path) -> dict:
     except (OSError, ValueError):
         data = {}
     merged = merged_defaults()
+    version = (data.get("meta") or {}).get("version", 1) if isinstance(data.get("meta"), dict) else 1
     for section, values in data.items():
-        if section in merged and isinstance(values, dict):
+        if section in merged and isinstance(values, dict) and section != "meta":
             merged[section].update(values)
+    _migrate(merged, version)
     return _sanitize(merged)
+
+
+def _migrate(s: dict, version) -> None:
+    """Eski sürüm ayarlarını düzeltir (yalnız o sürümün varsayılanı olan değerler değişir; kullanıcı seçimi korunur)."""
+    if not isinstance(version, int) or version < 2:
+        # v1: RTX VSR her zaman 4K üretip 1080p ekranda geri küçültülüyordu (gereksiz GPU yükü → kare atlama)
+        if s["video"].get("vsr_target") == "2160":
+            s["video"]["vsr_target"] = "screen"
+        # v1: Lossless Scaling pencere kipinde de açılıyor, listelerle birlikte bütün pencereyi büyütüyordu
+        if s.get("lossless", {}).get("mode") == "always":
+            s["lossless"]["mode"] = "fullscreen"
+    s["meta"]["version"] = SETTINGS_VERSION
 
 
 def save_settings(settings: dict, path: Path) -> None:

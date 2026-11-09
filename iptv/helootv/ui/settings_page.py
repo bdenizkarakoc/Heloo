@@ -350,8 +350,8 @@ class SettingsPage(QScrollArea):
         lay = QGridLayout(g)
         self.vsr = QCheckBox("RTX Video Super Resolution (yapay zekâ ile büyütme + sıkıştırma kusurlarını temizleme)")
         self.target = QComboBox()
-        for label, val in (("4K — 3840×2160 (önerilen)", "2160"), ("1440p — 2560×1440", "1440"),
-                           ("Ekran çözünürlüğü", "screen")):
+        for label, val in (("Ekran çözünürlüğü — 4K ekranda 4K (önerilen, akıcı)", "screen"),
+                           ("Her zaman 4K (1080p ekranda gereksiz GPU yükü)", "2160"), ("1440p — 2560×1440", "1440")):
             self.target.addItem(label, val)
         self.hdr = QCheckBox("RTX Video HDR (SDR yayını HDR'ye çevirir — Windows HDR açık bir ekran gerekir)")
         self.deint = QComboBox()
@@ -424,8 +424,9 @@ class SettingsPage(QScrollArea):
         self.ls_status.setWordWrap(True)
         self.ls_status.setObjectName("Muted")
         self.ls_mode = QComboBox()
-        for label, val in (("Her zaman — oynatma başlayınca otomatik (canlı yayın dahil)", "always"),
-                           ("Yalnız tam ekranda", "fullscreen"), ("Elle (Ctrl+G)", "manual")):
+        for label, val in (("Tam ekranda otomatik — canlı yayın dahil (önerilen)", "fullscreen"),
+                           ("Her zaman — pencere kipinde de (listelerle birlikte büyütür)", "always"),
+                           ("Elle (Ctrl+G)", "manual")):
             self.ls_mode.addItem(label, val)
         self.ls_hotkey = QLineEdit()
         self.ls_hotkey.setPlaceholderText(lossless.DEFAULT_HOTKEY)

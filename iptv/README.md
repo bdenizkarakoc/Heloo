@@ -156,6 +156,20 @@ açılışta kartı tanır (`Win32_VideoController`) ve AMD/Intel kartta:
   ya da Lossless Scaling. AFMF kullanırken Ayarlar → "Film/dizide akıcı oynatma"yı kapatın.
 - FSR, hiçbir yapay zekâ modeli indirilemediğinde her kartta yedek büyütücüdür; böylece iyileştirme hiç kesilmez.
 
+## Akıcılık için yapılanlar (görüntü iyileştirme)
+
+- **RTX VSR hedefi = ekran çözünürlüğü** (varsayılan): 1080p ekranda 720p → 1080p, 4K ekranda/TV'de 4K. Eskiden
+  her kaynak 4K üretilip 1080p ekranda geri küçültülüyordu: aynı görüntü için kat kat GPU yükü ve kare atlama.
+  "Her zaman 4K" ayarda seçilebilir. Eski ayar dosyaları bir kez kendiliğinden güncellenir.
+- **Gürültü azaltma yalnız SD (orta) ve 720p'de (hafif)**; 1080p'de RTX VSR'nin kendi kusur temizliği yeter. Kareler
+  yalnız gürültü azaltılan kaynakta belleğe kopyalanır; HD'de GPU'da kalır (kopya 1080p50'de kare atlatıyordu).
+- **Geçmeli yayınlar (576i)**: gürültü azaltmadan önce `bwdif` ile alan hızında (50 fps) deinterlace — eskiden
+  alanlar karışıp tarak/bulanıklık oluyordu. Geçmeli bilgisi kanal başına bir kez öğrenilir (filtre açılıp kapanmaz).
+- **Çift keskinlik yok**: RTX VSR ya da AMD FSR (kendi RCAS'ı) büyütürken CAS yarı güçte.
+- Pencereye küçültmede hafif `mitchell` filtresi (ağır `ewa_*` yalnız büyütmede).
+- Lossless Scaling varsayılan olarak **tam ekranda** açılır (pencere kipinde listelerle birlikte bütün pencereyi
+  büyütüyordu).
+
 ## Görüntü ayarları ve karıncalanma
 
 **🎨 Görüntü** menüsü / **Ctrl+P** penceresi oynayan görüntüye anında uygulanır ve kaydedilir:
@@ -164,7 +178,7 @@ açılışta kartı tanır (`Win32_VideoController`) ve AMD/Intel kartta:
 |---|---|
 | Hazır ayarlar | **Doğal**, **Canlı**, **Sinema**, **Spor** (güçlü keskinlik), **Karıncalı yayın** (güçlü gürültü azaltma + deband) |
 | Parlaklık, kontrast, doygunluk, gama, ton | −100…100 (mpv; GPU'da, gecikmesiz) |
-| Karıncalanma azaltma | `hqdn3d` (FFmpeg): uzamsal + zamansal gürültü azaltma. Zamansal kısım yalnız **önceki** kareyi kullanır → gecikme eklemez. *Otomatik*: ≤576p orta, ≤1080p hafif, 4K kapalı |
+| Karıncalanma azaltma | `hqdn3d` (FFmpeg): uzamsal + zamansal gürültü azaltma. Zamansal kısım yalnız **önceki** kareyi kullanır → gecikme eklemez. *Otomatik*: ≤576p orta, 720p hafif, 1080p ve üstü kapalı (RTX VSR temizler); elle her çözünürlükte açılabilir |
 | Keskinlik | AMD FidelityFX **CAS** tarzı uyarlanır keskinleştirme (kendi GLSL shader'ımız, `helootv/glsl/cas.glsl`); kenarları bulanıklaştırmadan netleştirir, aşırı keskinlik halesi yapmaz |
 | Renk bandı yumuşatma | deband 0–3 (gökyüzü/gölge geçişlerindeki basamaklar) |
 | Düşük kaliteli yayında güçlendir | ≤576p kaynakta deband en az "orta", keskinlik +0,15 |
@@ -241,13 +255,20 @@ Hedef "Ekran çözünürlüğü" ya da "1440p" yapılabilir (daha az GPU yükü)
 
 | Kip | Ne yapar |
 |---|---|
-| **Ultra düşük** | mpv'nin `low-latency` profili: ses tamponu 0, önbellek beklemesi yok, `fflags=+nobuffer`, akış bilgisi taraması yok, HLS'de son parçadan başlama (`live_start_index=-1`). İnternet dalgalanırsa takılabilir. |
-| **Düşük (önerilen)** | Aynı hızlı açılış; kısa kopmalarda 0,4 sn tamponla toparlanır, HLS'de canlı kenardan 2 parça geride başlar. |
-| **Dengeli** | Daha çok tampon; çoğu bağlantıda takılmasız. |
+| **Ultra düşük** | ~1 sn tampon, `fflags=+nobuffer`, akış bilgisi taraması yok, HLS'de canlı kenardan 2 parça geride. Kablolu ve çok iyi internet ister. |
+| **Düşük (önerilen)** | ~1,5 sn tampon, HLS'de 3 parça geride; takılma olursa tamponu kendiliğinden büyütür. |
+| **Dengeli** | ~3 sn tampon; çoğu bağlantıda hiç takılmaz. |
 | **Kararlı** | Açılışta 3 sn tampon; zayıf/kablosuz bağlantılar için. |
 
-**Canlıya yetişme:** tampon hedefi aşarsa (ör. bir takılmadan sonra) oynatma %8 hızlanır (ses perdesi korunur) ve
-gecikme kendiliğinden geri alınır; çok büyürse tampon içinde canlıya atlanır. HLS'de eşikler listenin parça süresine
+**Takılmaya karşı kendini ayarlayan tampon:** canlı yayın bir kez takılırsa (tampon boşalır) Heloo TV o kanal için
+tampon payını 1 sn büyütür (en çok 6 sn) ve mpv'nin yeniden doldurma süresini uzatır; böylece aynı dalgalanma bir daha
+donma yapmaz. 3 dakika sorunsuz geçerse pay yavaşça azalır. Titrek bir yayın benzetiminde (1–2,5 sn kesintiler)
+donma sayısı 5'ten 2'ye, hızlanıp yavaşlama 4'ten 0'a indi.
+
+**Canlıya yetişme:** gecikme sınırı 8 sn boyunca aşılırsa oynatma %4 hızlanır (göze/kulağa fark edilmez, ses perdesi
+korunur) ve hedefe inince normale döner; anlık dalgalanmalarda hızlanmaz. Tampon içinde ileri atlama yalnız gecikme
+25 sn'yi geçerse ve dakikada en çok bir kez yapılır (atlama görüntüyü bir an dondurur). Eski sürümdeki %8 hızlanma ve
+sık ileri atlama, "durmadan gecikmeyi sıfırlamaya çalışma" ve takılma olarak görünüyordu. HLS'de eşikler listenin parça süresine
 (`#EXT-X-TARGETDURATION`) göre ayarlanır. Kanal geçişi tek mpv örneğinde `loadfile` ile yapılır (oynatıcı yeniden
 başlatılmaz), `ytdl` kancası kapalıdır. Xtream'de canlı yayınlar varsayılan olarak MPEG-TS (`.ts`) açılır — HLS'den
 daha düşük gecikme.
