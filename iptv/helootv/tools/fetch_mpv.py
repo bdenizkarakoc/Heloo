@@ -222,6 +222,7 @@ def install(dest: str | Path | None = None, want_player: bool = True, force: boo
 
 
 def main(argv: list[str] | None = None) -> int:
+    paths.ensure_utf8_stdio()
     ap = argparse.ArgumentParser(description="GitHub'dan mpv (libmpv-2.dll + mpv.exe) indirir.")
     ap.add_argument("--dest", help="hedef klasör (varsayılan: iptv/bin)")
     ap.add_argument("--force", action="store_true", help="güncel olsa da yeniden indir")

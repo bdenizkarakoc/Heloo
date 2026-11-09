@@ -13,6 +13,7 @@ from . import paths
 
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
+    paths.ensure_utf8_stdio()
     paths.prepare_libmpv_search_path()
     import mpv
 

@@ -22,6 +22,7 @@ def _setup_logging(debug: bool) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    paths.ensure_utf8_stdio()
     ap = argparse.ArgumentParser(prog="helootv", description=f"{APP_NAME} {__version__} — IPTV oynatıcı")
     ap.add_argument("--debug", action="store_true", help="ayrıntılı günlük (mpv dahil)")
     ap.add_argument("--reset-settings", action="store_true", help="ayarları en iyi varsayılanlara döndür")

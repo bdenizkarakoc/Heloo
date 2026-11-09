@@ -169,3 +169,15 @@ def test_ui_end_to_end(tmp_path, monkeypatch):
     finally:
         win.close()
         assert win.engine is None
+
+
+def test_cli_survives_non_utf8_stdout(tmp_path):
+    """Windows CI'da yakalanan hata: çıktı cp1252 boruya giderken 'İ'/'ı' yazmak çöküyordu."""
+    import subprocess
+    import sys
+    env = dict(os.environ, PYTHONIOENCODING="cp1252", HELOOTV_HOME=str(tmp_path))
+    root = str(__import__("pathlib").Path(__file__).resolve().parents[1])
+    res = subprocess.run([sys.executable, "-m", "helootv.tools.fetch_mpv", "--help"], cwd=root, env=env,
+                         capture_output=True)
+    assert res.returncode == 0, res.stderr.decode("utf-8", "replace")
+    assert "yalnız" in res.stdout.decode("utf-8")

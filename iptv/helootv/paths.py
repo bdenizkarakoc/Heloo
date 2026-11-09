@@ -59,3 +59,14 @@ def prepare_libmpv_search_path() -> None:
                 os.add_dll_directory(str(b))
             except OSError:
                 pass
+
+
+def ensure_utf8_stdio() -> None:
+    """Windows'ta çıktı boruya/dosyaya yönlendirilince Python cp1252/cp1254 kullanır ve 'İ', '→' gibi karakterlerde
+    çöker. Konsol dışındaki akışları UTF-8'e (yazılamayan karakter değiştirilerek) çevirir."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            if stream is not None and (stream.encoding or "").lower().replace("-", "") != "utf8":
+                stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError, OSError):
+            pass
