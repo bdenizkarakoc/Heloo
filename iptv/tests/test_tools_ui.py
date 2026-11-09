@@ -181,3 +181,41 @@ def test_cli_survives_non_utf8_stdout(tmp_path):
                          capture_output=True)
     assert res.returncode == 0, res.stderr.decode("utf-8", "replace")
     assert "yalnız" in res.stdout.decode("utf-8")
+
+
+@pytest.mark.skipif(not _qt_ok(), reason="PySide6 yok")
+def test_source_dialog_and_settings_page(tmp_path, monkeypatch):
+    monkeypatch.setenv("HELOOTV_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from helootv.store import Store
+    from helootv.ui.context import AppContext
+    from helootv.ui.images import ImageLoader
+    from helootv.ui.settings_page import SettingsPage, SourceDialog
+
+    app = QApplication.instance() or QApplication([])
+    dlg = SourceDialog(kind="m3u")
+    dlg.m_url.setText("http://panel.tv:8080/get.php?username=ali&password=gizli&type=m3u_plus&output=ts")
+    v = dlg.values()
+    # get.php bağlantısı Xtream hesabına çevrilir (film/dizi ayrıntıları + EPG için)
+    assert (v["kind"], v["url"], v["username"], v["password"]) == ("xtream", "http://panel.tv:8080", "ali", "gizli")
+    dlg.tabs.setCurrentIndex(0)
+    dlg.x_server.setText("")
+    assert dlg._validate(dlg.values())  # boş sunucu → hata iletisi
+    edit = SourceDialog(source={"kind": "m3u", "name": "Liste", "url": "C:/liste.m3u", "user_agent": "Özel UA/1.0",
+                                "epg_url": "http://e/x.xml"})
+    ev = edit.values()
+    assert ev["kind"] == "m3u" and ev["user_agent"] == "Özel UA/1.0" and ev["epg_url"] == "http://e/x.xml"
+
+    settings = settings_mod.merged_defaults()
+    ctx = AppContext(Store(tmp_path / "s.db"), settings, ImageLoader())
+    page = SettingsPage(ctx)
+    changed = []
+    page.settings_changed.connect(lambda: changed.append(1))
+    page.lat_buttons["ultra"].setChecked(True)
+    page.target.setCurrentIndex(page.target.findData("1440"))
+    page.hdr.setChecked(True)
+    assert settings["latency"]["mode"] == "ultra" and settings["video"]["vsr_target"] == "1440"
+    assert settings["video"]["rtx_hdr"] is True and changed
+    app.processEvents()

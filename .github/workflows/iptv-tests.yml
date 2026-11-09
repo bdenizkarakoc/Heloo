@@ -61,12 +61,13 @@ jobs:
             if ($out -notmatch [regex]::Escape($k)) { throw "d3d11vpp seçeneği bulunamadı: $k" }
           }
           & .\bin\mpv.com --version
+      # -p no:faulthandler: mpv kapanırken LuaJIT'in kendi yakaladığı SEH istisnalarını (0xE24C4A02) yazdırmasın
       - name: Testler (libmpv-2.dll ile başsız oynatma dahil)
         env:
           QT_QPA_PLATFORM: offscreen
-        run: python -m pytest tests -q
+        run: python -m pytest tests -q -p no:faulthandler
       - name: Gerçek pencereye mpv gömme (wid) + Direct3D 11 (GPU'suz makinede WARP)
         env:
           HELOOTV_EMBED_TEST: "1"
           QT_QPA_PLATFORM: windows
-        run: python -m pytest tests/test_windows_embed.py -q -s
+        run: python -m pytest tests/test_windows_embed.py -q -s -p no:faulthandler
