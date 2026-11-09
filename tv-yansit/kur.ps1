@@ -6,8 +6,9 @@
 #   python\         uygulamanın kendi Python'u (bilgisayardaki Python'a bağlı değil)
 #   kaldir.ps1      Ayarlar > Uygulamalar > TV Yansıt > Kaldır bunu çalıştırır
 #
-# Kullanım (depo klasöründen):  powershell -NoProfile -ExecutionPolicy Bypass -File .\tv-yansit\kur.ps1
-# ya da içeriği PowerShell'e yapıştırın. Oyun kolunu gerçek Xbox kolu olarak kullanmak için önce: $OyunKolu = $true
+# Kurulum / güncelleme (PowerShell'e yapıştırın; git ya da başka bir program gerekmez):
+#   iex ((irm https://raw.githubusercontent.com/bdenizkarakoc/Heloo/claude/trusting-allen-p019dd/tv-yansit/kur.ps1) -replace '^\uFEFF','')
+# Yalnızca TV Yansıt'ın kendi dosyaları indirilir. Oyun kolunu gerçek Xbox kolu olarak kullanmak için önce: $OyunKolu = $true
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'   # Invoke-WebRequest ilerleme çubuğu indirmeyi çok yavaşlatır
@@ -15,8 +16,8 @@ $ProgressPreference = 'SilentlyContinue'   # Invoke-WebRequest ilerleme çubuğu
 
 $Surum = '1.0.0'
 $PythonSurum = '3.12.7'
-$Dal = 'claude/trusting-allen-p019dd'
-$Depo = 'https://github.com/bdenizkarakoc/Heloo.git'
+$Kaynak_URL = 'https://raw.githubusercontent.com/bdenizkarakoc/Heloo/claude/trusting-allen-p019dd/tv-yansit'
+$Dosyalar = @('tv_yansit.py', 'girdi.py', 'panel.html', 'tv.html', 'README.md', 'tv-yansit.ico')
 $Hedef = Join-Path $env:LOCALAPPDATA 'Programs\TV Yansit'
 $Exe = Join-Path $Hedef 'TV Yansit.exe'
 $KaldirAnahtar = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\TVYansit'
@@ -57,20 +58,15 @@ if ($oge.LinkType -and $oge.Target) { $Ffmpeg = @($oge.Target)[0] }   # winget k
 $Gecici = $null
 if ($PSScriptRoot -and (Test-Path (Join-Path $PSScriptRoot 'tv_yansit.py'))) {
     $Kaynak = $PSScriptRoot
-} elseif (Test-Path (Join-Path $HOME 'Heloo\tv-yansit\tv_yansit.py')) {
-    $Kaynak = Join-Path $HOME 'Heloo\tv-yansit'
-    Yaz "Güncelleniyor: $HOME\Heloo"
-    try { Dis git -C (Join-Path $HOME 'Heloo') pull --ff-only origin $Dal }
-    catch { Write-Host "Güncellenemedi, mevcut sürüm kurulacak: $_" -ForegroundColor Yellow }
 } else {
-    if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
-        Dis winget install -e --id Git.Git --accept-source-agreements --accept-package-agreements --silent
-        YoluYenile
-    }
+    # Yalnızca bu uygulamanın dosyaları (başka proje indirilmez)
     $Gecici = Join-Path $env:TEMP ('tvyansit-' + [guid]::NewGuid().ToString('N'))
-    Yaz 'İndiriliyor...'
-    Dis git clone --depth 1 --branch $Dal --single-branch $Depo $Gecici
-    $Kaynak = Join-Path $Gecici 'tv-yansit'
+    New-Item -ItemType Directory -Force -Path $Gecici | Out-Null
+    Yaz 'TV Yansıt dosyaları indiriliyor...'
+    foreach ($d in $Dosyalar) {
+        Invoke-WebRequest "$Kaynak_URL/$d" -OutFile (Join-Path $Gecici $d) -UseBasicParsing
+    }
+    $Kaynak = $Gecici
 }
 
 # ---------------------------------------------------------------- 3) açık kopyayı kapat, dosyaları kopyala
@@ -82,7 +78,7 @@ Start-Sleep -Milliseconds 500
 Yaz "Kuruluyor: $Hedef"
 $App = Join-Path $Hedef 'app'
 New-Item -ItemType Directory -Force -Path $App | Out-Null
-foreach ($d in 'tv_yansit.py', 'girdi.py', 'panel.html', 'tv.html', 'README.md', 'tv-yansit.ico') {
+foreach ($d in $Dosyalar) {
     Copy-Item (Join-Path $Kaynak $d) (Join-Path $App $d) -Force
 }
 Copy-Item (Join-Path $Kaynak 'tv-yansit.ico') (Join-Path $Hedef 'tv-yansit.ico') -Force
