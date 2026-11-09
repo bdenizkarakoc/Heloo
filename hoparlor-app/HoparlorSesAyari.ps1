@@ -19,7 +19,6 @@
 param([switch]$NoElevate, [switch]$SelfTest)
 
 $ErrorActionPreference = 'Stop'
-Set-StrictMode -Version 2
 
 # ------------------------------------------------------------------ veriler
 $Bands = @(31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000)
@@ -305,17 +304,43 @@ if ($SelfTest) {
   return
 }
 
+# ------------------------------------------------------------------ hata olursa sessizce kapanma: ekrana yaz
+Add-Type -AssemblyName System.Windows.Forms, System.Drawing, Microsoft.VisualBasic
+$LogFile = Join-Path $AppDir 'hata.log'
+function Write-Log([string]$t) {
+  try { New-Item -ItemType Directory -Force -Path $AppDir | Out-Null; Add-Content -Path $LogFile -Value "$(Get-Date -Format s) $t" -Encoding UTF8 } catch { }
+}
+trap {   # betiğin her yerindeki durduran hatayı yakalar (trap bütün betiğe uygulanır)
+  $msg = "$($_.Exception.Message)`n`nSatır $($_.InvocationInfo.ScriptLineNumber): $(([string]$_.InvocationInfo.Line).Trim())"
+  try { New-Item -ItemType Directory -Force -Path $AppDir | Out-Null; Add-Content -Path $LogFile -Value "$(Get-Date -Format s) $msg" -Encoding UTF8 } catch { }
+  Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue
+  [void][Windows.Forms.MessageBox]::Show("Hoparlör Ses Ayarı açılamadı:`n`n$msg`n`nKayıt: $LogFile`nBu pencerenin ekran görüntüsünü gönder.", 'Hoparlör Ses Ayarı - hata', 'OK', 'Error')
+  exit 1
+}
+
+# Konsol penceresini gizle. Bu, sürecin İLK ShowWindow çağrısıdır: Windows kısayolun/başlatanın pencere biçimini
+# (gizli/küçültülmüş) ilk ShowWindow çağrısına uygular; konsol bunu üstlenince program penceresi normal açılır.
+try {
+  if (-not ('Heloo.Win' -as [type])) {
+    Add-Type -Namespace Heloo -Name Win -MemberDefinition @'
+[DllImport("kernel32.dll")] public static extern IntPtr GetConsoleWindow();
+[DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+'@
+  }
+  $hw = [Heloo.Win]::GetConsoleWindow()
+  if ($hw -ne [IntPtr]::Zero) { [void][Heloo.Win]::ShowWindow($hw, 0) }
+} catch { Write-Log "konsol gizlenemedi: $($_.Exception.Message)" }
+
 # ------------------------------------------------------------------ yönetici izni
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if (-not $isAdmin -and -not $NoElevate -and $PSCommandPath) {
   try {
-    Start-Process powershell -Verb RunAs -WindowStyle Hidden -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-STA', '-File', "`"$PSCommandPath`"", '-NoElevate')
+    Start-Process powershell -Verb RunAs -WindowStyle Minimized -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-STA', '-File', "`"$PSCommandPath`"", '-NoElevate')
     return
-  } catch { }   # izin verilmezse yine açılır; yazarken uyarır
+  } catch { Write-Log "yönetici izni verilmedi: $($_.Exception.Message)" }   # izin verilmezse yine açılır; yazarken uyarır
 }
 
 # ------------------------------------------------------------------ pencere
-Add-Type -AssemblyName System.Windows.Forms, System.Drawing, Microsoft.VisualBasic
 [Windows.Forms.Application]::EnableVisualStyles()
 
 $C = @{ bg = [Drawing.Color]::FromArgb(11, 15, 26); card = [Drawing.Color]::FromArgb(20, 27, 45); ink = [Drawing.Color]::FromArgb(238, 242, 251)
@@ -435,8 +460,8 @@ function Set-Band([int]$i, [double]$v) {
 for ($i = 0; $i -lt $Bands.Count; $i++) {
   $x0 = 500 + $i * 47
   $num = New-Num $x0 528 45 -12 12 $i; $num.Font = $Font
-  $tb = New-Object Windows.Forms.TrackBar -Property @{ Left = $x0; Top = 554; Height = 144; Width = 44; Orientation = 'Vertical'; Minimum = -24; Maximum = 24
-    TickFrequency = 2; SmallChange = 1; LargeChange = 2; Tag = $i; BackColor = $C.bg }
+  $tb = New-Object Windows.Forms.TrackBar -Property @{ Minimum = -24; Maximum = 24; TickFrequency = 2; SmallChange = 1; LargeChange = 2; Tag = $i; BackColor = $C.bg }
+  $tb.Orientation = 'Vertical'; $tb.AutoSize = $false; $tb.SetBounds($x0, 554, 44, 144)   # sıra önemli: önce dikey, sonra boyut
   $f = $Bands[$i]; $fl = L $(if ($f -ge 1000) { "$($f / 1000)k" } else { "$f" }) $x0 700 44 $Font $C.muted; $fl.TextAlign = 'MiddleCenter'
   $tb.Add_ValueChanged({
       if ($script:loading -or $script:syncing) { return }
@@ -627,6 +652,7 @@ $btnMineSave.Add_Click({ Save-Custom })
 $btnMineDel.Add_Click({ Remove-Custom })
 
 $form.Add_Shown({
+    $form.WindowState = 'Normal'; $form.TopMost = $true; $form.Activate(); $form.TopMost = $false   # öne getir
     Build-Mine
     $script:devs = Get-Devices
     Load-UI; Request-Apply
@@ -636,4 +662,8 @@ $form.Add_Shown({
     }
   })
 $form.Add_FormClosing({ $timer.Stop(); Save-State $script:st; [void](Write-Apo $script:st) })
+$form.ShowInTaskbar = $true
+$form.Icon = [Drawing.SystemIcons]::Information
+try { $form.Icon = [Drawing.Icon]::ExtractAssociatedIcon((Join-Path $env:SystemRoot 'System32\SndVol.exe')) } catch { }
 [void]$form.ShowDialog()
+if ($Error.Count) { Write-Log ("olay hataları: " + (($Error | Select-Object -First 5 | ForEach-Object { $_.ToString() }) -join ' | ')) }

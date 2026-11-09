@@ -37,3 +37,13 @@ def test_custom_presets_in_app():
     text = PS1.read_bytes().decode("utf-8-sig")
     for fn in ("function Save-Custom", "function Load-Custom", "function Remove-Custom", "StartsWith('my:')", "custom = @()"):
         assert fn in text, fn
+
+
+def test_window_is_never_started_hidden():
+    """Gizli başlatılan süreçte Windows ilk pencereyi de gizler: program açılmaz görünür (kullanıcı hatası)."""
+    app = PS1.read_bytes().decode("utf-8-sig")
+    kur = (APP / "kur.ps1").read_text(encoding="utf-8")
+    for text in (app, kur):
+        assert "-WindowStyle Hidden" not in text and '"-WindowStyle", "Hidden"' not in text
+    assert app.index("ShowWindow($hw, 0)") < app.index("Start-Process powershell -Verb RunAs")
+    assert "trap {" in app and "Set-StrictMode" not in app

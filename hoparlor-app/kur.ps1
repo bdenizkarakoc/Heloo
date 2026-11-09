@@ -58,7 +58,7 @@ foreach ($l in $Links) {
   New-Item -ItemType Directory -Force -Path (Split-Path $l) | Out-Null
   $s = $shell.CreateShortcut($l)
   $s.TargetPath = $ps
-  $s.Arguments = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$App`""
+  $s.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$App`""
   $s.WorkingDirectory = $Dir
   $s.IconLocation = "$env:SystemRoot\System32\SndVol.exe,0"
   $s.Description = "Hoparlor ses ayari: bas, tiz, muzik turu (Equalizer APO)"
@@ -98,4 +98,6 @@ if (ApoInstalled) {
 
 Write-Host ""
 Write-Host "Hazir! Masaustundeki '$Name' kisayoluyla ac (izin sorusuna Evet de)." -ForegroundColor Green
-if (-not $Acma) { Start-Process $ps -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", "`"$App`"") }
+if (-not $Acma) { Start-Process $ps -WindowStyle Minimized -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$App`"") }
+Write-Host "Acilmazsa: $env:APPDATA\HelooHoparlor\hata.log dosyasina bak ya da su komutla hatayi gor:"
+Write-Host "  powershell -NoProfile -ExecutionPolicy Bypass -File `"$App`" -NoElevate"
