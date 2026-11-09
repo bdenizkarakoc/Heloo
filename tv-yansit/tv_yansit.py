@@ -892,6 +892,9 @@ class Uygulama:
         self.kumanda_son = 0.0
         self.kare_istek = 0.0
         self.gonderilen_kareler: dict[str, int] = {}
+        self.tv_durum: dict = {}
+        self.otomatik_kalite = True
+        self._yavas_sayac = 0
         self.yanlis_pin: dict[str, int] = {}
         threading.Thread(target=self._bekci, daemon=True).start()
 
@@ -954,6 +957,62 @@ class Uygulama:
         if self.ses_y:
             self.ses_y.durdur()
 
+    def tv_durumu_al(self, d: dict, ip: str) -> None:
+        """TV sayfası 2 sn'de bir fps, gecikme ve ses durumunu bildirir (panelde görünür)."""
+        if not isinstance(d, dict):
+            return
+        temiz = {k: d.get(k) for k in ("fps", "ms", "ses", "sesKB", "tampon", "ekran")}
+        temiz.update(ip=ip, zaman=time.time())
+        self.tv_durum = temiz
+        # Otomatik: TV saniyede 40 kareden azını gösterebiliyorsa (yavaş TV tarayıcısı / zayıf Wi-Fi) daha hafif
+        # ayara geç; kareler küçülünce hem fps artar hem gecikme düşer.
+        try:
+            fps = int(d.get("fps") or 0)
+        except (TypeError, ValueError):
+            fps = 0
+        if self.otomatik_kalite and self.ayar_adi == "gecikme" and 0 < fps < 40:
+            self._yavas_sayac += 1
+            if self._yavas_sayac >= 3:
+                self.ayar_adi = "ultra"
+                self._yavas_sayac = 0
+                self.mesaj = (f"TV saniyede {fps} kare gösterebiliyordu: daha düşük gecikme için "
+                              "'Ultra düşük gecikme' ayarına geçildi.")
+                try:
+                    self.mjpeg_baslat()
+                except RuntimeError:
+                    pass
+        else:
+            self._yavas_sayac = 0
+
+    def ses_testi(self) -> str:
+        """Bilgisayardan 1 sn bip çalar: TV'den duyuluyorsa ses yolu çalışıyor."""
+        y = self.ses_yakalayici()
+        if not WINDOWS:
+            return "Ses testi yalnızca Windows'ta."
+        import io
+        import math
+        import wave
+        tampon = io.BytesIO()
+        with wave.open(tampon, "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(48000)
+            w.writeframes(b"".join(struct.pack("<h", int(9000 * math.sin(2 * math.pi * 660 * i / 48000)))
+                                   for i in range(48000)))
+        veri = tampon.getvalue()
+
+        def cal():
+            try:
+                import winsound
+                winsound.PlaySound(veri, winsound.SND_MEMORY)
+            except Exception:  # noqa: BLE001
+                pass
+        threading.Thread(target=cal, daemon=True).start()
+        if not y:
+            return ("Bilgisayardan bip çalındı ama ses yakalanamıyor: " +
+                    ((self.ses_y.hata if self.ses_y else "") or "bilinmeyen hata"))
+        return f"Bilgisayardan bip çalındı ({y.kaynak}). TV'den duyulmalı."
+
     def kumanda_uygula(self, olaylar: list) -> int:
         if self.kumanda is None:
             self.kumanda = girdi.Kumanda(tum_ekranlar=self.kaynak == "tum")
@@ -981,6 +1040,8 @@ class Uygulama:
                 "tv_adresleri": [self.tv_adresi(ip) for ip in yerel_ipler()], "hotspot": self.hotspot,
                 "ffmpeg": bool(self.ffmpeg), "kodlayici": _kodlayici_onbellek, "ses": (self.ses_y.kaynak if self.ses_y and self.ses_y.calisiyor else None),
                 "ses_hata": self.ses_y.hata if self.ses_y else "",
+                "tv": self.tv_durum if time.time() - self.tv_durum.get("zaman", 0) < 6 else None,
+                "otomatik_kalite": self.otomatik_kalite,
                 "miracast": self.miracast, "ayar": self.ayar_adi,
                 "ayarlar": {k: v["ad"] for k, v in AYARLAR.items()},
                 "tvler": [{"ad": t["ad"], "ip": t["ip"]} for t in self.tvler],
@@ -1109,7 +1170,9 @@ def sunucu_kur(app: Uygulama) -> type[BaseHTTPRequestHandler]:
             self.connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
             y = app.ses_yakalayici()
             if not y:
-                return self._gonder(204, b"", "application/octet-stream", {"X-Ses": "yok"})
+                hata = (app.ses_y.hata if app.ses_y else "") or "Ses yakalanamadı"
+                return self._gonder(204, b"", "application/octet-stream",
+                                    {"X-Ses": "yok", "X-Ses-Hata": urllib.parse.quote(hata[:200])})
             no, veri = y.parcalar_sonra(gorulen, bekle=0.5, en_az=2)   # ~20 ms'lik paketler
             self._gonder(200, veri, "application/octet-stream",
                          {"X-Ses-No": str(no), "X-Oran": str(y.oran), "X-Kanal": "2"})
@@ -1163,6 +1226,13 @@ def sunucu_kur(app: Uygulama) -> type[BaseHTTPRequestHandler]:
         def do_POST(self):
             if urllib.parse.urlparse(self.path).path == f"/{app.pin}/girdi" and not self._engelli():
                 return self._girdi()
+            if urllib.parse.urlparse(self.path).path == f"/{app.pin}/tvdurum" and not self._engelli():
+                uzunluk = min(int(self.headers.get("Content-Length") or 0), 4096)
+                try:
+                    app.tv_durumu_al(json.loads(self.rfile.read(uzunluk) or b"{}"), self.client_address[0])
+                except ValueError:
+                    pass
+                return self._json({"ok": True})
             if not self._yerel():
                 self._yanlis()
                 return self._gonder(403, b"", "text/plain")
@@ -1175,6 +1245,8 @@ def sunucu_kur(app: Uygulama) -> type[BaseHTTPRequestHandler]:
             try:
                 if veri.get("ayar") in AYARLAR:
                     app.ayar_adi = veri["ayar"]
+                if "otomatik_kalite" in veri:
+                    app.otomatik_kalite = bool(veri["otomatik_kalite"])
                 if "lossless_otomatik" in veri:
                     app.lossless_otomatik = bool(veri["lossless_otomatik"])
                 if "kumanda_acik" in veri and bool(veri["kumanda_acik"]) != app.kumanda_acik:
@@ -1225,6 +1297,8 @@ def sunucu_kur(app: Uygulama) -> type[BaseHTTPRequestHandler]:
                     app.pin = kalici_pin(yeni=True)
                     app.yanlis_pin.clear()
                     app.mesaj = f"Yeni kod: {app.pin}. TV'de yeniden girin."
+                elif yol == "/api/ses-testi":
+                    app.mesaj = app.ses_testi()
                 elif yol == "/api/lossless":
                     app.mesaj = lossless_ac()
                 elif yol == "/api/steam":

@@ -451,3 +451,29 @@ def test_lg_tvde_ac_sahte_tv(tmp_path):
     assert gelen[1]["payload"]["target"] == "http://192.168.1.16:8780/2391"
     assert json.loads(dosya.read_text())["127.0.0.1"] == "ANAHTAR123"   # ikinci sefer izin sorulmaz
     assert lg.kayit_mesaji("ANAHTAR123")["payload"]["client-key"] == "ANAHTAR123"
+
+
+def test_tv_durumu_ve_otomatik_hafif_ayar(monkeypatch, tmp_path):
+    monkeypatch.setattr(tv, "VERI", tmp_path)
+    app = tv.Uygulama(0, kaynak="test")
+    monkeypatch.setattr(app, "mjpeg_baslat", lambda: None)
+    srv = tv.ThreadingHTTPServer(("127.0.0.1", 0), tv.sunucu_kur(app))
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        def bildir(d):
+            req = urllib.request.Request(f"http://127.0.0.1:{srv.server_port}/{app.pin}/tvdurum",
+                                         data=json.dumps(d).encode(), method="POST")
+            urllib.request.urlopen(req, timeout=5).read()
+        bildir({"fps": 58, "ms": 12, "ses": "kilitli", "sesKB": 0})
+        d = app.durum()["tv"]
+        assert d["fps"] == 58 and d["ses"] == "kilitli"
+        assert app.ayar_adi == "gecikme"
+        for _ in range(3):                       # TV yavaş: 3 bildirim üst üste < 40 fps
+            bildir({"fps": 25, "ms": 40, "ses": "çalıyor"})
+        assert app.ayar_adi == "ultra" and "Ultra" in app.mesaj
+        app.ayar_adi, app.otomatik_kalite = "gecikme", False
+        for _ in range(3):
+            bildir({"fps": 25})
+        assert app.ayar_adi == "gecikme"         # otomatik kapalıysa dokunmaz
+    finally:
+        srv.shutdown()

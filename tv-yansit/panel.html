@@ -40,6 +40,17 @@
   <p class="alt">Bilgisayar ekranını televizyona yansıtır — Miracast desteklemeyen bilgisayarlarda bile. Görüntü modem üzerinden gider, menzil modemin menzili kadardır.</p>
   <p id="mesaj"></p>
 
+  <section class="kart" id="tvKart">
+    <h2>TV durumu</h2>
+    <div class="ikili">
+      <div><span class="kucuk">Görüntü</span><div class="adres" id="tvGoruntu">TV bağlı değil</div></div>
+      <div><span class="kucuk">Ses</span><div class="adres" id="tvSes">—</div></div>
+    </div>
+    <p id="tvIpucu"></p>
+    <button class="ikincil" id="btnSesTesti">Ses testi (bip)</button>
+    <label><input type="checkbox" id="otomatik"> TV yavaşsa otomatik olarak daha düşük gecikmeli ayara geç</label>
+  </section>
+
   <section class="kart">
     <h2>Kalite</h2>
     <select id="ayar"></select>
@@ -131,6 +142,17 @@ function goster(d) {
   $('tvAdresi').textContent = (d.tv_adresleri && d.tv_adresleri.length ? d.tv_adresleri : [d.tv_adresi]).join('\n');
   $('tvAdresi').style.whiteSpace = 'pre-line';
   $('kisaAdres').textContent = d.kisa_adres;
+  $('otomatik').checked = d.otomatik_kalite;
+  const tv = d.tv;
+  $('tvGoruntu').textContent = tv ? tv.fps + ' fps · ~' + tv.ms + ' ms' : 'TV bağlı değil';
+  $('tvSes').textContent = tv ? tv.ses + (tv.sesKB ? ' (' + tv.sesKB + ' KB geldi)' : '') : (d.ses ? 'Bilgisayarda hazır' : '—');
+  let ipucu = '';
+  if (tv && tv.ses === 'kilitli') ipucu = 'TV\'de ses kilitli: TV kumandasında TAMAM\'a bir kez basın.';
+  else if (tv && tv.ses === 'bilgisayarda yok') ipucu = 'Bilgisayarın sesi yakalanamıyor: ' + (d.ses_hata || '') + ' — Windows ses ayarlarında bir hoparlör/kulaklık çıkışının seçili olduğundan emin olun.';
+  else if (tv && tv.ses === 'desteklenmiyor') ipucu = 'Bu TV\'nin tarayıcısı ses çalamıyor: sesi TV\'den duymak için Yol 1 (DLNA) kullanın.';
+  else if (tv && tv.ses === 'bekleniyor') ipucu = 'Bilgisayarda şu an ses çalmıyor olabilir; "Ses testi"ne basın.';
+  else if (tv && tv.fps && tv.fps < 40) ipucu = 'TV saniyede ' + tv.fps + ' kare gösterebiliyor: Kalite\'den "Ultra düşük gecikme"yi seçin.';
+  $('tvIpucu').textContent = ipucu;
   $('kod').textContent = d.pin;
   if (!$('lgIp').value && d.tvler.length) $('lgIp').placeholder = 'Listeden seçili TV ya da IP adresi';
   const h = d.hotspot || {};
@@ -198,6 +220,8 @@ async function yenile() {
 
 $('btnAra').onclick = () => istek('/api/ara');
 $('btnLg').onclick = () => istek('/api/lg', { ip: $('lgIp').value.trim(), tv: $('tvler').value });
+$('btnSesTesti').onclick = () => istek('/api/ses-testi');
+$('otomatik').onchange = () => istek('/api/ayar', { otomatik_kalite: $('otomatik').checked });
 $('btnYeniKod').onclick = () => istek('/api/yeni-kod');
 $('btnGonder').onclick = () => istek('/api/gonder', { tv: Number($('tvler').value || 0) });
 $('btnDurdur').onclick = () => istek('/api/durdur');

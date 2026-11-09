@@ -11,6 +11,9 @@
   #i { position: fixed; left: 12px; top: 10px; color: #fff; font: 15px sans-serif; opacity: .55; text-shadow: 0 0 4px #000; }
   #k { position: fixed; right: 12px; top: 10px; color: #8f8; font: 16px sans-serif; opacity: .8; text-align: right; }
   #s { position: fixed; left: 12px; bottom: 12px; color: #fff; font: 18px sans-serif; opacity: .8; text-shadow: 0 0 4px #000; }
+  #kilit { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); background: rgba(15,17,21,.92);
+           color: #fff; border: 3px solid #4f8cff; border-radius: 18px; padding: 26px 40px; font: 34px sans-serif;
+           text-align: center; display: none; }
 </style>
 </head>
 <body>
@@ -19,6 +22,7 @@
 <div id="k"></div>
 <div id="i"></div>
 <div id="s"></div>
+<div id="kilit">Sesi açmak için kumandada <b>TAMAM</b>'a basın</div>
 <script>
 /* Eski TV tarayıcıları için ES5: var, function, XMLHttpRequest. */
 var AKIS = '__AKIS__', KARE = '__KARE__', SES = '__SES__', GIRDI = '__GIRDI__', KUMANDA = __KUMANDA__, SANAL_KOL = __SANALKOL__;
@@ -78,6 +82,7 @@ if (istekModu) {
     var o = 0;
     for (var j = 0; j < gecikmeler.length; j++) o += gecikmeler[j];
     bilgi.textContent = sayac + ' fps' + (gecikmeler.length ? ' · ~' + Math.round(o / gecikmeler.length) + ' ms' : '');
+    olcum.fps = sayac; olcum.ms = gecikmeler.length ? Math.round(o / gecikmeler.length) : 0;
     sayac = 0; gecikmeler = [];
   }, 1000);
 } else {
@@ -92,7 +97,9 @@ var sesBilgi = document.getElementById('s');
 var AC = window.AudioContext || window.webkitAudioContext, ctx = null, sesNo = 0, sonraki = 0, sesBasladi = false;
 var HEDEF = 0.04, EN_COK = 0.15, sonKesinti = 0;   /* ses tamponu: takılırsa kendiliğinden büyür, düzelince küçülür */
 function sesCal(ab, oran) {
-  if (!ctx || ctx.state === 'suspended' || !ab.byteLength) return;
+  if (!ab.byteLength) return;
+  sesBayt += ab.byteLength;
+  if (!ctx || ctx.state === 'suspended') return;
   var f = new Float32Array(ab), n = f.length >> 1;
   if (!n) return;
   var buf = ctx.createBuffer(2, n, oran), L = buf.getChannelData(0), R = buf.getChannelData(1);
@@ -119,21 +126,43 @@ function sesIste() {
   x.timeout = 5000;
   x.onload = function () {
     if (x.status === 200) {
+      sesYok = '';
       sesNo = +x.getResponseHeader('X-Ses-No') || sesNo;
       sesCal(x.response, +x.getResponseHeader('X-Oran') || 48000);
       sesIste();
     } else if (x.status === 204) {
-      sesBilgi.textContent = 'Bilgisayar sesi alınamıyor (panelde ayrıntı var)';
-      setTimeout(sesIste, 10000);
+      try { sesYok = decodeURIComponent(x.getResponseHeader('X-Ses-Hata') || '') || 'panelde ayrıntı var'; }
+      catch (h) { sesYok = 'panelde ayrıntı var'; }
+      sesDurum();
+      setTimeout(sesIste, 5000);
     } else { setTimeout(sesIste, 1000); }
   };
   x.onerror = x.ontimeout = function () { setTimeout(sesIste, 1000); };
   x.send();
 }
-function sesDurum() {
-  if (!AC) { sesBilgi.textContent = 'Bu TV tarayıcısı sesi çalamıyor'; return; }
-  sesBilgi.textContent = ctx && ctx.state === 'suspended' ? 'Ses için Tamam\'a basın ya da ekrana tıklayın' : '';
+var kilit = document.getElementById('kilit'), sesBayt = 0, sesYok = '';
+function sesHali() {
+  if (!AC) return 'desteklenmiyor';
+  if (sesYok) return 'bilgisayarda yok';
+  if (!ctx || ctx.state === 'suspended') return 'kilitli';
+  return sesBayt ? 'çalıyor' : 'bekleniyor';
 }
+function sesDurum() {
+  var h = sesHali();
+  kilit.style.display = h === 'kilitli' ? 'block' : 'none';
+  sesBilgi.textContent = h === 'desteklenmiyor' ? 'Bu TV tarayıcısı sesi çalamıyor' :
+    h === 'bilgisayarda yok' ? 'Bilgisayar sesi alınamıyor: ' + sesYok : '';
+}
+setInterval(sesDurum, 1000);
+/* TV'nin durumu bilgisayardaki panelde görünsün (fps, gecikme, ses) */
+var olcum = { fps: 0, ms: 0 };
+setInterval(function () {
+  var x = new XMLHttpRequest();
+  x.open('POST', SES.replace(/ses$/, 'tvdurum'), true);
+  x.setRequestHeader('Content-Type', 'application/json');
+  x.send(JSON.stringify({ fps: olcum.fps, ms: olcum.ms, ses: sesHali(), sesKB: Math.round(sesBayt / 1024),
+    tampon: Math.round(HEDEF * 1000), ekran: window.innerWidth + 'x' + window.innerHeight }));
+}, 2000);
 function sesBaslat() {
   if (!AC) return sesDurum();
   if (!ctx) {
@@ -149,6 +178,8 @@ setTimeout(sesDurum, 1500);
 document.addEventListener('keydown', sesBaslat, true);
 document.addEventListener('mousedown', sesBaslat, true);
 document.addEventListener('touchstart', sesBaslat, true);
+document.addEventListener('click', sesBaslat, true);
+document.addEventListener('keyup', sesBaslat, true);
 
 function tamEkran() {
   if (tamEkranIstendi) return false;
