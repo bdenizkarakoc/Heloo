@@ -270,3 +270,39 @@ def test_acik_kopya_yoksa_false():
         s.bind(("127.0.0.1", 0))
         bos_port = s.getsockname()[1]
     assert tv.acik_kopya_paneli(bos_port) is False
+
+
+def test_baska_uygulamanin_portunu_kullanmaz(monkeypatch):
+    """Reels Fabrikası 127.0.0.1:<port>'ta açıkken TV Yansıt o portu almamalı, paneli de oraya açmamalı."""
+    class Baska(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def do_GET(self):
+            govde = b"<html>Reels Fabrikasi</html>"
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(govde)))
+            self.end_headers()
+            self.wfile.write(govde)
+
+    baska = ThreadingHTTPServer(("127.0.0.1", 0), Baska)
+    threading.Thread(target=baska.serve_forever, daemon=True).start()
+    acilan = []
+    monkeypatch.setattr(tv.webbrowser, "open", acilan.append)
+    port = baska.server_port
+    app = tv.Uygulama(port, kaynak="test")
+    srv = None
+    try:
+        assert tv.port_dolu(port) and not tv.tv_yansit_portu(port)
+        assert tv.acik_kopya_paneli(port) is False and acilan == []      # Reels'i "açık kopya" sanmaz
+        srv = tv.sunucu_baslat(app)
+        assert app.port != port                                          # dolu portu atladı
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        assert tv.tv_yansit_portu(app.port)
+        assert tv.acik_kopya_paneli(port) is True
+        assert acilan == [f"http://127.0.0.1:{app.port}/"]               # kendi panelini açar
+    finally:
+        if srv:
+            srv.shutdown()
+            srv.server_close()
+        baska.shutdown()

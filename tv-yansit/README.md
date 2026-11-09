@@ -24,13 +24,13 @@ ile tamamen kaldırılır. Güvenlik duvarı izni için Windows bir kez yönetic
 2. `TV Yansit.bat` dosyasına çift tıklayın. ffmpeg yoksa `winget` ile kendisi kurar, sonra bir kez daha açın.
 3. Windows Güvenlik Duvarı sorarsa **Özel ağlar** için izin verin. Yoksa TV bilgisayara bağlanamaz.
 
-Panel tarayıcıda açılır (`http://127.0.0.1:8765/`).
+Panel tarayıcıda açılır (`http://127.0.0.1:8780/`).
 
 ## Yansıtmanın iki yolu
 
 | | Yol 1: DLNA | Yol 2: TV tarayıcısı |
 |---|---|---|
-| Ne yapılır | Panelde **TV'leri ara**, TV'yi seçin, **TV'ye gönder**'e basın | TV'nin internet tarayıcısına paneldeki adresi yazın (ör. `http://192.168.1.5:8765/4821`) |
+| Ne yapılır | Panelde **TV'leri ara**, TV'yi seçin, **TV'ye gönder**'e basın | TV'nin internet tarayıcısına paneldeki adresi yazın (ör. `http://192.168.1.5:8780/4821`) |
 | Ses | TV'den gelir (Stereo Karışımı açıksa) | Bilgisayardan gelir |
 | Gecikme | 1-3 sn (TV'nin oynatıcısı kendi tamponunu tutar; film ve dizi için) | En düşük: genellikle 30-80 ms (masaüstü ve oyun için) |
 | Görüntü | H.264, ekran kartının donanım kodlayıcısıyla (NVIDIA, Intel, AMD) | MJPEG. Bağlantı zayıflayınca kare atlar, gecikme birikmez |

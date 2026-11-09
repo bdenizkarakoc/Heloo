@@ -43,7 +43,7 @@ sys.path.insert(0, str(KOK))
 import girdi  # noqa: E402
 
 UYGULAMA_ADI = "TV Yansıt"
-VARSAYILAN_PORT = 8765
+VARSAYILAN_PORT = 8780  # 8765'i Reels Fabrikası kullanır; çakışmasın
 LOSSLESS_STEAM_ID = 993090  # Lossless Scaling (Steam mağazası)
 WINDOWS = os.name == "nt"
 PENCERESIZ = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000) if WINDOWS else 0
@@ -881,7 +881,7 @@ class Uygulama:
                     y.durdur()
 
     def durum(self) -> dict:
-        return {"ip": self.ip, "port": self.port, "pin": self.pin, "tv_adresi": self.tv_adresi(),
+        return {"uygulama": UYGULAMA_ADI, "ip": self.ip, "port": self.port, "pin": self.pin, "tv_adresi": self.tv_adresi(),
                 "tv_adresleri": [self.tv_adresi(ip) for ip in yerel_ipler()], "hotspot": self.hotspot,
                 "ffmpeg": bool(self.ffmpeg), "kodlayici": _kodlayici_onbellek, "ses": self._ses or None,
                 "miracast": self.miracast, "ayar": self.ayar_adi,
@@ -1109,28 +1109,57 @@ def sunucu_kur(app: Uygulama) -> type[BaseHTTPRequestHandler]:
     return Isleyici
 
 
+class OzelSunucu(ThreadingHTTPServer):
+    """Portu başka programla paylaşmaz. Windows'ta SO_REUSEADDR başka bir uygulamanın portunu 'ele geçirmeye'
+    izin verir (ör. 127.0.0.1:8765'te Reels Fabrikası varken 0.0.0.0:8765 açılabiliyor ve tarayıcı yine
+    Reels Fabrikası'na gidiyordu); bu yüzden kapalı ve Windows'ta SO_EXCLUSIVEADDRUSE açık."""
+    allow_reuse_address = False
+    daemon_threads = True
+
+    def server_bind(self):
+        if WINDOWS and hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
+
+
+def port_dolu(port: int) -> bool:
+    """Bu bilgisayarda o portu dinleyen herhangi bir program var mı (yalnız 127.0.0.1'e bağlı olsa bile)."""
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=0.3):
+            return True
+    except OSError:
+        return False
+
+
 def sunucu_baslat(app: Uygulama) -> ThreadingHTTPServer:
     for port in range(app.port, app.port + 20):
+        if port_dolu(port):
+            continue
         try:
-            srv = ThreadingHTTPServer(("0.0.0.0", port), sunucu_kur(app))
+            srv = OzelSunucu(("0.0.0.0", port), sunucu_kur(app))
         except OSError:
             continue
         app.port = port
-        srv.daemon_threads = True
         return srv
     raise SystemExit("Boş port bulunamadı.")
 
 
-def acik_kopya_paneli(port: int) -> bool:
-    """Uygulama zaten açıksa ikinci kopyayı başlatmaz, açık olanın panelini gösterir."""
+def tv_yansit_portu(port: int) -> bool:
+    """O portta gerçekten TV Yansıt mı çalışıyor (başka bir uygulama değil)."""
     try:
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/durum", timeout=1) as r:
-            if "pin" not in json.loads(r.read()):
-                return False
-    except (OSError, ValueError):
+            return json.loads(r.read()).get("uygulama") == UYGULAMA_ADI
+    except (OSError, ValueError, AttributeError):
         return False
-    webbrowser.open(f"http://127.0.0.1:{port}/")
-    return True
+
+
+def acik_kopya_paneli(port: int) -> bool:
+    """Uygulama zaten açıksa ikinci kopyayı başlatmaz, açık olanın panelini gösterir."""
+    for p in range(port, port + 20):
+        if port_dolu(p) and tv_yansit_portu(p):
+            webbrowser.open(f"http://127.0.0.1:{p}/")
+            return True
+    return False
 
 
 def main(argv: list[str] | None = None) -> int:
