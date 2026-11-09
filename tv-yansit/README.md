@@ -34,6 +34,33 @@ Bilgisayar Miracast destekliyorsa panelde **Yansıt panelini aç (Win+K)** düğ
 Ses → Kayıt cihazları → **Stereo Karışımı**'na sağ tıklayıp Etkinleştir'i seçin. Listede yoksa "Devre dışı
 cihazları göster"i açın. Hiç yoksa ücretsiz VB-Audio Virtual Cable kurun; "CABLE Output" da tanınır.
 
+## TV'den kumanda: klavye, fare, oyun kolu
+
+TV'ye takılı (USB ya da Bluetooth) klavye, fare ve oyun kolu, TV kumandasının ok, Tamam ve Geri tuşları
+bilgisayarı yönetir. Bu özellik **Yol 2 (TV tarayıcısı)** ile çalışır. DLNA'da TV'nin oynatıcısı tuşları iletmez.
+
+1. Paneldeki **TV'den kumandayı aç** kutusunu işaretleyin. Güvenlik için varsayılan olarak kapalıdır.
+2. TV tarayıcısında adresi açın. Sağ üstte "Kumanda açık" yazar. İlk tıklama yalnızca tam ekran yapar.
+
+| TV'de | Bilgisayarda |
+|---|---|
+| Fare / sihirli kumanda imleci | Fare (görüntüde nereye tıklarsanız bilgisayarda orası) |
+| Klavye | Klavye. Harfler gerçek tuş olarak gider, oyunlarda W/A/S/D basılı tutulabilir. Ş, ğ, ü gibi harfler aynen yazılır |
+| TV kumandası: oklar, Tamam, Geri, Oynat/Duraklat | Ok tuşları, Enter, Esc, medya tuşları |
+| Oyun kolu | Aşağıya bakın |
+
+**Oyun kolu iki şekilde çalışır:**
+- **Gerçek Xbox kolu olarak (oyunlar için önerilen):** ViGEmBus sürücüsünü kurun
+  (github.com/nefarius/ViGEmBus/releases), ardından `python -m pip install vgamepad` çalıştırın ve uygulamayı yeniden
+  açın. Bilgisayarda bir Xbox 360 kolu belirir; Steam, Big Picture ve oyunlar onu doğrudan tanır. 4 kola kadar desteklenir.
+- **Kurulum olmadan:** Kol fare ve klavye gibi çalışır. Sol çubuk fareyi, sağ çubuk kaydırmayı yönetir. A sol tık,
+  X sağ tık, B Esc, Y Enter'dır. Yön tuşları ok tuşlarına, LB/RB Page Up/Down'a, Back Tab'a, Start Windows tuşuna karşılık gelir.
+
+Notlar: TV tarayıcısının oyun kolunu tanıması tarayıcıya bağlıdır (çoğu yeni Samsung, LG ve Android TV tanır).
+Windows, yönetici olarak açılmış pencerelere başka programın tuş göndermesine izin vermez. Bu pencereleri
+kumandayla kullanmak için TV Yansıt'ı da yönetici olarak açın. Basılı kalan tuşlar, TV sayfası kapanınca ya da
+kumanda kapatılınca bırakılır. Aynı ağdaki bir cihaz PIN'i 30 kez yanlış girerse engellenir.
+
 ## Kalite ve menzil
 
 - **Yüksek kalite**: 1080p 30 fps, 15 Mbit/sn

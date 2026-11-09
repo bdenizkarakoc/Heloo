@@ -39,6 +39,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 KOK = Path(__file__).resolve().parent
+sys.path.insert(0, str(KOK))
+import girdi  # noqa: E402
+
 UYGULAMA_ADI = "TV Yansıt"
 VARSAYILAN_PORT = 8765
 LOSSLESS_STEAM_ID = 993090  # Lossless Scaling (Steam mağazası)
@@ -738,6 +741,10 @@ class Uygulama:
         self._ses: str | None | bool = False  # False = henüz bakılmadı
         self.miracast = miracast_destegi()
         self.hotspot: dict = {}
+        self.kumanda_acik = False  # TV'den klavye/fare/oyun kolu: panelden açılır
+        self.kumanda: girdi.Kumanda | None = None
+        self.kumanda_son = 0.0
+        self.yanlis_pin: dict[str, int] = {}
         threading.Thread(target=self._bekci, daemon=True).start()
 
     @property
@@ -787,6 +794,17 @@ class Uygulama:
         self.ts.durdur()
         self.mjpeg.durdur()
 
+    def kumanda_uygula(self, olaylar: list) -> int:
+        if self.kumanda is None:
+            self.kumanda = girdi.Kumanda(tum_ekranlar=self.kaynak == "tum")
+        self.kumanda_son = time.time()
+        return self.kumanda.uygula(olaylar)
+
+    def kumanda_ayarla(self, acik: bool) -> None:
+        self.kumanda_acik = acik
+        if not acik and self.kumanda:
+            self.kumanda.uygula([{"t": "birak"}])
+
     def _bekci(self) -> None:
         """İzleyicisi kalmayan yayını durdurur (bilgisayar boşuna kodlama yapmasın)."""
         while True:
@@ -807,22 +825,19 @@ class Uygulama:
                 "tarayici_izleyici": self.mjpeg.bagli,
                 "lossless_otomatik": self.lossless_otomatik, "lossless_yuklu": bool(lossless_exe()),
                 "steam": bool(steam_klasoru()), "mesaj": self.mesaj,
-                "hata": self.ts.hata or self.mjpeg.hata, "windows": WINDOWS}
+                "hata": self.ts.hata or self.mjpeg.hata, "windows": WINDOWS,
+                "kumanda_acik": self.kumanda_acik, "kumanda_bagli": time.time() - self.kumanda_son < 10,
+                "sanal_kol": girdi.vgamepad_var() if self.kumanda is None else self.kumanda.sanal_kol}
 
 
-TV_SAYFASI = """<!doctype html><html lang="tr"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>TV Yansıt</title>
-<style>html,body{margin:0;height:100%;background:#000;overflow:hidden}
-img{position:fixed;inset:0;width:100%;height:100%;object-fit:contain}
-#b{position:fixed;left:0;right:0;bottom:8%;color:#fff;font:28px sans-serif;text-align:center}</style>
-</head><body><img id="g" src="__AKIS__" alt=""><div id="b">Bağlanıyor…</div>
-<script>
-var g=document.getElementById('g'),b=document.getElementById('b');
-g.onload=function(){b.style.display='none'};
-g.onerror=function(){b.style.display='block';b.textContent='Bağlantı koptu, yeniden deneniyor…';
- setTimeout(function(){g.src='__AKIS__?t='+(+new Date())},2000)};
-document.body.onclick=function(){var e=document.documentElement;(e.requestFullscreen||e.webkitRequestFullscreen||function(){}).call(e)};
-</script></body></html>"""
+def tv_sayfasi(app: "Uygulama") -> bytes:
+    p = f"/{app.pin}"
+    sanal = app.kumanda.sanal_kol if app.kumanda else girdi.vgamepad_var()
+    html = (KOK / "tv.html").read_text(encoding="utf-8")
+    html = html.replace("__AKIS__", f"{p}/canli.mjpg").replace("__GIRDI__", f"{p}/girdi")
+    return html.replace("__KUMANDA__", "true").replace("__SANALKOL__", "true" if sanal else "false").encode("utf-8")
+
+YANLIS_PIN_SINIRI = 30
 
 
 def sunucu_kur(app: Uygulama) -> type[BaseHTTPRequestHandler]:
@@ -845,7 +860,10 @@ def sunucu_kur(app: Uygulama) -> type[BaseHTTPRequestHandler]:
                 self.send_header(k, v)
             self.end_headers()
             if self.command != "HEAD":
-                self.wfile.write(govde)
+                try:
+                    self.wfile.write(govde)
+                except (ConnectionError, OSError):  # TV sayfayı kapattı
+                    self.close_connection = True
 
         def _json(self, veri, kod: int = 200) -> None:
             self._gonder(kod, json.dumps(veri, ensure_ascii=False).encode("utf-8"), "application/json; charset=utf-8")
@@ -862,14 +880,36 @@ def sunucu_kur(app: Uygulama) -> type[BaseHTTPRequestHandler]:
                 return self._gonder(200, (KOK / "panel.html").read_bytes(), "text/html; charset=utf-8")
             if yol == "/api/durum" and self._yerel():
                 return self._json(app.durum())
+            if self._engelli():
+                return self._gonder(403, b"", "text/plain")
             if yol == p:
-                html = TV_SAYFASI.replace("__AKIS__", f"{p}/canli.mjpg")
-                return self._gonder(200, html.encode("utf-8"), "text/html; charset=utf-8")
+                return self._gonder(200, tv_sayfasi(app), "text/html; charset=utf-8")
             if yol == f"{p}/canli.mjpg":
                 return self._mjpeg()
             if yol == f"{p}/ekran.ts":
                 return self._ts()
+            self._yanlis()
             self._gonder(404, "Bulunamadı — TV'de adresin sonundaki PIN'i kontrol edin.".encode(), "text/plain; charset=utf-8")
+
+        def _engelli(self) -> bool:
+            """PIN tahmin eden cihazı engeller (4 haneli PIN'i denemeyle bulmasın)."""
+            return not self._yerel() and app.yanlis_pin.get(self.client_address[0], 0) >= YANLIS_PIN_SINIRI
+
+        def _yanlis(self) -> None:
+            if not self._yerel():
+                ip = self.client_address[0]
+                app.yanlis_pin[ip] = app.yanlis_pin.get(ip, 0) + 1
+
+        def _girdi(self):
+            uzunluk = min(int(self.headers.get("Content-Length") or 0), 256 * 1024)
+            govde = self.rfile.read(uzunluk)
+            if not app.kumanda_acik:
+                return self._json({"hata": "Kumanda kapalı: bilgisayardaki panelden açın."}, 403)
+            try:
+                olaylar = json.loads(govde or b"[]")
+            except ValueError:
+                return self._json({"hata": "bozuk istek"}, 400)
+            self._json({"n": app.kumanda_uygula(olaylar)})
 
         def _ts(self):
             self.send_response(200)
@@ -913,7 +953,10 @@ def sunucu_kur(app: Uygulama) -> type[BaseHTTPRequestHandler]:
                 app.mjpeg.son_izleyici = time.time()
 
         def do_POST(self):
+            if urllib.parse.urlparse(self.path).path == f"/{app.pin}/girdi" and not self._engelli():
+                return self._girdi()
             if not self._yerel():
+                self._yanlis()
                 return self._gonder(403, b"", "text/plain")
             uzunluk = int(self.headers.get("Content-Length") or 0)
             try:
@@ -926,6 +969,10 @@ def sunucu_kur(app: Uygulama) -> type[BaseHTTPRequestHandler]:
                     app.ayar_adi = veri["ayar"]
                 if "lossless_otomatik" in veri:
                     app.lossless_otomatik = bool(veri["lossless_otomatik"])
+                if "kumanda_acik" in veri and bool(veri["kumanda_acik"]) != app.kumanda_acik:
+                    app.kumanda_ayarla(bool(veri["kumanda_acik"]))
+                    app.mesaj = ("TV'den kumanda açık: TV'ye bağlı klavye, fare ve oyun kolu bilgisayarı yönetir."
+                                 if app.kumanda_acik else "TV'den kumanda kapatıldı.")
                 if yol == "/api/ara":
                     app.tvler = tv_ara()
                     app.mesaj = f"{len(app.tvler)} TV bulundu." if app.tvler else \

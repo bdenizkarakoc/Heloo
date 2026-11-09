@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TV Yansıt</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; cursor: default; }
+  img { position: fixed; left: 0; top: 0; width: 100%; height: 100%; object-fit: contain; -webkit-user-drag: none; user-select: none; }
+  #b { position: fixed; left: 0; right: 0; bottom: 8%; color: #fff; font: 28px sans-serif; text-align: center; text-shadow: 0 0 6px #000; }
+  #k { position: fixed; right: 12px; top: 10px; color: #8f8; font: 16px sans-serif; opacity: .8; }
+</style>
+</head>
+<body>
+<img id="g" src="__AKIS__" alt="">
+<div id="b">Bağlanıyor…</div>
+<div id="k"></div>
+<script>
+/* Eski TV tarayıcıları için ES5: var, function, XMLHttpRequest. */
+var AKIS = '__AKIS__', GIRDI = '__GIRDI__', KUMANDA = __KUMANDA__, SANAL_KOL = __SANALKOL__;
+var g = document.getElementById('g'), b = document.getElementById('b'), k = document.getElementById('k');
+var tamEkranIstendi = false;
+
+g.onload = function () { b.style.display = 'none'; };
+g.onerror = function () {
+  b.style.display = 'block';
+  b.textContent = 'Bağlantı koptu, yeniden deneniyor…';
+  setTimeout(function () { g.src = AKIS + '?t=' + (+new Date()); }, 2000);
+};
+function tamEkran() {
+  if (tamEkranIstendi) return false;
+  tamEkranIstendi = true;
+  var e = document.documentElement, f = e.requestFullscreen || e.webkitRequestFullscreen;
+  if (f) { try { f.call(e); } catch (x) {} }
+  return true;
+}
+
+if (!KUMANDA) {
+  document.body.onclick = tamEkran;
+} else {
+  k.textContent = 'Kumanda açık';
+
+  /* --- gönderim kuyruğu: olaylar toplu gider, aynı anda tek istek */
+  var kuyruk = [], yolda = false, sonFare = null;
+  function ekle(o) { kuyruk.push(o); if (!yolda) setTimeout(gonder, 0); }
+  function gonder() {
+    if (sonFare) { kuyruk.push(sonFare); sonFare = null; }
+    if (yolda || !kuyruk.length) return;
+    var paket = kuyruk.splice(0, 300);
+    yolda = true;
+    var x = new XMLHttpRequest();
+    x.open('POST', GIRDI, true);
+    x.setRequestHeader('Content-Type', 'application/json');
+    x.onreadystatechange = function () {
+      if (x.readyState !== 4) return;
+      yolda = false;
+      k.textContent = x.status === 200 ? 'Kumanda açık' : 'Kumanda kapalı (bilgisayardaki panelden açın)';
+      if (kuyruk.length || sonFare) setTimeout(gonder, 0);
+    };
+    x.send(JSON.stringify(paket));
+  }
+  setInterval(gonder, 33);
+
+  /* --- fare: görüntünün gerçek alanına göre 0..1 konum */
+  function konum(e) {
+    var nw = g.naturalWidth || 16, nh = g.naturalHeight || 9;
+    var cw = window.innerWidth, ch = window.innerHeight, s = Math.min(cw / nw, ch / nh);
+    var w = nw * s, h = nh * s, ox = (cw - w) / 2, oy = (ch - h) / 2;
+    return { t: 'ma', x: Math.max(0, Math.min(1, (e.clientX - ox) / w)), y: Math.max(0, Math.min(1, (e.clientY - oy) / h)) };
+  }
+  document.addEventListener('mousemove', function (e) { sonFare = konum(e); }, false);
+  var fareBasili = {};
+  document.addEventListener('mousedown', function (e) {
+    e.preventDefault();
+    if (tamEkran()) return;                 /* ilk tık yalnızca tam ekran yapar */
+    fareBasili[e.button] = true;
+    sonFare = null; ekle(konum(e)); ekle({ t: 'md', b: e.button });
+  }, false);
+  document.addEventListener('mouseup', function (e) {
+    e.preventDefault();
+    if (!fareBasili[e.button]) return;
+    delete fareBasili[e.button];
+    ekle(konum(e)); ekle({ t: 'mu', b: e.button });
+  }, false);
+  document.addEventListener('contextmenu', function (e) { e.preventDefault(); }, false);
+  function tekerlek(e) {
+    e.preventDefault();
+    var d = e.deltaY !== undefined ? e.deltaY : -(e.wheelDelta || 0);
+    if (d) ekle({ t: 'mw', d: d > 0 ? -120 : 120 });
+  }
+  document.addEventListener('wheel', tekerlek, { passive: false });
+  document.addEventListener('mousewheel', tekerlek, false);
+  /* dokunmatik ekranlı TV/tablet: dokunma = tıklama */
+  var dokunma = false;
+  document.addEventListener('touchstart', function (e) {
+    var t = e.touches[0]; e.preventDefault();
+    if (tamEkran()) return;
+    dokunma = true; ekle(konum(t)); ekle({ t: 'md', b: 0 });
+  }, { passive: false });
+  document.addEventListener('touchmove', function (e) { e.preventDefault(); sonFare = konum(e.touches[0]); }, { passive: false });
+  document.addEventListener('touchend', function () { if (dokunma) { dokunma = false; ekle({ t: 'mu', b: 0 }); } }, false);
+
+  /* --- klavye ve TV kumandası */
+  var vkBasili = {};
+  document.addEventListener('keydown', function (e) {
+    var kod = e.keyCode || e.which, tus = e.key || '';
+    e.preventDefault();
+    /* Harf, rakam, boşluk: gerçek tuş (oyunlarda W/A/S/D basılı tutulabilir).
+       Diğer yazı karakterleri (ş, ğ, ü, noktalama…): karakter olarak, klavye düzeninden bağımsız. */
+    var temel = kod === 32 || (kod >= 48 && kod <= 57) || (kod >= 65 && kod <= 90);
+    if (!temel && tus.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+      ekle({ t: 'c', c: tus });
+    } else if (kod) {
+      /* basılı tutulunca gelen tekrarlar da gider (gerçek klavye de böyle yapar; Silme ve ok tuşları tekrarlar) */
+      vkBasili[kod] = true;
+      ekle({ t: 'kd', k: kod });
+    }
+  }, false);
+  document.addEventListener('keyup', function (e) {
+    var kod = e.keyCode || e.which;
+    e.preventDefault();
+    if (vkBasili[kod]) { delete vkBasili[kod]; ekle({ t: 'ku', k: kod }); }
+  }, false);
+  function hepsiniBirak() { vkBasili = {}; ekle({ t: 'birak' }); }
+  window.addEventListener('blur', hepsiniBirak, false);
+  window.addEventListener('pagehide', hepsiniBirak, false);
+
+  /* --- oyun kolu */
+  var oncekiKol = {}, kolTuslari = {};
+  /* Sanal kol yoksa: sol çubuk = fare, sağ çubuk = kaydırma, A = sol tık, X = sağ tık, B = Esc, Y = Enter,
+     yön tuşları = ok tuşları, LB/RB = Page Up/Down, Back = Tab, Start = Windows tuşu */
+  var KOL_TUS = { 1: 27, 3: 13, 4: 33, 5: 34, 8: 9, 9: 91, 12: 38, 13: 40, 14: 37, 15: 39 };
+  var KOL_FARE = { 0: 0, 2: 2 };
+  var kaydirmaBirikim = 0;
+  function bas(d) { return d && (typeof d === 'object' ? (d.pressed || d.value > 0.5) : d > 0.5); }
+  function olu(v) { return Math.abs(v) < 0.15 ? 0 : v; }
+  function kolDongu() {
+    var liste = navigator.getGamepads ? navigator.getGamepads() : [];
+    for (var i = 0; i < liste.length; i++) {
+      var p = liste[i];
+      if (!p) continue;
+      var dug = [], eks = [];
+      for (var n = 0; n < p.buttons.length && n < 17; n++) {
+        var d = p.buttons[n];
+        dug.push(Math.round((typeof d === 'object' ? d.value || (d.pressed ? 1 : 0) : d) * 100) / 100);
+      }
+      for (var a = 0; a < p.axes.length && a < 4; a++) eks.push(Math.round(olu(p.axes[a]) * 100) / 100);
+      if (SANAL_KOL) {
+        var imza = dug.join(',') + '|' + eks.join(',');
+        if (oncekiKol[i] !== imza) { oncekiKol[i] = imza; ekle({ t: 'pad', i: i, b: dug, a: eks }); }
+        continue;
+      }
+      var onceki = kolTuslari[i] || {};
+      for (var m = 0; m < dug.length; m++) {
+        var simdi = dug[m] > 0.5;
+        if (simdi === !!onceki[m]) continue;
+        onceki[m] = simdi;
+        if (KOL_FARE[m] !== undefined) ekle({ t: simdi ? 'md' : 'mu', b: KOL_FARE[m] });
+        else if (KOL_TUS[m]) ekle({ t: simdi ? 'kd' : 'ku', k: KOL_TUS[m] });
+      }
+      kolTuslari[i] = onceki;
+      var hiz = 22;
+      if (eks[0] || eks[1]) ekle({ t: 'mr', dx: Math.round(eks[0] * Math.abs(eks[0]) * hiz), dy: Math.round(eks[1] * Math.abs(eks[1]) * hiz) });
+      kaydirmaBirikim += (eks[3] || 0);
+      if (Math.abs(kaydirmaBirikim) >= 4) { ekle({ t: 'mw', d: kaydirmaBirikim > 0 ? -120 : 120 }); kaydirmaBirikim = 0; }
+    }
+    (window.requestAnimationFrame || function (f) { setTimeout(f, 16); })(kolDongu);
+  }
+  if (navigator.getGamepads) {
+    kolDongu();
+    window.addEventListener('gamepadconnected', function (e) {
+      k.textContent = 'Oyun kolu bağlandı: ' + (e.gamepad && e.gamepad.id ? e.gamepad.id.slice(0, 40) : '');
+    }, false);
+  }
+}
+</script>
+</body>
+</html>

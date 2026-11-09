@@ -151,3 +151,86 @@ def test_uctan_uca_akislar():
     finally:
         app.durdur()
         srv.shutdown()
+
+
+# ---------------------------------------------------------------------------- TV'den kumanda
+import girdi  # noqa: E402
+
+
+def test_kumanda_olaylari():
+    kayit = girdi.KayitGirdi()
+    k = girdi.Kumanda(girdi=kayit)
+    n = k.uygula([
+        {"t": "ma", "x": 0.5, "y": 2},          # 1'e sıkıştırılır
+        {"t": "md", "b": 0}, {"t": "mu", "b": 0},
+        {"t": "mw", "d": -120},
+        {"t": "kd", "k": 461}, {"t": "ku", "k": 461},   # LG kumanda Geri → Esc
+        {"t": "c", "c": "ş"},
+        {"t": "kd", "k": 99999}, {"t": "c", "c": "uzun metin"}, {"t": "md", "b": 7}, {"t": "??"}, "bozuk",
+    ])
+    assert n == 7
+    assert kayit.kayit == [("ma", 0.5, 1.0), ("md", 0), ("mu", 0), ("mw", -120),
+                           ("kd", 0x1B), ("ku", 0x1B), ("c", "ş")]
+
+
+def test_kumanda_birak_basili_kalani_birakir():
+    kayit = girdi.KayitGirdi()
+    k = girdi.Kumanda(girdi=kayit)
+    k.uygula([{"t": "kd", "k": 16}, {"t": "md", "b": 2}, {"t": "birak"}])
+    assert ("ku", 16) in kayit.kayit and ("mu", 2) in kayit.kayit
+    assert not k.basili_tuslar and not k.basili_fare
+
+
+def test_kumanda_sunucu_izin_ve_pin_engeli():
+    app = tv.Uygulama(0, kaynak="test")
+    kayit = girdi.KayitGirdi()
+    app.kumanda = girdi.Kumanda(girdi=kayit)
+    srv = tv.ThreadingHTTPServer(("127.0.0.1", 0), tv.sunucu_kur(app))
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    taban = f"http://127.0.0.1:{srv.server_port}"
+
+    def gonder(yol, veri):
+        req = urllib.request.Request(taban + yol, data=json.dumps(veri).encode(), method="POST",
+                                     headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=5) as r:
+                return r.status, json.load(r)
+        except urllib.error.HTTPError as e:
+            return e.code, None
+
+    try:
+        sayfa = urllib.request.urlopen(f"{taban}/{app.pin}", timeout=5).read().decode()
+        assert f"/{app.pin}/girdi" in sayfa and "__" not in sayfa.split("<script>")[1].split("var g")[0]
+        assert gonder(f"/{app.pin}/girdi", [{"t": "kd", "k": 13}])[0] == 403   # kapalıyken izin yok
+        assert gonder("/api/ayar", {"kumanda_acik": True})[1]["kumanda_acik"] is True
+        kod, cevap = gonder(f"/{app.pin}/girdi", [{"t": "kd", "k": 13}, {"t": "ku", "k": 13}])
+        assert kod == 200 and cevap["n"] == 2 and kayit.kayit == [("kd", 13), ("ku", 13)]
+        gonder("/api/ayar", {"kumanda_acik": False})
+        assert gonder(f"/{app.pin}/girdi", [{"t": "kd", "k": 13}])[0] == 403
+    finally:
+        srv.shutdown()
+
+
+def test_pin_tahmini_engellenir():
+    app = tv.Uygulama(0, kaynak="test")
+    isleyici = tv.sunucu_kur(app)
+    isleyici._yerel = lambda self: False      # başka cihazdan geliyormuş gibi
+    srv = tv.ThreadingHTTPServer(("127.0.0.1", 0), isleyici)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    taban = f"http://127.0.0.1:{srv.server_port}"
+
+    def kod(yol):
+        try:
+            return urllib.request.urlopen(taban + yol, timeout=5).status
+        except urllib.error.HTTPError as e:
+            return e.code
+
+    try:
+        assert kod("/") == 404                      # panel yalnızca bilgisayardan
+        assert kod(f"/{app.pin}") == 200
+        yanlis = "0000" if app.pin != "0000" else "1111"
+        for _ in range(tv.YANLIS_PIN_SINIRI):
+            kod(f"/{yanlis}")
+        assert kod(f"/{app.pin}") == 403            # artık doğru PIN de engelli
+    finally:
+        srv.shutdown()

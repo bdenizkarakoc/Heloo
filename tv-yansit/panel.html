@@ -79,6 +79,13 @@
   </section>
 
   <section class="kart">
+    <h2>TV'den kumanda: klavye, fare, oyun kolu</h2>
+    <p>TV'ye takılı (USB ya da Bluetooth) klavye, fare ve oyun kolu ile TV kumandasının ok, Tamam ve Geri tuşları bilgisayarı yönetir. Yol 2 (TV tarayıcısı) ile çalışır.</p>
+    <p><label><input type="checkbox" id="kumanda"> TV'den kumandayı aç</label></p>
+    <p id="kolBilgi"></p>
+  </section>
+
+  <section class="kart">
     <h2>Windows Kablosuz Ekran (Miracast)</h2>
     <p id="miracastBilgi">Denetleniyor…</p>
     <button class="ikincil" id="btnMiracast">Yansıt panelini aç (Win+K)</button>
@@ -117,6 +124,10 @@ function goster(d) {
   }
   $('ayar').value = d.ayar;
   $('lossless').checked = d.lossless_otomatik;
+  $('kumanda').checked = d.kumanda_acik;
+  $('kolBilgi').textContent = d.sanal_kol
+    ? 'Oyun kolu: bilgisayarda gerçek bir Xbox kolu gibi görünür (oyunlar ve Steam doğrudan tanır).'
+    : 'Oyun kolu: fare ve klavye olarak çalışır (sol çubuk = fare, A = tıkla, B = Esc). Oyunlarda gerçek kol için README\'deki ViGEmBus adımına bakın.';
   const secili = $('tvler').value;
   $('tvler').replaceChildren();
   if (!d.tvler.length) {
@@ -133,6 +144,7 @@ function goster(d) {
   et.appendChild(etiket(d.ses ? 'Ses: ' + d.ses : 'Bilgisayar sesi yakalanmıyor (Stereo Karışımı kapalı)', d.ses ? 'iyi' : ''));
   et.appendChild(etiket(d.lossless_yuklu ? 'Lossless Scaling yüklü' : 'Lossless Scaling bulunamadı (Steam ile açılmayı dener)'));
   if (d.aktif_tv) et.appendChild(etiket('Yansıtılıyor: ' + d.aktif_tv, 'iyi'));
+  if (d.kumanda_bagli) et.appendChild(etiket('TV kumandası kullanılıyor', 'iyi'));
   if (d.tarayici_izleyici) et.appendChild(etiket('TV tarayıcısı bağlı', 'iyi'));
   et.appendChild(etiket('Bilgisayar IP: ' + d.ip));
 
@@ -150,7 +162,7 @@ async function istek(yol, veri) {
   $('mesaj').textContent = 'Bekleyin…';
   try {
     const r = await fetch(yol, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(Object.assign({ ayar: $('ayar').value, lossless_otomatik: $('lossless').checked }, veri || {})) });
+      body: JSON.stringify(Object.assign({ ayar: $('ayar').value, lossless_otomatik: $('lossless').checked, kumanda_acik: $('kumanda').checked }, veri || {})) });
     goster(await r.json());
   } catch (e) {
     $('mesaj').textContent = 'Uygulamaya ulaşılamadı: pencereyi kapattınız mı?';
@@ -174,6 +186,7 @@ $('btnLossless').onclick = () => istek('/api/lossless');
 $('btnSteam').onclick = () => istek('/api/steam');
 $('ayar').onchange = () => istek('/api/ayar');
 $('lossless').onchange = () => istek('/api/ayar');
+$('kumanda').onchange = () => istek('/api/ayar');
 
 yenile().then(() => istek('/api/ara'));
 setInterval(yenile, 4000);
