@@ -74,6 +74,10 @@ def is_hls(url: str) -> bool:
 
 def resolve_hwdec(settings: dict, platform: str = sys.platform) -> str:
     v = settings["video"]["hwdec"]
+    if v == "auto" and settings.get("picture", {}).get("denoise", "auto") != "off" and is_windows(platform):
+        # gürültü azaltma (CPU hqdn3d) kareleri belleğe ister; d3d11va-copy yine GPU'da çözer, VSR için
+        # d3d11vpp kareleri kendisi GPU'ya geri yükler
+        return "d3d11va-copy,d3d11va"
     if v == "auto":
         # Windows: d3d11va (sıfır kopya D3D11 kareleri) → d3d11vpp/RTX VSR doğrudan GPU'da çalışır.
         # Desteklenmeyen kodlayıcıda yazılım çözmeye düşer; d3d11vpp yazılım karelerini kendisi GPU'ya yükler.
@@ -113,14 +117,16 @@ def quality_options(settings: dict, platform: str = sys.platform) -> dict:
     v, a, s, n = settings["video"], settings["audio"], settings["subtitles"], settings["network"]
     win = is_windows(platform)
     o: dict = {
+        "hwdec": resolve_hwdec(settings, platform),
         "hwdec-codecs": "all",           # varsayılan liste MPEG-2'yi içermez; IPTV'deki SD kanallar için gerekli
-        "deband": "yes" if v["deband"] else "no",
         "dither-depth": "auto",
         "target-colorspace-hint": "yes" if v["rtx_hdr"] else "auto",
         "cursor-autohide": "1000",
         "cursor-autohide-fs-only": "no",
         "osd-duration": "1800",
-        "osd-font-size": "34",
+        "osd-font-size": "38",
+        ("osd-outline-size", "osd-border-size"): "2.6",
+        "osd-bold": "yes",
         "osd-on-seek": "msg-bar",
         "volume-max": "150",
         "alang": TR_AUDIO if a["prefer"] == "tr" else "",
@@ -130,9 +136,18 @@ def quality_options(settings: dict, platform: str = sys.platform) -> dict:
         "slang": TR_SUBS if s["prefer"] == "tr" else "",
         # Türkçe dublajda altyazıyı (zorunlu olanlar hariç) açma; mpv < 0.38 "forced" bilmez → "no"
         "subs-with-matching-audio": Choices(("forced", "no")),
+        # okunaklı altyazı: kalın yazı, belirgin kenar + yumuşak gölge ya da yarı saydam kutu
         "sub-font-size": str(s["size"]),
-        ("sub-outline-size", "sub-border-size"): "2.4",
-        "sub-shadow-offset": "1",
+        "sub-bold": "yes",
+        "sub-color": "#FFFFE45C" if s.get("color") == "yellow" else "#FFFFFFFF",
+        ("sub-outline-size", "sub-border-size"): "1.2" if s.get("style") == "box" else "3.0",
+        "sub-shadow-offset": "0" if s.get("style") == "box" else "1.5",
+        "sub-blur": "0.2",
+        "sub-margin-y": "48",
+        "sub-border-style": Choices(("background-box", "opaque-box")) if s.get("style") == "box"
+        else Choices(("outline-and-shadow",)),
+        "sub-back-color": "#99000000",
+        "sub-ass-override": Choices(("scale", "yes")),
         "network-timeout": str(n["timeout"]),
         "tls-verify": "yes" if n["tls_verify"] else "no",
         "user-agent": n["user_agent"],
@@ -142,11 +157,12 @@ def quality_options(settings: dict, platform: str = sys.platform) -> dict:
     # RTX VSR'nin büyütmediği her durumda (fotoğraf, sürücüde VSR kapalı, NVIDIA olmayan kart) yapay zekâ ile
     # 2 kat büyütme; shader yalnız mpv'nin kendisi ≥1,3 kat büyüttüğünde devreye girer (VSR 4K verince çalışmaz)
     shader = shaders.resolve(v.get("ai_upscaler", "fsrcnnx"))
-    o["glsl-shaders"] = [str(shader)] if shader else []
+    sharp = shaders.SHARPNESS.get(v.get("sharpen", "light"), 0.3)
+    o["glsl-shaders"] = ([str(shader)] if shader else []) + ([str(shaders.CAS)] if sharp > 0 else [])
+    o["glsl-shader-opts"] = f"cas_sharpness={sharp:g}"
     # video alanına bırakılan dosyaları mpv kendisi açmasın; dropped-files ile uygulama açar (aynı 4K zinciri)
     o[("input-builtin-drag-and-drop", "drag-and-drop")] = "no"
-    if v["deband"]:
-        o.update({"deband-iterations": "2", "deband-threshold": "35", "deband-range": "16", "deband-grain": "5"})
+    o.update(picture_options(settings))
     if v["hq_scaling"]:
         # high-quality profilinin karşılığı (VSR'nin olmadığı ya da yetmediği büyütme için)
         o.update({"scale": "ewa_lanczossharp", "scale-antiring": "0.6", "hdr-peak-percentile": "99.995",
@@ -252,8 +268,14 @@ def vsr_plan(settings: dict, vp: dict | None, screen: tuple[int, int] | None = N
     vp: mpv `video-params` (w, h, dw, dh, gamma ...). Dönüş: {"vf", "scale", "out", "deint", "hdr", "reason"}.
     """
     v = settings["video"]
-    plan = {"vf": "", "scale": None, "out": None, "deint": False, "hdr": False, "reason": ""}
+    plan = {"vf": "", "scale": None, "out": None, "deint": False, "hdr": False, "reason": "", "denoise": None}
+    dn = denoise_strength(settings, vp)
+    if dn and kind != "image":
+        # gürültü VSR'den ÖNCE temizlenir: VSR karıncalanmayı değil temiz görüntüyü 4K'ya büyütür
+        plan["denoise"] = dn
     if not is_windows(platform):
+        if plan["denoise"]:
+            plan["vf"] = f"@helootv-dn:lavfi=[hqdn3d={dn}]"
         plan["reason"] = "RTX VSR yalnızca Windows'ta (Direct3D 11) çalışır; yüksek kaliteli mpv ölçekleyici kullanılıyor."
         return plan
     if not vp or not vp.get("w") or not vp.get("h"):
@@ -290,8 +312,12 @@ def vsr_plan(settings: dict, vp: dict | None, screen: tuple[int, int] | None = N
     if v["rtx_hdr"] and not _is_hdr_source(vp):
         parts.append("nvidia-true-hdr=yes")
         plan["hdr"] = True
+    chain = []
+    if plan["denoise"]:
+        chain.append(f"@helootv-dn:lavfi=[hqdn3d={dn}]")
     if parts:
-        plan["vf"] = "@helootv:d3d11vpp=" + ":".join(parts)
+        chain.append("@helootv:d3d11vpp=" + ":".join(parts))
+    plan["vf"] = ",".join(chain)
     return plan
 
 
@@ -311,3 +337,69 @@ def cli_args(opts: dict) -> list[str]:
         else:
             args.append(f"--{k}={val}")
     return args
+
+
+# ---------------------------------------------------------------------- görüntü ayarları
+
+# hqdn3d: luma uzamsal : kroma uzamsal : luma zamansal : kroma zamansal. Zamansal kısım yalnız önceki kareyi
+# kullanır → gecikme eklemez; IPTV'deki karıncalanmayı (gürültü/kumlanma) ve titreşimi en etkili bunu giderir.
+DENOISE = {"light": "1.5:1.5:4:4", "medium": "2.5:2:6:5", "strong": "4:3:9:7"}
+PICTURE_PRESETS = {
+    "natural": {"brightness": 0, "contrast": 0, "saturation": 0, "gamma": 0, "hue": 0, "denoise": "auto",
+                "deband": 1, "sharpen": "light"},
+    "vivid": {"brightness": 2, "contrast": 8, "saturation": 15, "gamma": 0, "hue": 0, "denoise": "auto",
+              "deband": 1, "sharpen": "medium"},
+    "cinema": {"brightness": -3, "contrast": 5, "saturation": -4, "gamma": 3, "hue": 0, "denoise": "light",
+               "deband": 2, "sharpen": "light"},
+    "sports": {"brightness": 3, "contrast": 6, "saturation": 10, "gamma": 0, "hue": 0, "denoise": "light",
+               "deband": 1, "sharpen": "strong"},
+    "noisy": {"brightness": 0, "contrast": 3, "saturation": 2, "gamma": 0, "hue": 0, "denoise": "strong",
+              "deband": 3, "sharpen": "medium"},
+}
+PRESET_LABELS = {"natural": "Doğal", "vivid": "Canlı", "cinema": "Sinema", "sports": "Spor",
+                 "noisy": "Karıncalı yayın", "custom": "Kendi ayarım"}
+DEBAND = {0: None, 1: ("2", "35", "16", "5"), 2: ("3", "48", "20", "8"), 3: ("4", "64", "24", "12")}
+
+
+def denoise_strength(settings: dict, vp: dict | None) -> str | None:
+    """auto: SD/720p ve altı kaynaklarda (karıncalanmanın en çok olduğu yer) orta, 1080p'de hafif, 4K'da kapalı."""
+    d = settings.get("picture", {}).get("denoise", "auto")
+    if d == "off":
+        return None
+    if d != "auto":
+        return DENOISE[d]
+    h = int((vp or {}).get("h") or 0)
+    if not h:
+        return None
+    return DENOISE["medium"] if h <= 576 else DENOISE["light"] if h <= 1080 else None
+
+
+def picture_options(settings: dict, vp: dict | None = None) -> dict:
+    """Anında değişebilen görüntü ayarları (parlaklık … deband). Düşük kaliteli kaynakta deband güçlenir."""
+    pic = settings.get("picture", {})
+    o = {k: str(int(pic.get(k, 0))) for k in ("brightness", "contrast", "saturation", "gamma", "hue")}
+    level = int(pic.get("deband", 1))
+    if settings["video"].get("low_boost", True) and vp and int(vp.get("h") or 9999) <= 576:
+        level = min(3, max(level, 2))
+    vals = DEBAND.get(level)
+    o["deband"] = "yes" if vals else "no"
+    if vals:
+        o.update(dict(zip(("deband-iterations", "deband-threshold", "deband-range", "deband-grain"), vals)))
+    sharp = shaders.SHARPNESS.get(settings["video"].get("sharpen", "light"), 0.3)
+    if settings["video"].get("low_boost", True) and vp and int(vp.get("h") or 9999) <= 576 and sharp > 0:
+        sharp = min(1.0, sharp + 0.15)
+    o["glsl-shader-opts"] = f"cas_sharpness={sharp:g}"
+    return o
+
+
+def apply_preset(settings: dict, name: str) -> None:
+    p = PICTURE_PRESETS.get(name)
+    if not p:
+        return
+    pic = settings.setdefault("picture", {})
+    for k, v in p.items():
+        if k == "sharpen":
+            settings["video"]["sharpen"] = v
+        else:
+            pic[k] = v
+    pic["preset"] = name

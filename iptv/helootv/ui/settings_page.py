@@ -210,6 +210,7 @@ class SettingsPage(QScrollArea):
     fetch_mpv_requested = Signal()
     vsr_test_requested = Signal()
     clear_history_requested = Signal()
+    picture_requested = Signal()
 
     def __init__(self, ctx, parent=None):
         super().__init__(parent)
@@ -366,6 +367,17 @@ class SettingsPage(QScrollArea):
         self.ai.addItem("Kapalı", "off")
         self.ai.setToolTip("RTX VSR'nin büyütmediği durumlarda (fotoğraf, VSR kapalı, NVIDIA olmayan kart) 2 kat "
                            "yapay zekâ büyütmesi. GitHub'dan 'mpv bileşenlerini indir' ile gelir.")
+        self.sharpen = QComboBox()
+        for label, val in (("Kapalı", "off"), ("Hafif (önerilen)", "light"), ("Orta", "medium"), ("Güçlü", "strong")):
+            self.sharpen.addItem(label, val)
+        self.denoise = QComboBox()
+        for label, val in (("Otomatik — SD/720p/1080p yayınlarda açık", "auto"), ("Kapalı", "off"), ("Hafif", "light"),
+                           ("Orta", "medium"), ("Güçlü — çok karıncalı yayınlar", "strong")):
+            self.denoise.addItem(label, val)
+        self.denoise.setToolTip("Karıncalanma/kumlanma (gürültü) azaltma. Gecikme eklemez: yalnız önceki kareyi kullanır.")
+        self.low_boost = QCheckBox("Düşük kaliteli (≤576p) yayınlarda daha güçlü iyileştir (deband + keskinlik)")
+        self.pic_btn = QPushButton("🎨 Görüntü ayarları… (parlaklık, kontrast, renk, hazır ayarlar)")
+        self.pic_btn.clicked.connect(self.picture_requested.emit)
         self.hwdec = QComboBox()
         for label, val in (("Otomatik (Windows: d3d11va — VSR için gerekli)", "auto"), ("d3d11va", "d3d11va"),
                            ("nvdec (CUDA)", "nvdec"), ("auto-copy", "auto-copy"), ("Kapalı (yazılım)", "no")):
@@ -379,6 +391,10 @@ class SettingsPage(QScrollArea):
         lay.addWidget(self.hq, r, 0, 1, 2); r += 1
         lay.addWidget(self.smooth, r, 0, 1, 2); r += 1
         lay.addWidget(QLabel("Yapay zekâ büyütücü"), r, 0); lay.addWidget(self.ai, r, 1); r += 1
+        lay.addWidget(QLabel("Keskinlik (CAS)"), r, 0); lay.addWidget(self.sharpen, r, 1); r += 1
+        lay.addWidget(QLabel("Karıncalanma azaltma"), r, 0); lay.addWidget(self.denoise, r, 1); r += 1
+        lay.addWidget(self.low_boost, r, 0, 1, 2); r += 1
+        lay.addWidget(self.pic_btn, r, 0, 1, 2); r += 1
         lay.addWidget(QLabel("Donanım çözme"), r, 0); lay.addWidget(self.hwdec, r, 1); r += 1
         note = QLabel("RTX VSR'nin çalışması için NVIDIA App → Sistem → Video → RTX Video Enhancement → "
                       "'Super Resolution' açık olmalı (kalite: Otomatik ya da 4). Heloo TV, mpv'nin d3d11vpp "
@@ -387,9 +403,9 @@ class SettingsPage(QScrollArea):
         note.setObjectName("Muted")
         lay.addWidget(note, r, 0, 1, 2)
         lay.setColumnStretch(1, 1)
-        for w in (self.vsr, self.hdr, self.deband, self.hq, self.smooth):
+        for w in (self.vsr, self.hdr, self.deband, self.hq, self.smooth, self.low_boost):
             w.toggled.connect(self._changed)
-        for w in (self.target, self.deint, self.hwdec, self.ai):
+        for w in (self.target, self.deint, self.hwdec, self.ai, self.sharpen, self.denoise):
             w.currentIndexChanged.connect(self._changed)
         self.body.addWidget(g)
 
@@ -433,15 +449,33 @@ class SettingsPage(QScrollArea):
         self.sprefer.addItem("Kapalı", "off")
         self.ssize = QSpinBox()
         self.ssize.setRange(20, 90)
+        self.sstyle = QComboBox()
+        self.sstyle.addItem("Kalın kenarlı yazı", "outline")
+        self.sstyle.addItem("Yarı saydam kutu içinde (en okunaklı)", "box")
+        self.scolor = QComboBox()
+        self.scolor.addItem("Beyaz", "white")
+        self.scolor.addItem("Sarı", "yellow")
+        self.saimodel = QComboBox()
+        for label, val in (("Hızlı (base)", "base"), ("Dengeli (small) — önerilen", "small"),
+                           ("Doğru (medium)", "medium"), ("En doğru (large-v3-turbo)", "large-v3-turbo")):
+            self.saimodel.addItem(label, val)
+        self.oskey = QLineEdit()
+        self.oskey.setEchoMode(QLineEdit.PasswordEchoOnEdit)
+        self.oskey.setPlaceholderText("opensubtitles.com/consumers adresinden ücretsiz")
+        self.oskey.editingFinished.connect(self._changed)
         lay.addWidget(QLabel("Ses dili"), 0, 0); lay.addWidget(self.aprefer, 0, 1)
         lay.addWidget(self.normalize, 1, 0, 1, 2)
         lay.addWidget(self.spdif, 2, 0, 1, 2)
         lay.addWidget(QLabel("Altyazı"), 3, 0); lay.addWidget(self.sprefer, 3, 1)
         lay.addWidget(QLabel("Altyazı boyutu"), 4, 0); lay.addWidget(self.ssize, 4, 1)
+        lay.addWidget(QLabel("Altyazı biçimi"), 5, 0); lay.addWidget(self.sstyle, 5, 1)
+        lay.addWidget(QLabel("Altyazı rengi"), 6, 0); lay.addWidget(self.scolor, 6, 1)
+        lay.addWidget(QLabel("Yapay zekâ altyazı modeli"), 7, 0); lay.addWidget(self.saimodel, 7, 1)
+        lay.addWidget(QLabel("OpenSubtitles API anahtarı"), 8, 0); lay.addWidget(self.oskey, 8, 1)
         lay.setColumnStretch(1, 1)
         for w in (self.normalize, self.spdif):
             w.toggled.connect(self._changed)
-        for w in (self.aprefer, self.sprefer):
+        for w in (self.aprefer, self.sprefer, self.sstyle, self.scolor, self.saimodel):
             w.currentIndexChanged.connect(self._changed)
         self.ssize.valueChanged.connect(self._changed)
         self.body.addWidget(g)
@@ -528,7 +562,7 @@ class SettingsPage(QScrollArea):
         self.target.setCurrentIndex(max(0, self.target.findData(v["vsr_target"])))
         self.hdr.setChecked(v["rtx_hdr"])
         self.deint.setCurrentIndex(max(0, self.deint.findData(v["deinterlace"])))
-        self.deband.setChecked(v["deband"])
+        self.deband.setChecked(int(s.get("picture", {}).get("deband", 1)) > 0)
         self.hq.setChecked(v["hq_scaling"])
         self.smooth.setChecked(v["smooth_vod"])
         self.hwdec.setCurrentIndex(max(0, self.hwdec.findData(v["hwdec"])))
@@ -541,6 +575,13 @@ class SettingsPage(QScrollArea):
         self.spdif.setChecked(a["spdif"])
         self.sprefer.setCurrentIndex(max(0, self.sprefer.findData(sub["prefer"])))
         self.ssize.setValue(int(sub["size"]))
+        self.sstyle.setCurrentIndex(max(0, self.sstyle.findData(sub["style"])))
+        self.scolor.setCurrentIndex(max(0, self.scolor.findData(sub["color"])))
+        self.saimodel.setCurrentIndex(max(0, self.saimodel.findData(sub["ai_model"])))
+        self.oskey.setText(sub.get("opensubtitles_key", ""))
+        self.sharpen.setCurrentIndex(max(0, self.sharpen.findData(v["sharpen"])))
+        self.denoise.setCurrentIndex(max(0, self.denoise.findData(s["picture"]["denoise"])))
+        self.low_boost.setChecked(bool(v["low_boost"]))
         i = self.ua.findData(n["user_agent"])
         if i >= 0:
             self.ua.setCurrentIndex(i)
@@ -567,7 +608,8 @@ class SettingsPage(QScrollArea):
         v["vsr_target"] = self.target.currentData()
         v["rtx_hdr"] = self.hdr.isChecked()
         v["deinterlace"] = self.deint.currentData()
-        v["deband"] = self.deband.isChecked()
+        pic = s.setdefault("picture", {})
+        pic["deband"] = (max(1, int(pic.get("deband", 1))) if self.deband.isChecked() else 0)
         v["hq_scaling"] = self.hq.isChecked()
         v["smooth_vod"] = self.smooth.isChecked()
         v["hwdec"] = self.hwdec.currentData()
@@ -580,6 +622,15 @@ class SettingsPage(QScrollArea):
         a["spdif"] = self.spdif.isChecked()
         sub["prefer"] = self.sprefer.currentData()
         sub["size"] = self.ssize.value()
+        sub["style"] = self.sstyle.currentData()
+        sub["color"] = self.scolor.currentData()
+        sub["ai_model"] = self.saimodel.currentData()
+        sub["opensubtitles_key"] = self.oskey.text().strip()
+        if v["sharpen"] != self.sharpen.currentData() or pic.get("denoise") != self.denoise.currentData():
+            pic["preset"] = "custom"
+        v["sharpen"] = self.sharpen.currentData()
+        pic["denoise"] = self.denoise.currentData()
+        v["low_boost"] = self.low_boost.isChecked()
         ua_data = self.ua.currentData()
         text = self.ua.currentText().strip()
         n["user_agent"] = ua_data if (ua_data and self.ua.itemText(self.ua.currentIndex()) == text) else (text or n["user_agent"])

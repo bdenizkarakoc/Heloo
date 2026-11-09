@@ -105,7 +105,64 @@ ETKİNLEŞTİRDİ" ya da ne yapmanız gerektiği. Komut satırından: `.venv\Scr
 | A / J / V | ses izi / altyazı / altyazı aç-kapa | |
 | Sağ tık | mpv menüsü (ses/altyazı izi seçimi) | |
 
-Uygulama genelinde: **Ctrl+F** ara, **F5** yenile, **Ctrl+↑/↓** kanal, **Ctrl+1…5** sekmeler, **Ctrl+D** favori.
+Uygulama genelinde: **Ctrl+F** ara, **F5** yenile, **Ctrl+↑/↓** kanal, **Ctrl+1…5** sekmeler, **Ctrl+D** favori,
+**Ctrl+P** görüntü ayarları.
+
+**İleri / geri sarma:** film, dizi ve dosyalarda alt çubukta ilerleme çubuğu (sürükleyin ya da tıklayın), geçen/toplam
+süre ve **−1 dk / −10 / +10 / +1 dk** düğmeleri vardır. Canlı yayında çubuk gizlenir; ←/→ zaman kaydırma yapar.
+
+## Altyazı ve ses izi
+
+Alt çubuktaki **💬 Altyazı** menüsü:
+
+- **İz seçimi**: videodaki ve yanındaki (`film.tr.srt`) altyazılar dili ile listelenir; "Kapalı" ile kapatılır.
+- **Dosyadan altyazı ekle**: `.srt .ass .ssa .vtt .sub .sup`.
+- **İnternetten altyazı bul (OpenSubtitles)**: başlıktan ad, sezon ve bölüm (S02E05) çıkarılır; Türkçe/İngilizce
+  sonuçlar indirme sayısına göre sıralanır, çift tıkla eklenir. [opensubtitles.com/consumers](https://www.opensubtitles.com/consumers)
+  adresinden **ücretsiz API anahtarı** gerekir (Ayarlar → Ses ve altyazı ya da pencerenin kendisi).
+- **Yapay zekâ ile altyazı (konuşmadan)**: oyunlardaki canlı altyazı araçları gibi, altyazısı olmayan videonun
+  konuşmasını [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (OpenAI Whisper, MIT) ile yazıya döker.
+  İzlenen yerden başlar, ses 40 sn'lik parçalar halinde işlenir; ilk satırlar birkaç saniyede gelir, ilerledikçe
+  dolar. NVIDIA kartta CUDA ile (yoksa işlemcide) çalışır. İlk kullanımda "Kur" ile bir kez indirilir (~200 MB +
+  model: base/small/medium/large-v3-turbo). İsterseniz konuşmayı İngilizceye çevirerek yazar. Canlı yayında yoktur.
+- **Zamanlama**: altyazıyı 0,5/0,1 sn erken/geç gösterme. **Görünüm**: büyüt/küçült, kalın kenarlı yazı ya da yarı
+  saydam kutu, beyaz/sarı, yukarı/aşağı taşı.
+
+**🔈 Ses** menüsü ses izlerini (dublaj/özgün, kanal sayısı) listeler ve ses gecikmesini ayarlar. Altyazılar kalın,
+3 px kenarlı ve gölgeli yazılır (4K'da ve açık sahnelerde okunaklı); ekran yazıları (OSD) de büyütüldü.
+
+## Görüntü ayarları ve karıncalanma
+
+**🎨 Görüntü** menüsü / **Ctrl+P** penceresi oynayan görüntüye anında uygulanır ve kaydedilir:
+
+| Ayar | Ne yapar |
+|---|---|
+| Hazır ayarlar | **Doğal**, **Canlı**, **Sinema**, **Spor** (güçlü keskinlik), **Karıncalı yayın** (güçlü gürültü azaltma + deband) |
+| Parlaklık, kontrast, doygunluk, gama, ton | −100…100 (mpv; GPU'da, gecikmesiz) |
+| Karıncalanma azaltma | `hqdn3d` (FFmpeg): uzamsal + zamansal gürültü azaltma. Zamansal kısım yalnız **önceki** kareyi kullanır → gecikme eklemez. *Otomatik*: ≤576p orta, ≤1080p hafif, 4K kapalı |
+| Keskinlik | AMD FidelityFX **CAS** tarzı uyarlanır keskinleştirme (kendi GLSL shader'ımız, `helootv/glsl/cas.glsl`); kenarları bulanıklaştırmadan netleştirir, aşırı keskinlik halesi yapmaz |
+| Renk bandı yumuşatma | deband 0–3 (gökyüzü/gölge geçişlerindeki basamaklar) |
+| Düşük kaliteli yayında güçlendir | ≤576p kaynakta deband en az "orta", keskinlik +0,15 |
+
+Gürültü azaltma, RTX VSR'den **önce** uygulanır (VSR temiz kareyi büyütür). Bu yüzden açıkken Windows'ta çözme
+`d3d11va-copy` olur (kare işlemciye kopyalanır, filtrelenir ve GPU'ya geri yüklenir); 1080p50'de bile modern bir
+işlemcide sorunsuzdur. "Kapalı"da sıfır kopya `d3d11va`'ya döner.
+
+## LG televizyonda izleme
+
+1. **En iyi yol: bilgisayardan HDMI ile** (RTX VSR / RTX HDR yalnız bilgisayardaki NVIDIA kartta çalışır).
+   - HDMI 2.1 kabloyla LG'ye bağlayın; Windows'ta **Ekran → 3840×2160, 60 Hz** (OLED/QNED'de 120 Hz) seçin.
+   - LG'de girişi **PC** olarak adlandırın (Giriş simgesi → PC) ya da **Oyun Optimize Edici**'yi açın: gecikme azalır,
+     renkler 4:4:4 olur, TV'nin kendi işleme adımları VSR'nin üstüne bir şey eklemez.
+   - **Ayarlar → Genel → Cihazlar → HDMI Ayarları → HDMI Ultra HD Deep Colour** bu giriş için açık olmalı (4K 60 Hz + HDR).
+   - RTX HDR için Windows'ta **Ekran → HDR kullan** açık; Heloo TV'de Ayarlar → RTX Video HDR.
+   - Heloo TV'de **⛶ Tam ekran** (F). Kumandayla kullanmak için Windows'a Bluetooth/USB kablosuz klavye-fare ya da
+     "air mouse" kumanda bağlayın; ↑/↓ kanal, ←/→ sarma, Enter bilgi, Boşluk duraklat.
+2. **Kablosuz (aynı Wi-Fi)**: Windows **Win+K → LG TV** (Miracast) görüntüyü yansıtır ama sıkıştırır ve gecikme
+   ekler; VSR'nin kazandırdığı netliğin bir kısmı kaybolur. DLNA "Cihaza yayınla" ise videoyu TV'nin kendi oynatıcısına
+   gönderir, VSR hiç uygulanmaz.
+3. **Bilgisayarsız**: Heloo TV Windows uygulamasıdır, LG webOS'a kurulmaz. TV'de aynı Xtream/M3U hesabını LG Content
+   Store'daki bir IPTV oynatıcıyla açabilirsiniz; o zaman büyütmeyi TV'nin kendi işlemcisi (α / AI Picture) yapar.
 
 ## Görüntü iyileştirme nasıl çalışıyor?
 

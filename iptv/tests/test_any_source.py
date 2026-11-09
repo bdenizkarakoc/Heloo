@@ -30,12 +30,16 @@ def test_vsr_fallback_and_images():
 def test_shader_resolution(tmp_path, monkeypatch):
     from helootv import shaders
     monkeypatch.setenv("HELOOTV_BIN", str(tmp_path))
-    assert shaders.resolve("fsrcnnx") is None and opt.quality_options(S())["glsl-shaders"] == []
+    assert shaders.resolve("fsrcnnx") is None
+    assert [p.rsplit("/", 1)[-1].rsplit("\\", 1)[-1] for p in opt.quality_options(S())["glsl-shaders"]] == ["cas.glsl"]
     (tmp_path / "shaders").mkdir()
     (tmp_path / "shaders" / "ArtCNN_C4F16_DS.glsl").write_text("//!HOOK LUMA\n" + "x" * 2000)
     # FSRCNNX yoksa indirilmiş diğer model kullanılır
     assert shaders.resolve("fsrcnnx").name == "ArtCNN_C4F16_DS.glsl"
     assert opt.quality_options(S())["glsl-shaders"][0].endswith("ArtCNN_C4F16_DS.glsl")
+    off = S()
+    off["video"]["sharpen"] = "off"
+    assert len(opt.quality_options(off)["glsl-shaders"]) == 1
     assert shaders.resolve("off") is None
 
 

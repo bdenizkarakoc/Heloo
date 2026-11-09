@@ -20,12 +20,21 @@ DEFAULTS: dict[str, Any] = {
         "smooth_vod": True,       # film/dizide display-resample + interpolasyon (takılmasız akış)
         "hwdec": "auto",          # auto: Windows'ta d3d11va (VSR için şart), diğerlerinde auto
         "ai_upscaler": "fsrcnnx",  # RTX VSR yokken yapay zekâ büyütücü: fsrcnnx | artcnn | off
+        "sharpen": "light",       # CAS keskinleştirme: off | light | medium | strong
+        "low_boost": True,        # ≤576p düşük kaliteli kaynaklarda daha güçlü deband + keskinlik
     },
     "export": {
         "target": "2160",         # 4K olarak kaydet: 2160 | 1440
         "model": "fsrcnnx",       # fsrcnnx | artcnn | off
         "quality": "high",        # fast | high | max
         "folder": "",             # boş: kaynağın yanına
+    },
+    # Görüntü ayarları (oynarken "🎨 Görüntü" penceresinden anında değişir)
+    "picture": {
+        "preset": "natural",      # natural | vivid | cinema | sports | noisy | custom
+        "brightness": 0, "contrast": 0, "saturation": 0, "gamma": 0, "hue": 0,   # -100..100 (mpv)
+        "denoise": "auto",        # off | auto | light | medium | strong — karıncalanma (hqdn3d, gecikmesiz)
+        "deband": 1,              # 0..3 renk bandı yumuşatma gücü
     },
     "latency": {
         "mode": "low",            # ultra | low | balanced | stable
@@ -40,7 +49,11 @@ DEFAULTS: dict[str, Any] = {
     },
     "subtitles": {
         "prefer": "tr",           # tr | off
-        "size": 44,
+        "size": 46,
+        "style": "outline",       # outline (kalın kenar) | box (yarı saydam kutu)
+        "color": "white",         # white | yellow
+        "ai_model": "small",      # yapay zekâ altyazı (faster-whisper): base | small | medium | large-v3-turbo
+        "opensubtitles_key": "",  # opensubtitles.com ücretsiz API anahtarı (internetten altyazı)
     },
     "network": {
         "user_agent": "VLC/3.0.21 LibVLC/3.0.21",
@@ -63,6 +76,12 @@ DEFAULTS: dict[str, Any] = {
 CHOICES: dict[tuple[str, str], tuple] = {
     ("video", "vsr_target"): ("2160", "1440", "screen"),
     ("video", "deinterlace"): ("auto", "yes", "no"),
+    ("picture", "preset"): ("natural", "vivid", "cinema", "sports", "noisy", "custom"),
+    ("picture", "denoise"): ("off", "auto", "light", "medium", "strong"),
+    ("video", "sharpen"): ("off", "light", "medium", "strong"),
+    ("subtitles", "style"): ("outline", "box"),
+    ("subtitles", "color"): ("white", "yellow"),
+    ("subtitles", "ai_model"): ("base", "small", "medium", "large-v3-turbo"),
     ("video", "ai_upscaler"): ("fsrcnnx", "artcnn", "off"),
     ("export", "target"): ("2160", "1440"),
     ("export", "model"): ("fsrcnnx", "artcnn", "off"),
@@ -76,6 +95,9 @@ CHOICES: dict[tuple[str, str], tuple] = {
 
 RANGES: dict[tuple[str, str], tuple[float, float]] = {
     ("audio", "volume"): (0, 150),
+    ("picture", "brightness"): (-100, 100), ("picture", "contrast"): (-100, 100),
+    ("picture", "saturation"): (-100, 100), ("picture", "gamma"): (-100, 100), ("picture", "hue"): (-100, 100),
+    ("picture", "deband"): (0, 3),
     ("subtitles", "size"): (20, 90),
     ("network", "timeout"): (3, 120),
     ("ui", "epg_shift_hours"): (-14, 14),

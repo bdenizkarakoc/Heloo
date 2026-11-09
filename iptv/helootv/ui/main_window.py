@@ -62,6 +62,8 @@ class MainWindow(QMainWindow):
         self._gpu_assess: dict = {}
         self._file_queue: list[str] = []
         self._file_index = 0
+        self._ai_task: dict | None = None
+        self._picture_dlg = None
         self._build_ui()
         self._wire()
         self.setAcceptDrops(True)
@@ -183,6 +185,7 @@ class MainWindow(QMainWindow):
         st.fetch_mpv_requested.connect(self.fetch_mpv)
         st.vsr_test_requested.connect(self.test_vsr)
         st.clear_history_requested.connect(self._clear_history)
+        st.picture_requested.connect(self.picture_dialog)
         pl = self.player
         pl.pause_clicked.connect(lambda: self.engine and self.engine.toggle_pause())
         pl.stop_clicked.connect(self.stop)
@@ -193,6 +196,11 @@ class MainWindow(QMainWindow):
         pl.volume_changed.connect(self._on_volume)
         pl.prev_clicked.connect(lambda: self._on_key("prev", []))
         pl.next_clicked.connect(lambda: self._on_key("next", []))
+        pl.seek_to.connect(lambda sec: self.engine and self.engine.seek_abs(sec))
+        pl.seek_by.connect(lambda d: self.engine and self.engine.seek(d))
+        pl.menus["audio"].aboutToShow.connect(self._fill_audio_menu)
+        pl.menus["sub"].aboutToShow.connect(self._fill_sub_menu)
+        pl.menus["picture"].aboutToShow.connect(self._fill_picture_menu)
         shortcuts = [
             ("F11", lambda: self._set_fullscreen(not self._fs)),
             ("Esc", lambda: self._on_key("esc", [])),
@@ -205,6 +213,7 @@ class MainWindow(QMainWindow):
             ("Ctrl+I", self._show_info),
             ("Ctrl+T", lambda: self._set_theater(not self._theater)),
             ("Ctrl+D", lambda: self.current_item and self.toggle_favorite(self.current_item)),
+            ("Ctrl+P", self.picture_dialog),
         ]
         shortcuts += [("Ctrl+O", self.open_file_dialog), ("Ctrl+U", self.open_url_dialog),
                       ("Ctrl+E", lambda: self.export_dialog())]
@@ -281,6 +290,8 @@ class MainWindow(QMainWindow):
             self.player.set_idle()
         elif name == "dropped":
             self.open_paths(data.get("files") or [])
+        elif name == "ai_sub":
+            self._on_ai_sub(data)
         elif name == "key":
             self._on_key(data.get("action", ""), data.get("args", []))
         elif name == "fullscreen":
@@ -1110,6 +1121,246 @@ class MainWindow(QMainWindow):
             self.engine._set("volume", str(value))
         self.settings["audio"]["volume"] = int(value)
         self._save_timer.start()
+
+    # ================================================================== ses izi / altyazı / görüntü menüleri
+    @staticmethod
+    def _track_label(t: dict) -> str:
+        lang = (t.get("lang") or "").lower()
+        names = {"tr": "Türkçe", "tur": "Türkçe", "en": "İngilizce", "eng": "İngilizce", "de": "Almanca",
+                 "ger": "Almanca", "deu": "Almanca", "ar": "Arapça", "ara": "Arapça", "fr": "Fransızca",
+                 "fre": "Fransızca", "fra": "Fransızca", "ru": "Rusça", "rus": "Rusça", "es": "İspanyolca",
+                 "spa": "İspanyolca"}
+        parts = [names.get(lang, lang.upper())] if lang else []
+        if t.get("title"):
+            parts.append(t["title"])
+        if t.get("codec"):
+            parts.append(t["codec"])
+        if t.get("type") == "audio" and t.get("channels"):
+            parts.append(f"{t['channels']} kanal")
+        if t.get("external"):
+            parts.append("dış dosya")
+        return f"{t['id']}. " + (" · ".join(parts) or "İz")
+
+    def _menu_action(self, menu: QMenu, text: str, fn, checked: bool | None = None, enabled: bool = True):
+        a = menu.addAction(text)
+        if checked is not None:
+            a.setCheckable(True)
+            a.setChecked(checked)
+        a.setEnabled(enabled)
+        a.triggered.connect(lambda _c=False: fn())
+        return a
+
+    def _fill_audio_menu(self) -> None:
+        m = self.player.menus["audio"]
+        m.clear()
+        tracks = [t for t in (self.engine.tracks() if self.engine and self.current_req else []) if t["type"] == "audio"]
+        if not tracks:
+            m.addAction("Ses izi yok").setEnabled(False)
+        for t in tracks:
+            self._menu_action(m, self._track_label(t), lambda t=t: self.engine.set_track("audio", t["id"]),
+                              t["selected"])
+        m.addSeparator()
+        sub = m.addMenu("Ses gecikmesi")
+        for d, txt in ((-0.1, "−100 ms"), (0.1, "+100 ms")):
+            self._menu_action(sub, txt, lambda d=d: self._nudge("audio-delay", d, "Ses gecikmesi"))
+        self._menu_action(sub, "Sıfırla", lambda: self._reset_prop("audio-delay", "Ses gecikmesi"))
+
+    def _fill_sub_menu(self) -> None:
+        m = self.player.menus["sub"]
+        m.clear()
+        playing = bool(self.engine and self.current_req)
+        tracks = [t for t in (self.engine.tracks() if playing else []) if t["type"] == "sub"]
+        any_sel = any(t["selected"] for t in tracks)
+        self._menu_action(m, "Kapalı", lambda: self.engine.set_track("sub", None), not any_sel, playing)
+        for t in tracks:
+            self._menu_action(m, self._track_label(t), lambda t=t: self.engine.set_track("sub", t["id"]), t["selected"])
+        m.addSeparator()
+        vod = playing and self.current_req.kind not in ("live", "image")
+        self._menu_action(m, "📄 Dosyadan altyazı ekle…", self.add_sub_file, enabled=playing)
+        self._menu_action(m, "🌐 İnternetten altyazı bul (OpenSubtitles)…", self.online_subs, enabled=vod)
+        running = self._ai_task is not None
+        self._menu_action(m, "🤖 Yapay zekâ ile altyazı (konuşmadan)…" + (" — çalışıyor" if running else ""),
+                          self.ai_subs_dialog, enabled=vod or running)
+        if running:
+            self._menu_action(m, "■ Yapay zekâ altyazıyı durdur", self._stop_ai_subs)
+        m.addSeparator()
+        timing = m.addMenu("Zamanlama (senkron)")
+        for d, txt in ((-0.5, "0,5 sn erken göster"), (0.5, "0,5 sn geç göster"), (-0.1, "0,1 sn erken"),
+                       (0.1, "0,1 sn geç")):
+            self._menu_action(timing, txt, lambda d=d: self._nudge("sub-delay", d, "Altyazı gecikmesi"), enabled=playing)
+        self._menu_action(timing, "Sıfırla", lambda: self._reset_prop("sub-delay", "Altyazı gecikmesi"), enabled=playing)
+        look = m.addMenu("Görünüm")
+        st = self.settings["subtitles"]
+        self._menu_action(look, "Büyüt  (A+)", lambda: self._sub_style("size", min(90, st["size"] + 4)))
+        self._menu_action(look, "Küçült (A−)", lambda: self._sub_style("size", max(20, st["size"] - 4)))
+        look.addSeparator()
+        self._menu_action(look, "Kalın kenarlı yazı", lambda: self._sub_style("style", "outline"), st["style"] == "outline")
+        self._menu_action(look, "Yarı saydam kutu içinde", lambda: self._sub_style("style", "box"), st["style"] == "box")
+        look.addSeparator()
+        self._menu_action(look, "Beyaz", lambda: self._sub_style("color", "white"), st["color"] == "white")
+        self._menu_action(look, "Sarı", lambda: self._sub_style("color", "yellow"), st["color"] == "yellow")
+        look.addSeparator()
+        self._menu_action(look, "Yukarı taşı", lambda: self._nudge("sub-pos", -3, "Altyazı konumu"), enabled=playing)
+        self._menu_action(look, "Aşağı taşı", lambda: self._nudge("sub-pos", 3, "Altyazı konumu"), enabled=playing)
+
+    def _fill_picture_menu(self) -> None:
+        m = self.player.menus["picture"]
+        m.clear()
+        self._menu_action(m, "🎨 Görüntü ayarları…  (Ctrl+P)", self.picture_dialog)
+        m.addSeparator()
+        cur = self.settings["picture"].get("preset", "natural")
+        for key in ("natural", "vivid", "cinema", "sports", "noisy"):
+            self._menu_action(m, opt.PRESET_LABELS[key], lambda k=key: self._apply_preset(k), cur == key)
+        if cur == "custom":
+            self._menu_action(m, opt.PRESET_LABELS["custom"], lambda: None, True)
+        m.addSeparator()
+        dn = m.addMenu("Karıncalanma azaltma")
+        for val, txt in (("off", "Kapalı"), ("auto", "Otomatik"), ("light", "Hafif"), ("medium", "Orta"),
+                         ("strong", "Güçlü")):
+            self._menu_action(dn, txt, lambda v=val: self._set_picture("picture", "denoise", v),
+                              self.settings["picture"]["denoise"] == val)
+        sh = m.addMenu("Keskinlik")
+        for val, txt in (("off", "Kapalı"), ("light", "Hafif"), ("medium", "Orta"), ("strong", "Güçlü")):
+            self._menu_action(sh, txt, lambda v=val: self._set_picture("video", "sharpen", v),
+                              self.settings["video"]["sharpen"] == val)
+
+    def _nudge(self, prop: str, delta: float, label: str) -> None:
+        if not self.engine:
+            return
+        self.engine.add_prop(prop, delta)
+        val = self.engine._get(prop)
+        if isinstance(val, (int, float)):
+            unit = "" if prop == "sub-pos" else " sn"
+            self.engine.show_text(f"{label}: {val:+.1f}{unit}" if unit else f"{label}: {val:.0f}", 1500)
+
+    def _reset_prop(self, prop: str, label: str) -> None:
+        if self.engine:
+            self.engine._set(prop, "0")
+            self.engine.show_text(f"{label}: 0", 1200)
+
+    def _sub_style(self, key: str, value) -> None:
+        self.settings["subtitles"][key] = value
+        self.settings_page.load()
+        self._on_settings_changed()
+        if self.engine:
+            self.engine.show_text(f"Altyazı boyutu: {value}" if key == "size" else "Altyazı görünümü güncellendi", 1200)
+
+    def _set_picture(self, section: str, key: str, value) -> None:
+        self.settings[section][key] = value
+        self.settings["picture"]["preset"] = "custom"
+        self._picture_changed()
+
+    def _apply_preset(self, name: str) -> None:
+        opt.apply_preset(self.settings, name)
+        self._picture_changed()
+        if self.engine:
+            self.engine.show_text(f"Görüntü: {opt.PRESET_LABELS[name]}", 1500)
+
+    def _picture_changed(self) -> None:
+        self.settings_page.load()
+        if self.engine:
+            self.engine.apply_picture(self.settings)
+        if self._picture_dlg is not None and self._picture_dlg.isVisible():
+            self._picture_dlg.load()
+        self._save_timer.start()
+
+    def picture_dialog(self) -> None:
+        from .picture_dialog import PictureDialog
+        if self._picture_dlg is None:
+            self._picture_dlg = PictureDialog(self.settings, self)
+            self._picture_dlg.changed.connect(self._picture_changed)
+        self._picture_dlg.load()
+        self._picture_dlg.show()
+        self._picture_dlg.raise_()
+
+    # ------------------------------------------------------------------ altyazı kaynakları
+    def add_sub_file(self) -> None:
+        start = os.path.dirname(self.current_req.url) if self.current_req and os.path.exists(self.current_req.url) else ""
+        path, _ = QFileDialog.getOpenFileName(self, "Altyazı dosyası seç", start,
+                                              "Altyazılar (*.srt *.ass *.ssa *.vtt *.sub *.sup *.idx);;Tüm dosyalar (*)")
+        if path and self.engine:
+            self.engine.sub_add(path)
+            self.engine.show_text(f"Altyazı eklendi: {os.path.basename(path)}", 2000)
+
+    def online_subs(self) -> None:
+        if not self.current_req:
+            return
+        from .subs_dialogs import OnlineSubsDialog
+        title = self.current_req.title
+        if self.current_req.subtitle and self.current_req.kind == "episode":
+            title = f"{title} {self.current_req.subtitle}"
+        dlg = OnlineSubsDialog(self.settings, title, self)
+        dlg.key_changed.connect(self._save_timer.start)
+        dlg.chosen.connect(lambda path, t, lang: self.engine and self.engine.sub_add(path, t, lang))
+        dlg.exec()
+
+    def ai_subs_dialog(self) -> None:
+        from .subs_dialogs import AiSubsDialog
+        dlg = AiSubsDialog(self.settings, running=self._ai_task is not None, parent=self)
+        dlg.install.connect(self._install_ai_subs)
+        dlg.start.connect(self._start_ai_subs)
+        dlg.exec()
+
+    def _install_ai_subs(self) -> None:
+        from .. import ai_subs
+
+        def done(_r):
+            self._status("Yapay zekâ altyazı kuruldu. Altyazı menüsünden başlatabilirsiniz.")
+            QMessageBox.information(self, APP_NAME, "Yapay zekâ altyazı bileşeni kuruldu.\n"
+                                    "Altyazı → Yapay zekâ ile altyazı → Başlat.")
+
+        run_task(ai_subs.install, on_done=done, on_progress=self._status,
+                 on_error=lambda e: self._status(f"⚠ {e}"))
+
+    def _stop_ai_subs(self) -> None:
+        if self._ai_task:
+            self._ai_task["stop"] = True
+            self._ai_task = None
+            self._status("Yapay zekâ altyazı durduruldu.")
+
+    def _start_ai_subs(self, model: str, language: str, translate: bool) -> None:
+        from .. import ai_subs
+        req, eng = self.current_req, self.engine
+        if not req or not eng:
+            return
+        self._stop_ai_subs()
+        st = eng.status()
+        out = ai_subs.output_for(f"{req.url}|{model}|{language}|{translate}|{int(st.get('pos') or 0)}")
+        job = {"stop": False, "added": False, "req": req}
+        self._ai_task = job
+
+        def update(path, count):
+            # arka plan iş parçacığından: ana iş parçacığına aktar
+            self.bridge.event.emit("ai_sub", {"path": path, "count": count, "job": id(job)})
+
+        def cancelled():
+            return job["stop"] or self.current_req is not job["req"]
+
+        def finished(_r):
+            if self._ai_task is job:
+                self._ai_task = None
+
+        def failed(err):
+            if self._ai_task is job:
+                self._ai_task = None
+            self._status(f"⚠ Yapay zekâ altyazı: {err}")
+
+        self._ai_job = job
+        eng.show_text("Yapay zekâ altyazı başlıyor… ilk satırlar birkaç saniyede gelir", 3000)
+        run_task(ai_subs.transcribe, req.url, out, model=model, language=language or None, translate=translate,
+                 start=float(st.get("pos") or 0), duration=float(st.get("duration") or 0) or None,
+                 headers=req.headers, on_update=update, cancelled=cancelled,
+                 on_done=finished, on_error=failed, on_progress=self._status)
+
+    def _on_ai_sub(self, data: dict) -> None:
+        job = getattr(self, "_ai_job", None)
+        if not job or data.get("job") != id(job) or job["stop"] or not self.engine or self.current_req is not job["req"]:
+            return
+        if not job["added"]:
+            job["added"] = True
+            self.engine.sub_add(data["path"], "Yapay zekâ altyazı", "")
+        else:
+            self.engine.sub_reload()
 
     def _add_source(self, kind: str) -> None:
         self.settings_page.add_source(kind)

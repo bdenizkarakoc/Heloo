@@ -17,6 +17,10 @@ SHADERS = {
 }
 
 
+CAS = Path(__file__).resolve().parent / "glsl" / "cas.glsl"   # kendi keskinleştirme shader'ımız (pakette)
+SHARPNESS = {"off": 0.0, "light": 0.3, "medium": 0.5, "strong": 0.75}
+
+
 def shader_dir() -> Path:
     return paths.bin_dir() / "shaders"
 

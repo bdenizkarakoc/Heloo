@@ -490,6 +490,13 @@ class MpvEngine:
         self._plan = plan
         if self.mpv is None:
             return
+        # kaynağa göre değişen görüntü ayarları (düşük kalitede güçlü deband/keskinlik)
+        tuned = opt.picture_options(self.settings, self._vp)
+        key = tuple(sorted(tuned.items()))
+        if key != getattr(self, "_tuned_key", None):
+            self._tuned_key = key
+            for k, v in tuned.items():
+                self._set(k, v)
         if force or plan["vf"] != self._current_vf:
             if self._vp is not None or force:
                 self._current_vf = plan["vf"]
@@ -535,6 +542,44 @@ class MpvEngine:
 
     def cycle(self, prop: str) -> None:
         self.command("cycle", prop)
+
+    # ------------------------------------------------------------------ izler, sarma, altyazı, görüntü
+    def tracks(self) -> list[dict]:
+        out = []
+        for t in self._get("track-list") or []:
+            if t.get("type") in ("audio", "sub", "video"):
+                out.append({"id": t.get("id"), "type": t.get("type"), "title": t.get("title") or "",
+                            "lang": t.get("lang") or "", "codec": t.get("codec") or "",
+                            "selected": bool(t.get("selected")), "external": bool(t.get("external")),
+                            "channels": t.get("demux-channel-count") or t.get("audio-channels")})
+        return out
+
+    def set_track(self, kind: str, track_id) -> None:
+        self._set({"audio": "aid", "sub": "sid", "video": "vid"}[kind], "no" if track_id is None else str(track_id))
+
+    def seek_abs(self, seconds: float) -> None:
+        self.command("seek", f"{max(0.0, seconds):.2f}", "absolute+keyframes")
+
+    def sub_add(self, path: str, title: str = "", lang: str = "") -> None:
+        args = ["sub-add", path, "select"]
+        if title or lang:
+            args += [title or os.path.basename(path), lang]
+        self.command(*args)
+
+    def sub_reload(self) -> None:
+        self.command("sub-reload")
+
+    def add_prop(self, name: str, delta: float) -> None:
+        self.command("add", name, str(delta))
+
+    def apply_picture(self, settings: dict) -> None:
+        """Görüntü ayarları penceresinden anında: parlaklık … keskinlik ve gürültü azaltma (filtre yeniden kurulur)."""
+        self.settings = settings
+        self._tuned_key = None
+        for k, v in opt.quality_options(settings, self.platform).items():
+            if k in ("glsl-shaders", "glsl-shader-opts", "hwdec"):
+                self._set(k, v)
+        self._update_vf(force=True)
 
     def screenshot(self) -> None:
         self.command("screenshot")

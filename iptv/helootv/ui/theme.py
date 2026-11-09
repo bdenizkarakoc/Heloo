@@ -10,7 +10,7 @@ PANEL = "#141924"
 PANEL_2 = "#1b2130"
 LINE = "#252d3f"
 TEXT = "#e8ecf4"
-MUTED = "#8f9ab0"
+MUTED = "#a3adc2"  # gri metin: koyu zeminde okunaklı (WCAG AA üstü)
 ACCENT = "#7c5cff"
 ACCENT_2 = "#38bdf8"
 NVIDIA = "#76b900"
@@ -19,7 +19,7 @@ WARN = "#f5b041"
 
 QSS = f"""
 * {{ outline: 0; }}
-QWidget {{ background: {BG}; color: {TEXT}; font-size: 10.5pt; }}
+QWidget {{ background: {BG}; color: {TEXT}; font-size: 11pt; }}
 QToolTip {{ background: {PANEL_2}; color: {TEXT}; border: 1px solid {LINE}; padding: 6px; }}
 QFrame#TopBar {{ background: {PANEL}; border-bottom: 1px solid {LINE}; }}
 QLabel#Brand {{ font-size: 15pt; font-weight: 700; color: {TEXT}; background: transparent; padding-right: 14px; }}
@@ -126,8 +126,11 @@ def apply_theme(app: QApplication) -> None:
                         (QPalette.ToolTipBase, PANEL_2), (QPalette.ToolTipText, TEXT), (QPalette.PlaceholderText, MUTED)):
         pal.setColor(role, QColor(color))
     app.setPalette(pal)
+    # Okunaklı yazı: Windows'ta Segoe UI (ClearType ile tam ipucu), 11 pt; yumuşatma her zaman açık
     font = QFont("Segoe UI" if app.platformName() == "windows" else app.font().family())
-    font.setPointSizeF(10.5)
+    font.setPointSizeF(11)
+    font.setHintingPreference(QFont.PreferFullHinting if app.platformName() == "windows" else QFont.PreferDefaultHinting)
+    font.setStyleStrategy(QFont.StyleStrategy(QFont.PreferAntialias | QFont.PreferQuality))
     app.setFont(font)
     app.setStyleSheet(QSS.replace("@CHECK@", _check_png()))
 

@@ -33,7 +33,9 @@ def test_vsr_plan_4k(w, h, scale, out):
     dw = 1024 if (w, h) == (720, 576) else w
     plan = opt.vsr_plan(S(), {"w": w, "h": h, "dw": dw, "dh": h}, (2560, 1440), platform="win32")
     assert plan["scale"] == scale and plan["out"] == out
-    assert plan["vf"].startswith("@helootv:d3d11vpp=") and "scaling-mode=nvidia" in plan["vf"]
+    assert "@helootv:d3d11vpp=" in plan["vf"] and "scaling-mode=nvidia" in plan["vf"]
+    # karıncalanma: gürültü azaltma VSR'den önce (otomatik: ≤576p orta, ≤1080p hafif)
+    assert plan["vf"].startswith("@helootv-dn:lavfi=[hqdn3d=") and plan["denoise"]
     assert "deint=yes" in plan["vf"] and "interlaced-only=yes" in plan["vf"]
     assert "nvidia-true-hdr" not in plan["vf"]
 
@@ -55,10 +57,27 @@ def test_vsr_plan_variants():
     hdr_src = opt.vsr_plan(S(video__rtx_hdr=True), dict(vp, gamma="pq"), None, "win32")
     assert "nvidia-true-hdr" not in hdr_src["vf"]
     # kapalı + deinterlace yok → filtre yok
-    off = opt.vsr_plan(S(video__rtx_vsr=False, video__deinterlace="no"), vp, None, "win32")
+    off = opt.vsr_plan(S(video__rtx_vsr=False, video__deinterlace="no", picture__denoise="off"), vp, None, "win32")
     assert off["vf"] == ""
-    # Windows dışı: filtre yok
-    assert opt.vsr_plan(S(), vp, None, "linux")["vf"] == ""
+    # Windows dışı: VSR yok, yalnız gürültü azaltma
+    assert opt.vsr_plan(S(picture__denoise="off"), vp, None, "linux")["vf"] == ""
+    assert opt.vsr_plan(S(picture__denoise="strong"), vp, None, "linux")["vf"] == "@helootv-dn:lavfi=[hqdn3d=4:3:9:7]"
+    # 4K kaynakta otomatik gürültü azaltma kapalı; fotoğrafta hiç yok
+    assert opt.vsr_plan(S(), {"w": 3840, "h": 2160}, None, "win32")["denoise"] is None
+    assert opt.vsr_plan(S(), vp, None, "win32", kind="image")["denoise"] is None
+
+
+def test_picture_presets_and_options():
+    s = S()
+    opt.apply_preset(s, "noisy")
+    assert s["picture"]["denoise"] == "strong" and s["picture"]["preset"] == "noisy"
+    po = opt.picture_options(s, {"w": 720, "h": 576})
+    assert po["deband"] == "yes" and po["deband-iterations"] == "4" and po["contrast"] == "3"
+    assert float(po["glsl-shader-opts"].split("=")[1]) > 0.5     # düşük kalite: keskinlik artar
+    s["picture"]["deband"] = 0
+    assert opt.picture_options(s, {"w": 1920, "h": 1080})["deband"] == "no"
+    assert opt.resolve_hwdec(S(), "win32").startswith("d3d11va-copy")   # gürültü azaltma CPU karesi ister
+    assert opt.resolve_hwdec(S(picture__denoise="off"), "win32") == "d3d11va"
 
 
 def test_latency_and_vod_options():
@@ -78,7 +97,7 @@ def test_latency_and_vod_options():
     q = opt.quality_options(S(), "win32")
     assert q["hwdec-codecs"] == "all" and q["deinterlace"] == "no" and q["alang"].startswith("tur")
     assert opt.create_options(S(), wid=123, platform="win32")["gpu-api"] == "d3d11"
-    assert opt.create_options(S(), platform="win32")["hwdec"] == "d3d11va"
+    assert opt.create_options(S(picture__denoise="off"), platform="win32")["hwdec"] == "d3d11va"
     args = opt.cli_args({"vf": "@x:d3d11vpp=scale=2", "http-header-fields": ["A: 1"], "referrer": ""})
     assert args == ["--vf=@x:d3d11vpp=scale=2", "--http-header-fields-append=A: 1", "--referrer="]
 
@@ -87,7 +106,7 @@ def test_external_profiles_and_input_conf(tmp_path):
     from helootv.player import engine
     text = engine.external_profiles(S(), "win32")
     assert "profile-cond=height and height > 620 and height <= 800" in text
-    assert "vf=@helootv:d3d11vpp=scale=3:scaling-mode=nvidia" in text
+    assert "@helootv:d3d11vpp=scale=3:scaling-mode=nvidia" in text and "hqdn3d" in text
     conf = engine.write_input_conf(tmp_path)
     content = conf.read_text(encoding="utf-8")
     assert "UP            script-message helootv up" in content and "KP5  script-message helootv digit 5" in content
