@@ -80,6 +80,7 @@ DEFAULTS: dict[str, Any] = {
         "resume_last_channel": True,
         "auto_next_episode": True,
         "hide_adult": True,
+        "pin_hash": "",           # ebeveyn kilidi (PBKDF2 özeti; boş: kilit yok)
         "translate_groups": True,
         "epg_shift_hours": 0.0,
         "auto_refresh_hours": 12,

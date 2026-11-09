@@ -48,6 +48,8 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.store = store
         self.settings = settings
+        if settings["ui"].get("pin_hash"):
+            settings["ui"]["hide_adult"] = True        # ebeveyn kilidi: her açılışta yeniden kilitlenir
         self.debug = debug
         self.headless = headless
         self.images = ImageLoader(self)

@@ -535,6 +535,9 @@ class SettingsPage(QScrollArea):
         self.resume_last = QCheckBox("Açılışta son kanalı oynat")
         self.auto_next = QCheckBox("Dizide sonraki bölüme otomatik geç")
         self.hide_adult = QCheckBox("Yetişkin içerikli kategorileri gizle")
+        self.pin_btn = QPushButton("🔒 Ebeveyn kilidi (PIN)…")
+        self.pin_btn.setToolTip("PIN belirlenirse yetişkin içerik yalnız PIN ile görünür; her açılışta yeniden kilitlenir")
+        self.pin_btn.clicked.connect(self._pin_dialog)
         self.translate = QCheckBox("İngilizce grup adlarını Türkçeye çevir (News → Haber)")
         self.epg_shift = QDoubleSpinBox()
         self.epg_shift.setRange(-14, 14)
@@ -550,6 +553,7 @@ class SettingsPage(QScrollArea):
             lay.addWidget(w, r, 0, 1, 2)
             r += 1
             w.toggled.connect(self._changed)
+        lay.addWidget(self.pin_btn, r, 0, 1, 2); r += 1
         lay.addWidget(QLabel("EPG saat kaydırma"), r, 0); lay.addWidget(self.epg_shift, r, 1); r += 1
         lay.addWidget(QLabel("Listeleri yenile"), r, 0); lay.addWidget(self.auto_refresh, r, 1); r += 1
         lay.setColumnStretch(1, 1)
@@ -637,6 +641,7 @@ class SettingsPage(QScrollArea):
         self.resume_last.setChecked(ui["resume_last_channel"])
         self.auto_next.setChecked(ui["auto_next_episode"])
         self.hide_adult.setChecked(ui["hide_adult"])
+        self._update_pin_btn()
         self.translate.setChecked(ui["translate_groups"])
         self.epg_shift.setValue(float(ui["epg_shift_hours"]))
         self.auto_refresh.setValue(int(ui["auto_refresh_hours"]))
@@ -695,18 +700,68 @@ class SettingsPage(QScrollArea):
         n["tls_verify"] = self.tls.isChecked()
         ui["resume_last_channel"] = self.resume_last.isChecked()
         ui["auto_next_episode"] = self.auto_next.isChecked()
+        if not self.hide_adult.isChecked() and ui["hide_adult"] and ui.get("pin_hash"):
+            # ebeveyn kilidi: yetişkin içeriği göstermek PIN ister
+            from .. import parental
+            pin = self.ask_pin("Ebeveyn kilidi", "Yetişkin içeriği göstermek için PIN:")
+            if pin is None or not parental.verify_pin(pin, ui["pin_hash"]):
+                self.hide_adult.blockSignals(True)
+                self.hide_adult.setChecked(True)
+                self.hide_adult.blockSignals(False)
+                if pin is not None:
+                    QMessageBox.warning(self, "Ebeveyn kilidi", "PIN yanlış.")
         ui["hide_adult"] = self.hide_adult.isChecked()
         ui["translate_groups"] = self.translate.isChecked()
         ui["epg_shift_hours"] = self.epg_shift.value()
         ui["auto_refresh_hours"] = self.auto_refresh.value()
         self.settings_changed.emit()
 
+    def ask_pin(self, title: str, label: str) -> str | None:
+        from PySide6.QtWidgets import QInputDialog
+        pin, ok = QInputDialog.getText(self, title, label, QLineEdit.Password)
+        return pin.strip() if ok else None
+
+    def _pin_dialog(self) -> None:
+        from .. import parental
+        ui = self.ctx.settings["ui"]
+        if ui.get("pin_hash"):
+            old = self.ask_pin("Ebeveyn kilidi", "Şu anki PIN (kaldırmak ya da değiştirmek için):")
+            if old is None:
+                return
+            if not parental.verify_pin(old, ui["pin_hash"]):
+                QMessageBox.warning(self, "Ebeveyn kilidi", "PIN yanlış.")
+                return
+        new = self.ask_pin("Ebeveyn kilidi", "Yeni PIN (4–8 rakam; boş bırakırsanız kilit kaldırılır):")
+        if new is None:
+            return
+        if not new:
+            ui["pin_hash"] = ""
+            QMessageBox.information(self, "Ebeveyn kilidi", "Ebeveyn kilidi kaldırıldı.")
+        elif not parental.valid_pin(new):
+            QMessageBox.warning(self, "Ebeveyn kilidi", "PIN 4–8 rakamdan oluşmalı.")
+            return
+        else:
+            again = self.ask_pin("Ebeveyn kilidi", "Yeni PIN'i tekrar yazın:")
+            if again != new:
+                QMessageBox.warning(self, "Ebeveyn kilidi", "PIN'ler aynı değil.")
+                return
+            ui["pin_hash"] = parental.hash_pin(new)
+            ui["hide_adult"] = True
+            self.hide_adult.setChecked(True)
+            QMessageBox.information(self, "Ebeveyn kilidi", "PIN belirlendi: yetişkin içerik gizlendi.")
+        self._update_pin_btn()
+        self.settings_changed.emit()
+
+    def _update_pin_btn(self) -> None:
+        on = bool(self.ctx.settings["ui"].get("pin_hash"))
+        self.pin_btn.setText("🔒 Ebeveyn kilidi: açık (PIN değiştir / kaldır)…" if on else "🔓 Ebeveyn kilidi (PIN belirle)…")
+
     def _reset(self) -> None:
         from ..settings import merged_defaults
         if QMessageBox.question(self, "Varsayılanlar", "Tüm ayarlar en iyi varsayılanlara dönsün mü? "
                                 "(Kaynaklar ve favoriler korunur.)") != QMessageBox.Yes:
             return
-        keep_ui = {k: self.ctx.settings["ui"].get(k) for k in ("last_channel", "last_tab", "geometry")}
+        keep_ui = {k: self.ctx.settings["ui"].get(k) for k in ("last_channel", "last_tab", "geometry", "pin_hash")}
         fresh = merged_defaults()
         self.ctx.settings.clear()
         self.ctx.settings.update(copy.deepcopy(fresh))

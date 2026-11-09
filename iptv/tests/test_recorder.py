@@ -213,3 +213,44 @@ def test_tv_guide_grid(tmp_path, monkeypatch):
     assert win.scheduler.find("remind", item.key, fut["start"]) and c.marks(item, fut) == "🔔 "
     g.close()
     win.close()
+
+
+def test_parental_pin(tmp_path, monkeypatch):
+    from helootv import parental
+    h = parental.hash_pin("1234")
+    assert parental.verify_pin("1234", h) and not parental.verify_pin("4321", h)
+    assert "1234" not in h and parental.hash_pin("1234") != h          # tuzlu
+    assert not parental.verify_pin("1234", "bozuk")
+    assert parental.valid_pin("0042") and not parental.valid_pin("12") and not parental.valid_pin("12ab")
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("HELOOTV_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QMessageBox
+
+    from helootv import settings as settings_mod
+    from helootv.store import Store
+    from helootv.ui.context import AppContext
+    from helootv.ui.images import ImageLoader
+    from helootv.ui.settings_page import SettingsPage
+    QApplication.instance() or QApplication([])
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: None)
+    monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: None)
+    s = settings_mod.merged_defaults()
+    page = SettingsPage(AppContext(Store(tmp_path / "s.db"), s, ImageLoader()))
+    answers = []
+    page.ask_pin = lambda *a: answers.pop(0)
+    answers[:] = ["2468", "2468"]                  # PIN belirle
+    page._pin_dialog()
+    assert parental.verify_pin("2468", s["ui"]["pin_hash"]) and s["ui"]["hide_adult"] is True
+    answers[:] = ["0000"]                          # yanlış PIN: yetişkin içerik açılmaz
+    page.hide_adult.setChecked(False)
+    assert s["ui"]["hide_adult"] is True and page.hide_adult.isChecked()
+    answers[:] = ["2468"]                          # doğru PIN
+    page.hide_adult.setChecked(False)
+    assert s["ui"]["hide_adult"] is False
+    answers[:] = ["9999"]                          # kaldırmak için eski PIN yanlış → değişmez
+    page._pin_dialog()
+    assert s["ui"]["pin_hash"]
+    answers[:] = ["2468", ""]                      # doğru PIN + boş → kilit kalkar
+    page._pin_dialog()
+    assert s["ui"]["pin_hash"] == ""

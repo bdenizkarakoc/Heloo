@@ -53,6 +53,7 @@ python -m pytest tests -q              # testler (libmpv2/ffmpeg/7z varsa başs�
   15 sn'de bir). Mini oynatıcı `MainWindow._set_pip`: Windows'ta her zaman üstte `SetWindowPos` ile (pencere bayrağı
   değiştirmek pencereyi yeniden oluşturur, gömülü mpv bozulur).
 - TV rehberi `ui/guide.py` (kendi çizen `GuideCanvas`, `store.epg_grid` toplu sorgu, en çok 400 kanal).
+- Ebeveyn kilidi `parental.py` (`ui.pin_hash`, PBKDF2); açılışta `hide_adult` zorla açılır, sıfırlamada PIN korunur.
 - Veritabanı: `store.py` (iş parçacığı başına bağlantı, WAL). EPG ayrı dosyada (`*-epg.db`); uzun EPG içe aktarımı
   katalog/geçmiş yazmalarını bekletmez. Arayüzden uzun sorguları `ui/workers.run_task` ile arka planda çalıştır.
 - Kullanıcı metinleri Türkçe. `.ps1`/`.bat` dosyaları yalnız ASCII (Windows kod sayfası sorunları).

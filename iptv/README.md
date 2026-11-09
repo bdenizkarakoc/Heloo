@@ -126,6 +126,9 @@ TiviMate / IPTVnator / OTT Navigator'daki özelliklerin karşılıkları:
   geçmiş (⟲, arşivli kanal) → geri izle, gelecek → hatırlat. Sağ tık: kaydet / hatırlat / geri izle.
 - **⧉ Resim içinde resim (Ctrl+M)**: yalnız video, her zaman üstte, ekranın sağ altında küçük pencere; başka bir işle
   uğraşırken izlemek için. Esc ya da çift tık: geri döner.
+- **🔒 Ebeveyn kilidi**: Ayarlar → Ağ ve arayüz → "Ebeveyn kilidi (PIN)". PIN belirlenince yetişkin içerik yalnız PIN
+  ile görünür ve uygulama her açılışta yeniden kilitlenir; "Varsayılanlara dön" kilidi kaldırmaz. PIN'in kendisi
+  saklanmaz (tuzlu PBKDF2 özeti).
 - Oynatıcı çubuğu iki satıra bölündü (sarma düğmeleri ilerleme çubuğunun yanında; ses ve pencere düğmeleri başlık
   satırında): pencerenin en küçük genişliği 2157 → 1328 piksel (1366 px dizüstü ekrana sığar).
 
