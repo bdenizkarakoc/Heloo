@@ -148,38 +148,22 @@ def test_single_instance_forwarding(tmp_path, monkeypatch):
     qapp = QApplication.instance() or QApplication([])
     got = []
 
-    class FakeWin:
-        def isMinimized(self):
-            return False
-
-        def raise_(self):
-            pass
-
-        def activateWindow(self):
-            pass
-
-        def open_paths(self, items):
-            got.extend(items)
-
     from PySide6.QtCore import QObject
     holder = QObject()
-    fake = FakeWin()
     monkeypatch.setattr(appmod, "_server_name", lambda: f"HelooTV-test-{os.getpid()}")
-    from PySide6.QtNetwork import QLocalServer
-    server = QLocalServer(holder)
-    QLocalServer.removeServer(appmod._server_name())
-    assert server.listen(appmod._server_name())
-
-    def on_conn():
-        sock = server.nextPendingConnection()
-        sock.readyRead.connect(lambda: fake.open_paths(__import__("json").loads(bytes(sock.readAll()).decode())))
-
-    server.newConnection.connect(on_conn)
-    assert appmod.forward_to_running(["https://youtu.be/abc"])
-    end = time.time() + 3
-    while time.time() < end and not got:
+    server = appmod.start_server(on_items=got.extend, parent=holder)
+    assert server is not None
+    import threading
+    result = {}
+    # istemci ayrı iş parçacığında (gerçekte ayrı süreç); sunucu ana döngüde okuyup onaylar
+    t = threading.Thread(target=lambda: result.setdefault("ok", appmod.forward_to_running(["https://youtu.be/abc"])))
+    t.start()
+    end = time.time() + 5
+    while time.time() < end and (t.is_alive() or not got):
         qapp.processEvents()
         time.sleep(0.02)
+    t.join(1)
+    assert result.get("ok")
     server.close()
     assert got == ["https://youtu.be/abc"]
 

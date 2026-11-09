@@ -112,7 +112,8 @@ def _server_name() -> str:
 
 
 def forward_to_running(items: list[str]) -> bool:
-    """Açık bir Heloo TV varsa dosyaları ona iletir (Gönder/Birlikte aç ile ikinci pencere açılmaz)."""
+    """Açık bir Heloo TV varsa dosyaları ona iletir (Gönder/Birlikte aç ile ikinci pencere açılmaz).
+    Sunucu okuduğunu "ok" ile onaylar; Windows'ta erken kapatılan boruda veri kaybolmasın."""
     import json
     from PySide6.QtNetwork import QLocalSocket
     sock = QLocalSocket()
@@ -120,37 +121,55 @@ def forward_to_running(items: list[str]) -> bool:
     if not sock.waitForConnected(400):
         return False
     full = [str(os.path.abspath(p)) if os.path.exists(p) else p for p in items]
-    sock.write(json.dumps(full).encode("utf-8"))
+    sock.write(json.dumps(full).encode("utf-8") + b"\n")
+    sock.flush()
     sock.waitForBytesWritten(2000)
+    sock.waitForReadyRead(3000)  # onay
     sock.disconnectFromServer()
     return True
 
 
-def start_server(win):
+def start_server(win=None, on_items=None, parent=None):
+    """Tek örnek sunucusu. on_items verilmezse pencereyi öne getirip win.open_paths çağırır."""
     import json
     from PySide6.QtNetwork import QLocalServer
-    server = QLocalServer(win)
+
+    def default(items):
+        if win.isMinimized():
+            win.showNormal()
+        win.raise_()
+        win.activateWindow()
+        if items:
+            win.open_paths(items)
+
+    handler = on_items or default
+    server = QLocalServer(parent if parent is not None else win)
     QLocalServer.removeServer(_server_name())
     if not server.listen(_server_name()):
         return None
 
     def on_conn():
-        sock = server.nextPendingConnection()
+        while server.hasPendingConnections():
+            sock = server.nextPendingConnection()
+            buf = bytearray()
 
-        def read():
-            try:
-                items = json.loads(bytes(sock.readAll()).decode("utf-8") or "[]")
-            except ValueError:
-                items = []
-            if win.isMinimized():
-                win.showNormal()
-            win.raise_()
-            win.activateWindow()
-            if items:
-                win.open_paths(items)
+            def read(sock=sock, buf=buf):
+                buf.extend(bytes(sock.readAll()))
+                if not buf.endswith(b"\n"):
+                    return
+                try:
+                    items = json.loads(bytes(buf).decode("utf-8") or "[]")
+                except ValueError:
+                    items = []
+                buf.clear()
+                sock.write(b"ok")
+                sock.flush()
+                handler(items)
 
-        sock.readyRead.connect(read)
-        sock.disconnected.connect(sock.deleteLater)
+            sock.readyRead.connect(read)
+            sock.disconnected.connect(sock.deleteLater)
+            if sock.bytesAvailable():
+                read()
 
     server.newConnection.connect(on_conn)
     return server
