@@ -92,3 +92,18 @@ def test_custom_presets_save_load_delete():
     assert st["custom"] == [] and h.find(st, "masa")["settings"]["preset"] == "ozel"
     with pytest.raises(ValueError):
         h.update({"speaker": "masa", "custom": "yok"})
+
+
+def test_best_presets_and_recommendations():
+    best = [k for k, p in h.PRESETS.items() if p["grup"] == "en_iyi"]
+    assert best[0] == "z607" and {"referans", "kisik", "netlik"} <= set(best)
+    assert all(h.KINDS[k]["oneri"] in best for k in h.KINDS)
+    assert h.default_state()["speakers"][0]["settings"]["preset"] == "z607"       # Z607 en iyi ayarla başlar
+    st = h.default_state()
+    assert h.add_speaker(st, "Laptop", "laptop")["settings"]["preset"] == "netlik"
+    an = h.analyse(h.default_settings("z607"), "z607")
+    assert an["settings"]["sub"] == 1 and -3 < an["preamp"] < 0                  # dengeli: az kısar
+    # hazır seçince kendi subu gelir, yoksa kullanıcının subu korunur
+    h.update({"speaker": "z607", "settings": {"sub": 4}, "apply": False})
+    assert h.update({"speaker": "z607", "preset": "pop", "apply": False})["speaker"]["settings"]["sub"] == 4
+    assert h.update({"speaker": "z607", "preset": "derin", "apply": False})["speaker"]["settings"]["sub"] == 2

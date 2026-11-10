@@ -12,12 +12,21 @@ def test_bom_and_presets_match_python():
     raw = PS1.read_bytes()
     assert raw.startswith(b"\xef\xbb\xbf")
     text = raw.decode("utf-8-sig")
-    found = dict(re.findall(r"^\s+(\w+)\s+= @\{ ad = '[^']*';\s+b = @\(([-\d, ]+)\)", text, re.M))
-    assert set(found) == set(h.PRESETS)
-    for k, v in found.items():
-        assert [int(x) for x in v.split(",")] == h.PRESETS[k]["b"], k
+    block = text[text.index("$Presets = [ordered]@{"):]
+    block = block[:block.index("\n}\n")]
+    rows = re.findall(r"^\s+(\w+)\s+= @\{ ad = '((?:[^']|'')*)'; grup = '(\w+)'; b = @\(([-\d., ]+)\)(.*)\}$", block, re.M)
+    assert [r[0] for r in rows] == list(h.PRESETS)            # aynı sıra (en iyi ayarlar önce)
+    for k, ad, grup, b, rest in rows:
+        p = h.PRESETS[k]
+        assert ad.replace("&&", "&").replace("''", "'") == p["ad"] and grup == p["grup"], k
+        assert [float(x) for x in b.split(",")] == [float(x) for x in p["b"]], k
+        for extra in ("sub", "merkez"):
+            m = re.search(rf"{extra} = ([-\d.]+)", rest)
+            assert (float(m.group(1)) if m else None) == (float(p[extra]) if extra in p else None), (k, extra)
+        assert ("ipucu = " in rest) == bool(p.get("ipucu")), k
     for k, v in h.KINDS.items():
-        assert re.search(rf"{k}\s+= @\{{ ad = '[^']*';\s+hp = {v['hp']};\s+max = {v['max']};", text), k
+        assert re.search(rf"{k}\s+= @\{{ ad = '[^']*';\s+hp = {v['hp']};\s+max = {v['max']};\s+k51 = \$\w+; oneri = '{v['oneri']}' }}", text), k
+        assert v["oneri"] in h.PRESETS
 
 
 def test_installer_is_ascii_and_points_to_app():

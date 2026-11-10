@@ -18,6 +18,8 @@
   button.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); }
   .chip { background: #0e1424; color: var(--ink); border: 1px solid var(--line); border-radius: 999px; padding: 8px 14px; }
   .chip.on { background: var(--acc); color: #111; border-color: var(--acc); }
+  .chip.best { border-color: var(--acc); }
+  .chip .tag { font-size: 11px; font-weight: 700; margin-left: 6px; padding: 1px 6px; border-radius: 6px; background: var(--acc2); color: #111; }
   .mine { display: inline-flex; align-items: stretch; border: 1px solid var(--acc2); border-radius: 999px; overflow: hidden; }
   .mine button { border-radius: 0; background: #0e1424; color: var(--ink); padding: 8px 12px; }
   .mine button.x { padding: 8px 10px; color: var(--muted); border-left: 1px solid var(--line); font-weight: 400; }
@@ -82,7 +84,10 @@
   </div>
 
   <div class="card">
-    <h2>Müzik türü</h2>
+    <h2>⭐ En iyi ayarlar</h2>
+    <div class="row" id="best"></div>
+    <div class="muted" id="bestHint" style="margin-top:6px"></div>
+    <h2 style="margin-top:14px">Müzik türü</h2>
     <div class="row" id="presets"></div>
     <h2 style="margin-top:14px">Benim ayarlarım</h2>
     <div class="row" id="mine"></div>
@@ -179,11 +184,16 @@ function render() {
     return b;
   }));
   $("acik").checked = SP.settings.acik !== false;
-  $("presets").replaceChildren(...INFO.presets.map((p) => {
-    const b = el("button", { className: "chip" + (SP.settings.preset === p.id ? " on" : ""), textContent: p.ad });
+  const chip = (p) => {
+    const b = el("button", { className: "chip" + (p.grup === "en_iyi" ? " best" : "") + (SP.settings.preset === p.id ? " on" : ""), textContent: p.ad, title: p.ipucu || "" });
+    if (p.id === k.oneri) b.append(el("span", { className: "tag", textContent: "önerilen" }));
     b.onclick = () => send({ speaker: SP.id, preset: p.id }, true);
     return b;
-  }), el("button", { className: "chip" + (SP.settings.preset === "ozel" ? " on" : ""), textContent: "Özel", disabled: true }));
+  };
+  $("best").replaceChildren(...INFO.presets.filter((p) => p.grup === "en_iyi").map(chip));
+  const curP = INFO.presets.find((p) => p.id === SP.settings.preset);
+  $("bestHint").textContent = curP && curP.ipucu ? curP.ad + ": " + curP.ipucu : "Hoparlörüne en uygun olan 'önerilen' işaretli. Üzerine gelince ne yaptığı yazar.";
+  $("presets").replaceChildren(...INFO.presets.filter((p) => p.grup !== "en_iyi").map(chip), el("button", { className: "chip" + (SP.settings.preset === "ozel" ? " on" : ""), textContent: "Özel", disabled: true }));
   const mine = ST.custom || [];
   $("mine").replaceChildren(...(mine.length ? mine.map((c) => {
     const on = SP.settings.preset === "my:" + c.id;

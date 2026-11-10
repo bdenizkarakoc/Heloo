@@ -28,6 +28,10 @@ Güncellemek için aynı satırı yeniden çalıştır. Kaldırmak için:
 
 ## Kullanım
 
+- **⭐ En iyi ayarlar** (sarı çerçeveli): *Z607 için en iyi* (Z607'de önerilen; sıkı bas, kutu sesi azaltılmış, net vokal),
+  *Referans (stüdyo)*, *Dengeli canlı*, *Vokal netliği*, *Kısık seste dolgun*, *Derin bas (sinema)*, *Sıcak / yumuşak*,
+  *Parlak / detaylı*. Hoparlör türüne uygun olanda **✓ önerilen** yazar; düğmenin üzerine gelince ne yaptığı görünür.
+- **Müzik türleri:** Pop, Rock, R&B, Hip-hop, Trap, Caz, Klasik, Türkü, Halay, Arabesk, Elektronik, Akustik, Lo-fi, Canlı konser…
 - Program açılırken bir kez yönetici izni ister (Equalizer APO klasörüne yazmak için) — **Evet** de.
 - Her değişiklik anında sese uygulanır; kaydet düğmesi yok.
 - Her sürgü **0,5 dB** adımla oynar (sürükle, ok tuşları ya da fare tekerleği); yanındaki kutuya değeri elle de yazabilirsin.

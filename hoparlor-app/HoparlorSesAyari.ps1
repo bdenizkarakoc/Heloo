@@ -25,33 +25,47 @@ $Bands = @(31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000)
 $Limit = 12
 $Fs = 48000.0
 
-$Presets = [ordered]@{
-  duz        = @{ ad = 'Düz';               b = @(0, 0, 0, 0, 0, 0, 0, 0, 0, 0) }
-  pop        = @{ ad = 'Pop';               b = @(-1, 1, 3, 4, 2, 0, -1, 0, 1, 2) }
-  rock       = @{ ad = 'Rock';              b = @(4, 3, 2, 0, -1, -1, 1, 3, 4, 4) }
-  rnb        = @{ ad = 'R&&B';              b = @(3, 6, 5, 1, -2, -1, 1, 2, 3, 3) }
-  hiphop     = @{ ad = 'Hip-hop / Rap';     b = @(5, 5, 3, 1, -1, -1, 1, 0, 1, 2) }
-  caz        = @{ ad = 'Caz';               b = @(3, 2, 1, 2, -1, -1, 0, 1, 2, 3) }
-  klasik     = @{ ad = 'Klasik';            b = @(3, 2, 1, 0, -1, -1, 0, 1, 2, 3) }
-  turku      = @{ ad = 'Türkü / Halk';      b = @(0, 1, 1, 0, 1, 2, 3, 3, 2, 1) }
-  arabesk    = @{ ad = 'Arabesk';           b = @(1, 2, 2, 0, 0, 1, 2, 2, 1, 1) }
-  elektronik = @{ ad = 'Elektronik';        b = @(5, 4, 1, 0, -2, 0, 1, 2, 4, 5) }
-  akustik    = @{ ad = 'Akustik';           b = @(2, 1, 1, 1, 2, 1, 2, 2, 2, 1) }
-  bas        = @{ ad = 'Bol bas';           b = @(7, 6, 4, 2, 0, 0, 0, 0, 0, 0) }
-  film       = @{ ad = 'Film / Dizi';       b = @(4, 3, 1, 0, 0, 1, 2, 1, 2, 2); merkez = 3 }
-  konusma    = @{ ad = 'Konuşma / Podcast'; b = @(-4, -3, -1, 0, 2, 3, 4, 3, 1, 0); merkez = 2 }
-  oyun       = @{ ad = 'Oyun';              b = @(3, 2, 0, -1, 0, 1, 3, 3, 2, 1) }
-  gece       = @{ ad = 'Gece (kısık ses)';  b = @(-4, -3, -2, 0, 1, 2, 2, 1, 0, -1) }
+$Presets = [ordered]@{   # reels-factory/scripts/reels/hoparlor.py PRESETS ile aynı (test denetler)
+  # ---- en iyi ayarlar
+  z607       = @{ ad = 'Z607 için en iyi'; grup = 'en_iyi'; b = @(0, 2, 2, -1, -2, -1, 1, 2, 2, 1); sub = 1; ipucu = 'Z607''ye göre: sıkı bas, uydu hoparlörlerin kutu sesi azaltılır, vokal ve detay açılır.' }
+  referans   = @{ ad = 'Referans (stüdyo)'; grup = 'en_iyi'; b = @(3, 2.5, 1.5, 0.5, 0, 0, 0, -0.5, -1, -1.5); ipucu = 'Ses mühendislerinin oda hedefi: hafif sıcak, doğal; şarkı nasıl kaydedildiyse öyle.' }
+  genel      = @{ ad = 'Dengeli canlı'; grup = 'en_iyi'; b = @(3, 3, 1, -1, -1.5, -0.5, 0.5, 2, 2.5, 2); ipucu = 'Her şeye uyan hafif V: dolgun bas, net vokal, parlak tiz; yorucu değil.' }
+  netlik     = @{ ad = 'Vokal netliği'; grup = 'en_iyi'; b = @(-2, -1, 0, -1, 0, 1, 3, 3, 1, 0); merkez = 2; ipucu = 'Şarkı sözü ve konuşma öne çıkar; uğultu azalır.' }
+  kisik      = @{ ad = 'Kısık seste dolgun'; grup = 'en_iyi'; b = @(6, 4, 2, 0, 0, 0, 0, 1, 3, 4); ipucu = 'Kulak kısık seste bası ve tizi az duyar (Fletcher–Munson); bu ayar telafi eder.' }
+  derin      = @{ ad = 'Derin bas (sinema)'; grup = 'en_iyi'; b = @(5, 5, 3, 0, -1, 0, 0, 0, 1, 1); sub = 2; merkez = 2; ipucu = 'Film patlamaları ve derin bas; diyalog merkezden net.' }
+  sicak      = @{ ad = 'Sıcak / yumuşak'; grup = 'en_iyi'; b = @(2, 2, 2, 1, 0, 0, -1, -2, -2, -3); ipucu = 'Uzun dinlemede yormaz; sert, cızırtılı kayıtları yumuşatır.' }
+  parlak     = @{ ad = 'Parlak / detaylı'; grup = 'en_iyi'; b = @(-1, 0, 0, 0, 0, 0, 1, 2, 3, 4); ipucu = 'Enstrüman detayları ve hava; boğuk kayıtları açar.' }
+  # ---- müzik türleri
+  duz        = @{ ad = 'Düz'; grup = 'tur'; b = @(0, 0, 0, 0, 0, 0, 0, 0, 0, 0) }
+  pop        = @{ ad = 'Pop'; grup = 'tur'; b = @(-1, 1, 3, 4, 2, 0, -1, 0, 1, 2) }
+  rock       = @{ ad = 'Rock'; grup = 'tur'; b = @(4, 3, 2, 0, -1, -1, 1, 3, 4, 4) }
+  rnb        = @{ ad = 'R&&B'; grup = 'tur'; b = @(3, 6, 5, 1, -2, -1, 1, 2, 3, 3) }
+  hiphop     = @{ ad = 'Hip-hop / Rap'; grup = 'tur'; b = @(5, 5, 3, 1, -1, -1, 1, 0, 1, 2) }
+  trap       = @{ ad = 'Trap / Drill'; grup = 'tur'; b = @(6, 6, 3, 0, -2, -1, 1, 1, 2, 2) }
+  caz        = @{ ad = 'Caz'; grup = 'tur'; b = @(3, 2, 1, 2, -1, -1, 0, 1, 2, 3) }
+  klasik     = @{ ad = 'Klasik'; grup = 'tur'; b = @(3, 2, 1, 0, -1, -1, 0, 1, 2, 3) }
+  turku      = @{ ad = 'Türkü / Halk'; grup = 'tur'; b = @(0, 1, 1, 0, 1, 2, 3, 3, 2, 1) }
+  halay      = @{ ad = 'Halay / Oyun havası'; grup = 'tur'; b = @(5, 4, 2, 0, -1, 0, 1, 1, 1, 1) }
+  arabesk    = @{ ad = 'Arabesk'; grup = 'tur'; b = @(1, 2, 2, 0, 0, 1, 2, 2, 1, 1) }
+  elektronik = @{ ad = 'Elektronik'; grup = 'tur'; b = @(5, 4, 1, 0, -2, 0, 1, 2, 4, 5) }
+  akustik    = @{ ad = 'Akustik'; grup = 'tur'; b = @(2, 1, 1, 1, 2, 1, 2, 2, 2, 1) }
+  lofi       = @{ ad = 'Lo-fi / Chill'; grup = 'tur'; b = @(2, 2, 1, 1, 0, -1, -1, -2, -2, -3) }
+  canli      = @{ ad = 'Canlı konser'; grup = 'tur'; b = @(2, 1, 0, -1, 0, 1, 2, 2, 2, 2) }
+  bas        = @{ ad = 'Bol bas'; grup = 'tur'; b = @(7, 6, 4, 2, 0, 0, 0, 0, 0, 0) }
+  film       = @{ ad = 'Film / Dizi'; grup = 'tur'; b = @(4, 3, 1, 0, 0, 1, 2, 1, 2, 2); merkez = 3 }
+  konusma    = @{ ad = 'Konuşma / Podcast'; grup = 'tur'; b = @(-4, -3, -1, 0, 2, 3, 4, 3, 1, 0); merkez = 2 }
+  oyun       = @{ ad = 'Oyun'; grup = 'tur'; b = @(3, 2, 0, -1, 0, 1, 3, 3, 2, 1) }
+  gece       = @{ ad = 'Gece (kısık ses)'; grup = 'tur'; b = @(-4, -3, -2, 0, 1, 2, 2, 1, 0, -1) }
 }
 
 # hp: koruma için alçak kesim (Hz), max: en çok yükseltme (dB). Hoparlörün çalamadığı derin bas yükseltilmez.
 $Kinds = [ordered]@{
-  z607      = @{ ad = 'Logitech Z607 5.1';               hp = 35;  max = 10; k51 = $true }
-  masaustu  = @{ ad = 'Masaüstü hoparlör (2.0/2.1)';     hp = 45;  max = 9;  k51 = $false }
-  soundbar  = @{ ad = 'Soundbar';                        hp = 45;  max = 9;  k51 = $false }
-  bluetooth = @{ ad = 'Taşınabilir Bluetooth hoparlör';  hp = 70;  max = 8;  k51 = $false }
-  laptop    = @{ ad = 'Dizüstü dahili hoparlör';         hp = 150; max = 6;  k51 = $false }
-  kulaklik  = @{ ad = 'Kulaklık';                        hp = 0;   max = 10; k51 = $false }
+  z607      = @{ ad = 'Logitech Z607 5.1';               hp = 35;  max = 10; k51 = $true; oneri = 'z607' }
+  masaustu  = @{ ad = 'Masaüstü hoparlör (2.0/2.1)';     hp = 45;  max = 9;  k51 = $false; oneri = 'genel' }
+  soundbar  = @{ ad = 'Soundbar';                        hp = 45;  max = 9;  k51 = $false; oneri = 'genel' }
+  bluetooth = @{ ad = 'Taşınabilir Bluetooth hoparlör';  hp = 70;  max = 8;  k51 = $false; oneri = 'genel' }
+  laptop    = @{ ad = 'Dizüstü dahili hoparlör';         hp = 150; max = 6;  k51 = $false; oneri = 'netlik' }
+  kulaklik  = @{ ad = 'Kulaklık';                        hp = 0;   max = 10; k51 = $false; oneri = 'referans' }
 }
 
 # sade sürgüler: anahtar, ad, süzgeç türü, frekans, Q
@@ -85,12 +99,13 @@ $ApoUrl = 'https://sourceforge.net/projects/equalizerapo/'
 function New-Settings([string]$preset = 'duz') {
   $p = $Presets[$preset]
   $m = 0; if ($p.ContainsKey('merkez')) { $m = $p.merkez }
+  $sb = 0; if ($p.ContainsKey('sub')) { $sb = $p.sub }
   [pscustomobject]@{ acik = $true; preset = $preset; bands = @($p.b | ForEach-Object { [double]$_ })
-    bas = 0.0; orta = 0.0; vokal = 0.0; tiz = 0.0; seviye = 0.0; guc = 'dengeli'; sub = 0.0; merkez = [double]$m; arka = 0.0 }
+    bas = 0.0; orta = 0.0; vokal = 0.0; tiz = 0.0; seviye = 0.0; guc = 'dengeli'; sub = [double]$sb; merkez = [double]$m; arka = 0.0 }
 }
 
 function New-Speaker([string]$id, [string]$ad, [string]$kind) {
-  [pscustomobject]@{ id = $id; ad = $ad; kind = $kind; device = ''; device_ad = ''; settings = (New-Settings) }
+  [pscustomobject]@{ id = $id; ad = $ad; kind = $kind; device = ''; device_ad = ''; settings = (New-Settings $Kinds[$kind].oneri) }   # türüne önerilen ayarla başlar
 }
 
 function Clamp([double]$v, [double]$lo = -12, [double]$hi = $Limit) { [math]::Round([math]::Min($hi, [math]::Max($lo, $v)), 1) }
@@ -380,16 +395,21 @@ $btnDev = New-Object Windows.Forms.Button -Property @{ Left = 820; Top = 68; Wid
 $form.Controls.AddRange(@($cbKind, $cbDev, $btnDev))
 foreach ($k in $Kinds.Keys) { [void]$cbKind.Items.Add($Kinds[$k].ad) }
 
-# --- müzik türü
-$form.Controls.Add((L 'MÜZİK TÜRÜ' 16 108 200 $Bold $Renk.muted))
-$flow = New-Object Windows.Forms.FlowLayoutPanel -Property @{ Left = 16; Top = 130; Width = 955; Height = 78; BackColor = $Renk.bg }
+# --- en iyi ayarlar + müzik türü (müzik türü paneli aşağıdaki yer açma adımında yerleşir)
+$form.Controls.Add((L 'EN İYİ AYARLAR  (üzerine gel: ne yaptığı yazar)' 16 108 600 $Bold $Renk.muted))
+$flow = New-Object Windows.Forms.FlowLayoutPanel -Property @{ Left = 16; Top = 130; Width = 955; Height = 78; BackColor = $Renk.bg; AutoScroll = $true }
+$flowTur = New-Object Windows.Forms.FlowLayoutPanel -Property @{ Left = 16; Width = 955; Height = 112; BackColor = $Renk.bg; AutoScroll = $true }
 $form.Controls.Add($flow)
+$tips = New-Object Windows.Forms.ToolTip -Property @{ AutoPopDelay = 15000; InitialDelay = 300 }
 $presetBtns = @{}
 foreach ($id in $Presets.Keys) {
-  $b = New-Object Windows.Forms.Button -Property @{ Text = $Presets[$id].ad; Tag = $id; AutoSize = $true; Height = 30; FlatStyle = 'Flat'; ForeColor = $Renk.ink; BackColor = $Renk.card }
-  $b.FlatAppearance.BorderColor = $Renk.line
+  $pr = $Presets[$id]; $best = ($pr.grup -eq 'en_iyi')
+  $b = New-Object Windows.Forms.Button -Property @{ Text = $pr.ad; Tag = $id; AutoSize = $true; Height = 30; FlatStyle = 'Flat'; ForeColor = $Renk.ink; BackColor = $Renk.card }
+  $b.FlatAppearance.BorderColor = $(if ($best) { $Renk.acc } else { $Renk.line })
+  if ($pr.ContainsKey('ipucu')) { $tips.SetToolTip($b, $pr.ipucu) }
   $b.Add_Click({ Set-Preset $this.Tag })
-  $flow.Controls.Add($b); $presetBtns[$id] = $b
+  if ($best) { $flow.Controls.Add($b) } else { $flowTur.Controls.Add($b) }
+  $presetBtns[$id] = $b
 }
 
 # --- sade sürgüler
@@ -494,9 +514,10 @@ function Show-Power {
 }
 
 function Show-Presets {
-  $cur = (Get-Active $script:st).settings.preset
+  $sp = Get-Active $script:st; $cur = $sp.settings.preset; $rec = $Kinds[$sp.kind].oneri
   foreach ($id in $presetBtns.Keys) {
     $on = ($id -eq $cur)
+    $presetBtns[$id].Text = $Presets[$id].ad + $(if ($id -eq $rec) { '  ✓ önerilen' } else { '' })
     $presetBtns[$id].BackColor = $(if ($on) { $Renk.acc } else { $Renk.card }); $presetBtns[$id].ForeColor = $(if ($on) { [Drawing.Color]::Black } else { $Renk.ink })
   }
   foreach ($b in $mineFlow.Controls) {
@@ -607,8 +628,12 @@ $timer.Add_Tick({
 
 function Set-Preset([string]$id) {
   $sp = Get-Active $script:st; $old = $sp.settings; $new = New-Settings $id
-  foreach ($key in 'bas', 'orta', 'vokal', 'tiz', 'seviye', 'guc', 'sub', 'arka', 'acik') { $new.$key = $old.$key }   # kendi sürgülerin korunur
+  foreach ($key in 'bas', 'orta', 'vokal', 'tiz', 'seviye', 'guc', 'sub', 'arka', 'acik') {
+    if (-not ($key -eq 'sub' -and $Presets[$id].ContainsKey('sub'))) { $new.$key = $old.$key }   # kendi sürgülerin korunur (hazırın subu hariç)
+  }
   $sp.settings = $new; Load-UI; Request-Apply
+  $pr = $Presets[$id]
+  $status.Text = $pr.ad + $(if ($pr.ContainsKey('ipucu')) { ': ' + $pr.ipucu } else { '' }); $status.ForeColor = $Renk.ok
 }
 
 $cbSpk.Add_SelectedIndexChanged({ if ($script:loading -or $cbSpk.SelectedIndex -lt 0) { return }; $script:st.active = $script:st.speakers[$cbSpk.SelectedIndex].id; Load-UI; Request-Apply })
@@ -641,15 +666,21 @@ $btnDel.Add_Click({
   })
 
 # --- Benim ayarlarım: müzik türlerinin altına yer aç (alttaki her şey aşağı kayar)
-$shift = 76
+$turH = 118   # müzik türü paneli için
+$shift = 76 + $turH
 foreach ($ctl in @($form.Controls)) { if ($ctl.Top -ge 210) { $ctl.Top += $shift } }
 $form.Height += $shift
-$form.Controls.Add((L 'BENİM AYARLARIM' 16 212 200 $Bold $Renk.muted))
-$mineFlow = New-Object Windows.Forms.FlowLayoutPanel -Property @{ Left = 16; Top = 234; Width = 690; Height = 50; BackColor = $Renk.bg; AutoScroll = $true }
-$btnMineSave = New-Object Windows.Forms.Button -Property @{ Left = 714; Top = 236; Width = 130; Height = 30; Text = 'Ayarımı kaydet'; FlatStyle = 'Flat'; ForeColor = [Drawing.Color]::Black; BackColor = $Renk.acc }
-$btnMineDel = New-Object Windows.Forms.Button -Property @{ Left = 850; Top = 236; Width = 120; Height = 30; Text = 'Seçili ayarı sil'; FlatStyle = 'Flat'; ForeColor = $Renk.ink }
+$form.Controls.Add((L 'MÜZİK TÜRÜ' 16 212 200 $Bold $Renk.muted))
+$flowTur.Top = 234; $form.Controls.Add($flowTur)
+$form.Controls.Add((L 'BENİM AYARLARIM' 16 (212 + $turH) 200 $Bold $Renk.muted))
+$mineFlow = New-Object Windows.Forms.FlowLayoutPanel -Property @{ Left = 16; Top = (234 + $turH); Width = 690; Height = 50; BackColor = $Renk.bg; AutoScroll = $true }
+$btnMineSave = New-Object Windows.Forms.Button -Property @{ Left = 714; Top = (236 + $turH); Width = 130; Height = 30; Text = 'Ayarımı kaydet'; FlatStyle = 'Flat'; ForeColor = [Drawing.Color]::Black; BackColor = $Renk.acc }
+$btnMineDel = New-Object Windows.Forms.Button -Property @{ Left = 850; Top = (236 + $turH); Width = 120; Height = 30; Text = 'Seçili ayarı sil'; FlatStyle = 'Flat'; ForeColor = $Renk.ink }
 $form.Controls.AddRange(@($mineFlow, $btnMineSave, $btnMineDel))
 $btnMineSave.Add_Click({ Save-Custom })
+# ekran küçükse pencere ekrana sığsın, içerik kaydırılsın
+$wa = [Windows.Forms.Screen]::PrimaryScreen.WorkingArea
+if ($form.Height -gt $wa.Height) { $form.Height = $wa.Height; $form.AutoScroll = $true }
 $btnMineDel.Add_Click({ Remove-Custom })
 
 $form.Add_Shown({

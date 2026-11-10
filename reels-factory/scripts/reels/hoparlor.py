@@ -29,36 +29,62 @@ BANDS = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000]
 BAND_Q = 1.41          # bir oktav genişliğinde tepe süzgeci
 LIMIT = 12.0           # tek bir sürgü en çok ±12 dB
 
-# Müzik türü hazırları (10 bant, dB). Yaygın ekolayzır uygulamalarındaki (Windows Media Player, Spotify, Poweramp,
-# Wavelet) eğrilerin ılımlı hâli; türkü/arabesk bağlama ve vokal bölgesini (1–4 kHz) öne alır.
+# Hazırlar (10 bant: 31 Hz … 16 kHz, dB). İki grup:
+#  en_iyi — ses mühendisliği eğrileri: Harman benzeri oda hedefi (referans), Fletcher–Munson kısık ses telafisi,
+#           küçük uydu hoparlörlerin (Z607) kutu sesi (250–500 Hz) azaltılıp netlik (2–4 kHz) ve hava (8–16 kHz) eklenmesi
+#  tur    — müzik türleri: yaygın ekolayzır uygulamalarındaki (Windows Media Player, Spotify, Poweramp, Wavelet)
+#           eğrilerin ılımlı hâli; türkü/arabesk bağlama ve vokal bölgesini (1–4 kHz) öne alır.
+# İsteğe bağlı: sub / merkez (5.1 kanal düzeyi, dB), ipucu (açıklama). hoparlor-app/HoparlorSesAyari.ps1 aynı listeyi taşır.
 PRESETS: dict[str, dict] = {
-    "duz":       {"ad": "Düz",          "b": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]},
-    "pop":       {"ad": "Pop",          "b": [-1, 1, 3, 4, 2, 0, -1, 0, 1, 2]},
-    "rock":      {"ad": "Rock",         "b": [4, 3, 2, 0, -1, -1, 1, 3, 4, 4]},
-    "rnb":       {"ad": "R&B",          "b": [3, 6, 5, 1, -2, -1, 1, 2, 3, 3]},
-    "hiphop":    {"ad": "Hip-hop / Rap", "b": [5, 5, 3, 1, -1, -1, 1, 0, 1, 2]},
-    "caz":       {"ad": "Caz",          "b": [3, 2, 1, 2, -1, -1, 0, 1, 2, 3]},
-    "klasik":    {"ad": "Klasik",       "b": [3, 2, 1, 0, -1, -1, 0, 1, 2, 3]},
-    "turku":     {"ad": "Türkü / Halk", "b": [0, 1, 1, 0, 1, 2, 3, 3, 2, 1]},
-    "arabesk":   {"ad": "Arabesk",      "b": [1, 2, 2, 0, 0, 1, 2, 2, 1, 1]},
-    "elektronik": {"ad": "Elektronik",  "b": [5, 4, 1, 0, -2, 0, 1, 2, 4, 5]},
-    "akustik":   {"ad": "Akustik",      "b": [2, 1, 1, 1, 2, 1, 2, 2, 2, 1]},
-    "bas":       {"ad": "Bol bas",      "b": [7, 6, 4, 2, 0, 0, 0, 0, 0, 0]},
-    "film":      {"ad": "Film / Dizi",  "b": [4, 3, 1, 0, 0, 1, 2, 1, 2, 2], "merkez": 3},
-    "konusma":   {"ad": "Konuşma / Podcast", "b": [-4, -3, -1, 0, 2, 3, 4, 3, 1, 0], "merkez": 2},
-    "oyun":      {"ad": "Oyun",         "b": [3, 2, 0, -1, 0, 1, 3, 3, 2, 1]},
-    "gece":      {"ad": "Gece (kısık ses)", "b": [-4, -3, -2, 0, 1, 2, 2, 1, 0, -1]},
+    # ---- en iyi ayarlar
+    "z607":      {"ad": "Z607 için en iyi", "grup": "en_iyi", "b": [0, 2, 2, -1, -2, -1, 1, 2, 2, 1], "sub": 1,
+                  "ipucu": "Z607'ye göre: sıkı bas, uydu hoparlörlerin kutu sesi azaltılır, vokal ve detay açılır."},
+    "referans":  {"ad": "Referans (stüdyo)", "grup": "en_iyi", "b": [3, 2.5, 1.5, 0.5, 0, 0, 0, -0.5, -1, -1.5],
+                  "ipucu": "Ses mühendislerinin oda hedefi: hafif sıcak, doğal; şarkı nasıl kaydedildiyse öyle."},
+    "genel":     {"ad": "Dengeli canlı", "grup": "en_iyi", "b": [3, 3, 1, -1, -1.5, -0.5, 0.5, 2, 2.5, 2],
+                  "ipucu": "Her şeye uyan hafif V: dolgun bas, net vokal, parlak tiz; yorucu değil."},
+    "netlik":    {"ad": "Vokal netliği", "grup": "en_iyi", "b": [-2, -1, 0, -1, 0, 1, 3, 3, 1, 0], "merkez": 2,
+                  "ipucu": "Şarkı sözü ve konuşma öne çıkar; uğultu azalır."},
+    "kisik":     {"ad": "Kısık seste dolgun", "grup": "en_iyi", "b": [6, 4, 2, 0, 0, 0, 0, 1, 3, 4],
+                  "ipucu": "Kulak kısık seste bası ve tizi az duyar (Fletcher–Munson); bu ayar telafi eder."},
+    "derin":     {"ad": "Derin bas (sinema)", "grup": "en_iyi", "b": [5, 5, 3, 0, -1, 0, 0, 0, 1, 1], "sub": 2, "merkez": 2,
+                  "ipucu": "Film patlamaları ve derin bas; diyalog merkezden net."},
+    "sicak":     {"ad": "Sıcak / yumuşak", "grup": "en_iyi", "b": [2, 2, 2, 1, 0, 0, -1, -2, -2, -3],
+                  "ipucu": "Uzun dinlemede yormaz; sert, cızırtılı kayıtları yumuşatır."},
+    "parlak":    {"ad": "Parlak / detaylı", "grup": "en_iyi", "b": [-1, 0, 0, 0, 0, 0, 1, 2, 3, 4],
+                  "ipucu": "Enstrüman detayları ve hava; boğuk kayıtları açar."},
+    # ---- müzik türleri
+    "duz":       {"ad": "Düz", "grup": "tur", "b": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]},
+    "pop":       {"ad": "Pop", "grup": "tur", "b": [-1, 1, 3, 4, 2, 0, -1, 0, 1, 2]},
+    "rock":      {"ad": "Rock", "grup": "tur", "b": [4, 3, 2, 0, -1, -1, 1, 3, 4, 4]},
+    "rnb":       {"ad": "R&B", "grup": "tur", "b": [3, 6, 5, 1, -2, -1, 1, 2, 3, 3]},
+    "hiphop":    {"ad": "Hip-hop / Rap", "grup": "tur", "b": [5, 5, 3, 1, -1, -1, 1, 0, 1, 2]},
+    "trap":      {"ad": "Trap / Drill", "grup": "tur", "b": [6, 6, 3, 0, -2, -1, 1, 1, 2, 2]},
+    "caz":       {"ad": "Caz", "grup": "tur", "b": [3, 2, 1, 2, -1, -1, 0, 1, 2, 3]},
+    "klasik":    {"ad": "Klasik", "grup": "tur", "b": [3, 2, 1, 0, -1, -1, 0, 1, 2, 3]},
+    "turku":     {"ad": "Türkü / Halk", "grup": "tur", "b": [0, 1, 1, 0, 1, 2, 3, 3, 2, 1]},
+    "halay":     {"ad": "Halay / Oyun havası", "grup": "tur", "b": [5, 4, 2, 0, -1, 0, 1, 1, 1, 1]},
+    "arabesk":   {"ad": "Arabesk", "grup": "tur", "b": [1, 2, 2, 0, 0, 1, 2, 2, 1, 1]},
+    "elektronik": {"ad": "Elektronik", "grup": "tur", "b": [5, 4, 1, 0, -2, 0, 1, 2, 4, 5]},
+    "akustik":   {"ad": "Akustik", "grup": "tur", "b": [2, 1, 1, 1, 2, 1, 2, 2, 2, 1]},
+    "lofi":      {"ad": "Lo-fi / Chill", "grup": "tur", "b": [2, 2, 1, 1, 0, -1, -1, -2, -2, -3]},
+    "canli":     {"ad": "Canlı konser", "grup": "tur", "b": [2, 1, 0, -1, 0, 1, 2, 2, 2, 2]},
+    "bas":       {"ad": "Bol bas", "grup": "tur", "b": [7, 6, 4, 2, 0, 0, 0, 0, 0, 0]},
+    "film":      {"ad": "Film / Dizi", "grup": "tur", "b": [4, 3, 1, 0, 0, 1, 2, 1, 2, 2], "merkez": 3},
+    "konusma":   {"ad": "Konuşma / Podcast", "grup": "tur", "b": [-4, -3, -1, 0, 2, 3, 4, 3, 1, 0], "merkez": 2},
+    "oyun":      {"ad": "Oyun", "grup": "tur", "b": [3, 2, 0, -1, 0, 1, 3, 3, 2, 1]},
+    "gece":      {"ad": "Gece (kısık ses)", "grup": "tur", "b": [-4, -3, -2, 0, 1, 2, 2, 1, 0, -1]},
 }
 
 # Hoparlör türleri: koruma için alçak kesim (hp) ve en çok yükseltme. Hoparlörün çalamadığı derin bası yükseltmek
 # yalnızca bozulma/tıkırtı getirir; bu bantlar 0'ın üstüne çıkmaz.
 KINDS: dict[str, dict] = {
-    "z607":      {"ad": "Logitech Z607 5.1", "hp": 35, "max": 10, "kanal": "5.1"},
-    "masaustu":  {"ad": "Masaüstü hoparlör (2.0/2.1)", "hp": 45, "max": 9, "kanal": "2.1"},
-    "soundbar":  {"ad": "Soundbar", "hp": 45, "max": 9, "kanal": "2.1"},
-    "bluetooth": {"ad": "Taşınabilir Bluetooth hoparlör", "hp": 70, "max": 8, "kanal": "2.0"},
-    "laptop":    {"ad": "Dizüstü dahili hoparlör", "hp": 150, "max": 6, "kanal": "2.0"},
-    "kulaklik":  {"ad": "Kulaklık", "hp": 0, "max": 10, "kanal": "2.0"},
+    "z607":      {"ad": "Logitech Z607 5.1", "hp": 35, "max": 10, "kanal": "5.1", "oneri": "z607"},
+    "masaustu":  {"ad": "Masaüstü hoparlör (2.0/2.1)", "hp": 45, "max": 9, "kanal": "2.1", "oneri": "genel"},
+    "soundbar":  {"ad": "Soundbar", "hp": 45, "max": 9, "kanal": "2.1", "oneri": "genel"},
+    "bluetooth": {"ad": "Taşınabilir Bluetooth hoparlör", "hp": 70, "max": 8, "kanal": "2.0", "oneri": "genel"},
+    "laptop":    {"ad": "Dizüstü dahili hoparlör", "hp": 150, "max": 6, "kanal": "2.0", "oneri": "netlik"},
+    "kulaklik":  {"ad": "Kulaklık", "hp": 0, "max": 10, "kanal": "2.0", "oneri": "referans"},
 }
 
 TIPS = {
@@ -94,12 +120,12 @@ LEVEL_MAX = 10.0
 def default_settings(preset: str = "duz") -> dict:
     p = PRESETS.get(preset, PRESETS["duz"])
     return {"acik": True, "preset": preset, "bands": list(p["b"]), "bas": 0.0, "orta": 0.0, "vokal": 0.0, "tiz": 0.0,
-            "yukseklik": 0.0, "guc": "dengeli", "sub": 0.0, "merkez": float(p.get("merkez", 0)), "arka": 0.0}
+            "yukseklik": 0.0, "guc": "dengeli", "sub": float(p.get("sub", 0)), "merkez": float(p.get("merkez", 0)), "arka": 0.0}
 
 
 def default_state() -> dict:
     return {"active": "z607", "custom": [], "speakers": [
-        {"id": "z607", "ad": "Logitech Z607", "kind": "z607", "device": "", "device_ad": "", "settings": default_settings()}]}
+        {"id": "z607", "ad": "Logitech Z607", "kind": "z607", "device": "", "device_ad": "", "settings": default_settings("z607")}]}
 
 
 def load_state() -> dict:
@@ -158,7 +184,8 @@ def add_speaker(st: dict, ad: str, kind: str = "masaustu", device: str = "", dev
     while sid in ids:
         sid, n = f"{base}-{n}", n + 1
     sp = {"id": sid, "ad": ad, "kind": kind if kind in KINDS else "masaustu", "device": _guid(device),
-          "device_ad": (device_ad or "")[:120], "settings": default_settings()}
+          "device_ad": (device_ad or "")[:120],
+          "settings": default_settings(KINDS.get(kind, KINDS["masaustu"])["oneri"])}   # türüne önerilen ayarla başlar
     st["speakers"].append(sp)
     st["active"] = sid
     return sp
@@ -406,7 +433,8 @@ def devices() -> list[dict]:
 def info() -> dict:
     st = load_state()
     d = apo_dir()
-    return {"power": [{"id": k, "ad": v[0]} for k, v in POWER.items()], "state": st, "presets": [{"id": k, "ad": v["ad"], "bands": v["b"]} for k, v in PRESETS.items()],
+    return {"power": [{"id": k, "ad": v[0]} for k, v in POWER.items()], "state": st, "presets": [{"id": k, "ad": v["ad"], "bands": v["b"], "grup": v["grup"], "ipucu": v.get("ipucu", "")}
+                                for k, v in PRESETS.items()],
             "kinds": [{"id": k, **v} for k, v in KINDS.items()], "bands": BANDS, "tips": TIPS,
             "apo": {"kurulu": bool(d), "path": str(d) if d else "", "url": APO_URL, "windows": os.name == "nt"}}
 
@@ -419,7 +447,8 @@ def update(data: dict) -> dict:
         keep = clean_settings(sp.get("settings"))
         new = default_settings(data["preset"])
         for k in ("bas", "orta", "vokal", "tiz", "yukseklik", "guc", "sub", "arka", "acik"):
-            new[k] = keep[k]          # sade sürgüler ve kanal düzeyleri hazır değişince korunur
+            if not (k == "sub" and "sub" in PRESETS[data["preset"]]):
+                new[k] = keep[k]      # sade sürgüler ve kanal düzeyleri hazır değişince korunur (hazırın kendi subu hariç)
         sp["settings"] = new
     elif data.get("custom"):
         if not load_custom(st, sp, str(data["custom"])):
