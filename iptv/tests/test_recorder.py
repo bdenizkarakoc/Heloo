@@ -195,12 +195,12 @@ def test_tv_guide_grid(tmp_path, monkeypatch):
     g.remind.connect(lambda it, p: remind.append(p["title"]))
     c = g.canvas
     y = HEAD_H + ROW_H // 2                       # 1. kanal satırı
-    item, prog, _ = c.hit(QPoint(c.x_of(now) + 1, y))
+    item, prog, _ = c.hit(QPoint(c.x_of(base + 1800), y))      # şu anki saatin programı
     assert item.name == "Kanal 1" and prog["title"] == "Program 1/0"
     g._activated(item, prog)                      # şimdi → kanalı aç
-    _, past, _ = c.hit(QPoint(c.x_of(now - 7000), y))
+    _, past, _ = c.hit(QPoint(c.x_of(base - 5400), y))        # -2. saatin ortası (saatten bağımsız)
     g._activated(item, past)                      # geçmiş + arşiv → geri izle
-    _, fut, _ = c.hit(QPoint(c.x_of(now + 7300), y))
+    _, fut, _ = c.hit(QPoint(c.x_of(base + 2 * 3600 + 1800), y))   # +2. saatin ortası
     g._activated(item, fut)                       # gelecek → hatırlat
     assert played == ["Kanal 1"] and caught == ["Program 1/-2"] and remind == ["Program 1/2"]
     assert c.hit(QPoint(CH_W // 2, y))[1] is None  # kanal sütunu
