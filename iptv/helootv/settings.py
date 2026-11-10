@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 # Varsayılanlar "en iyi" deneyim içindir: RTX VSR ile 4K, düşük gecikme, canlıya yetişme, otomatik yeniden bağlanma.
-SETTINGS_VERSION = 4
+SETTINGS_VERSION = 5
 
 DEFAULTS: dict[str, Any] = {
     "meta": {"version": SETTINGS_VERSION},
@@ -62,7 +62,8 @@ DEFAULTS: dict[str, Any] = {
     },
     # Lossless Scaling (Steam, ücretli; kuruluysa): kare üretimi ile akıcılık. Ölçekleme RTX VSR'de kalır.
     "lossless": {
-        "mode": "fullscreen",     # fullscreen: tam ekranda (canlı dahil) her zaman | always | manual
+        "mode": "manual",         # manual: yalnız kısayolla (varsayılan) | fullscreen: tam ekranda otomatik | always
+        "app_shortcut": "Ctrl+Z", # Heloo TV içinde Lossless Scaling'i aç/kapat
         "hotkey": "Ctrl+Alt+S",   # Lossless Scaling'deki "Ölçekle" kısayolu
         "exe": "",                # boş: Steam kütüphanelerinde aranır
         "tips_shown": False,
@@ -205,6 +206,10 @@ def _migrate(s: dict, version) -> None:
         # v3 varsayılanı "Dengeli" (sabit 3 sn) → kendini ayarlayan "Akıllı": iyi bağlantıda ~1 sn gecikme
         if s["latency"].get("mode") == "balanced":
             s["latency"]["mode"] = "auto"
+    if not isinstance(version, int) or version < 5:
+        # v4: tam ekrana geçince Lossless Scaling kendiliğinden açılıyordu; artık yalnız kısayolla (Ctrl+Z)
+        if s.get("lossless", {}).get("mode") == "fullscreen":
+            s["lossless"]["mode"] = "manual"
     s["meta"]["version"] = SETTINGS_VERSION
 
 

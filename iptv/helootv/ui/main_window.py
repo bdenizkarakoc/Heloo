@@ -267,7 +267,7 @@ class MainWindow(QMainWindow):
             ("Ctrl+T", lambda: self._set_theater(not self._theater)),
             ("Ctrl+D", lambda: self.current_item and self.toggle_favorite(self.current_item)),
             ("Ctrl+P", self.picture_dialog),
-            ("Ctrl+G", self.toggle_lossless),
+
             ("Ctrl+R", self.toggle_record),
             ("F2", self.open_guide),
             ("F4", self.open_multiview),
@@ -279,6 +279,9 @@ class MainWindow(QMainWindow):
         for keys, fn in shortcuts:
             sc = QShortcut(QKeySequence(keys), self)
             sc.activated.connect(fn)
+        # Lossless Scaling aç/kapat (ayardan değiştirilebilir; varsayılan Ctrl+Z)
+        self._ls_shortcut = QShortcut(QKeySequence(self.settings["lossless"].get("app_shortcut") or "Ctrl+Z"), self)
+        self._ls_shortcut.activated.connect(self.toggle_lossless)
 
     def _post_show(self) -> None:
         tab = next((i for i, (k, _l) in enumerate(TABS) if k == self.settings["ui"].get("last_tab")), 0)
@@ -921,6 +924,8 @@ class MainWindow(QMainWindow):
                 self._commit_digits()
             else:
                 self._show_info()
+        elif action == "lossless":                 # video penceresi odaktayken Lossless Scaling kısayolu (Ctrl+Z)
+            self.toggle_lossless()
         elif action == "click":
             self._on_video_click()
         elif action == "fullscreen" and self._click_timer.isActive():
@@ -1247,6 +1252,8 @@ class MainWindow(QMainWindow):
     # ================================================================== ayarlar / sistem
     def _on_settings_changed(self) -> None:
         self._save_timer.start()
+        if hasattr(self, "_ls_shortcut"):
+            self._ls_shortcut.setKey(QKeySequence(self.settings["lossless"].get("app_shortcut") or "Ctrl+Z"))
         if self.engine:
             self.engine.apply_settings(self.settings)
         hide = self.settings["ui"]["hide_adult"]
@@ -1463,7 +1470,8 @@ class MainWindow(QMainWindow):
                               self.settings["picture"]["denoise"] == val)
         m.addSeparator()
         self._menu_action(m, "⚡ Lossless Scaling kare üretimi" + (" — açık" if self._ls_active else "")
-                          + "  (Ctrl+G)", self.toggle_lossless, self._ls_active)
+                          + f"  ({self.settings['lossless'].get('app_shortcut') or 'Ctrl+Z'})", self.toggle_lossless,
+                          self._ls_active)
         sh = m.addMenu("Keskinlik")
         for val, txt in (("off", "Kapalı"), ("light", "Hafif"), ("medium", "Orta"), ("strong", "Güçlü")):
             self._menu_action(sh, txt, lambda v=val: self._set_picture("video", "sharpen", v),

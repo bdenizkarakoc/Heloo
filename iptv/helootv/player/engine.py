@@ -123,11 +123,12 @@ def describe_mpv_error(lines: list[str]) -> str:
     return ""
 
 
-def write_input_conf(directory: Path) -> Path:
+def write_input_conf(directory: Path, extra: str = "") -> Path:
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / "input.conf"
-    if not path.exists() or path.read_text(encoding="utf-8", errors="replace") != INPUT_CONF:
-        path.write_text(INPUT_CONF, encoding="utf-8")
+    text = INPUT_CONF + extra
+    if not path.exists() or path.read_text(encoding="utf-8", errors="replace") != text:
+        path.write_text(text, encoding="utf-8")
     return path
 
 
@@ -203,7 +204,9 @@ class MpvEngine:
         except (OSError, ImportError, AttributeError) as e:
             raise EngineError(f"libmpv yüklenemedi: {e}") from e
         self._mpvlib = mpvlib
-        conf = write_input_conf(paths.data_dir())
+        from .. import lossless
+        key = lossless.mpv_key((self.settings.get("lossless") or {}).get("app_shortcut", "Ctrl+Z"))
+        conf = write_input_conf(paths.data_dir(), f"{key}  script-message helootv lossless\n" if key else "")
         init = opt.create_options(self.settings, wid=self.wid, input_conf=str(conf), headless=self.headless,
                                   platform=self.platform)
         init.update(self.extra_options)

@@ -106,7 +106,7 @@ def test_interlaced_denoise_and_migration(tmp_path):
     p = tmp_path / "settings.json"
     p.write_text(json.dumps({"video": {"vsr_target": "2160", "sharpen": "strong"}}), encoding="utf-8")
     s = settings_mod.load_settings(p)
-    assert s["video"]["vsr_target"] == "screen" and s["video"]["sharpen"] == "strong" and s["meta"]["version"] == 4
+    assert s["video"]["vsr_target"] == "screen" and s["video"]["sharpen"] == "strong" and s["meta"]["version"] == 5
     p.write_text(json.dumps({"meta": {"version": 2}, "video": {"vsr_target": "2160"}}), encoding="utf-8")
     assert settings_mod.load_settings(p)["video"]["vsr_target"] == "2160"   # yeni sürümde seçilen 4K kalır
     # v2 → v3: 1,5 sn tampon donma yapıyordu → Dengeli, canlıya yetişme kapalı; v3'te seçilen "low" korunur
@@ -117,7 +117,9 @@ def test_interlaced_denoise_and_migration(tmp_path):
     lat = settings_mod.load_settings(p)["latency"]
     assert lat["mode"] == "low" and lat["chase"] is True
     p.write_text(json.dumps({"lossless": {"mode": "always"}}), encoding="utf-8")
-    assert settings_mod.load_settings(p)["lossless"]["mode"] == "fullscreen"
+    assert settings_mod.load_settings(p)["lossless"]["mode"] == "manual"     # v5: yalnız kısayolla (Ctrl+Z)
+    p.write_text(json.dumps({"meta": {"version": 4}, "lossless": {"mode": "fullscreen"}}), encoding="utf-8")
+    assert settings_mod.load_settings(p)["lossless"]["mode"] == "manual"     # tam ekranda kendiliğinden açılmaz
     # AMD FSR kendi keskinleştirmesini yapar → CAS yarıya; küçültmede hafif filtre
     amd = S(video__gpu_vendor="amd")
     nv = S(video__gpu_vendor="nvidia")

@@ -35,8 +35,9 @@ python -m pytest tests -q              # testler (libmpv2/ffmpeg/7z varsa başs�
   isteğe bağlı kurulur; ffmpeg ile 40 sn'lik parçalar, `on_update` → arayüzde `sub_add`/`sub_reload`).
 - Lossless Scaling (Steam 993090, ücretli, kapalı kaynak) asla pakete eklenmez/indirilmez: `lossless.py` yalnız
   kurulu programı bulur, başlatır ve kısayolunu gönderir. Açıkken `engine.set_external_framegen(True)` →
-  `play_options(external_framegen=True)` mpv interpolasyonunu kapatır. Varsayılan kip `fullscreen`: tam ekranda (canlı
-  dahil) açılır (`always` pencere kipinde listelerle birlikte büyütür); kısayol yalnız Heloo TV öndeyken gönderilir.
+  `play_options(external_framegen=True)` mpv interpolasyonunu kapatır. Varsayılan kip `manual`: yalnız Heloo TV kısayoluyla
+  (`lossless.app_shortcut`, Ctrl+Z; QShortcut + mpv input.conf `script-message helootv lossless`) açılır/kapanır;
+  tam ekran kendiliğinden açmaz (ayar göçü v5). LS kısayolu yalnız Heloo TV öndeyken gönderilir.
 - İyileştirme her kaynakta (canlı dahil) çalışır; çubuktaki etiket `opt.enhancement_summary` (engine.status
   `enhance`). Canlı yayına gecikme ekleyen bir iyileştirme (çok kareli filtre, interpolasyon) ekleme.
 - Kart üreticisi `gpu.query_gpus` (nvidia-smi, yoksa Win32_VideoController) → `settings.video.gpu_vendor`.

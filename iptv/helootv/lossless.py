@@ -44,6 +44,18 @@ def parse_hotkey(text: str) -> tuple[list[int], int]:
     return mods, vk
 
 
+def mpv_key(shortcut: str) -> str:
+    """'Ctrl+Z' → 'ctrl+z' (mpv input.conf adı; video penceresi odaktayken de kısayol çalışsın). Geçersizse ''."""
+    try:
+        mods, vk = parse_hotkey(shortcut)
+    except ValueError:
+        return ""
+    names = {0x11: "ctrl", 0x12: "alt", 0x10: "shift", 0x5B: "meta"}
+    key = shortcut.split("+")[-1].strip()
+    key = key.lower() if len(key) == 1 else key.upper()
+    return "+".join([names[m] for m in mods] + [key])
+
+
 def steam_libraries(steam_root: Path) -> list[Path]:
     """steamapps/libraryfolders.vdf içindeki tüm kütüphane klasörleri (+ Steam'in kendisi)."""
     libs = [steam_root]

@@ -1,6 +1,8 @@
 """Lossless Scaling ile birlikte çalışma: kurulum bulma, kısayol çözümleme, mpv interpolasyonunun kapanması."""
 from __future__ import annotations
 
+import time
+
 import pytest
 
 from helootv import lossless, settings as settings_mod
@@ -35,14 +37,15 @@ def test_find_exe_in_steam_libraries(tmp_path):
 
 def test_external_framegen_disables_mpv_interpolation():
     s = settings_mod.merged_defaults()
-    assert s["lossless"] == {"mode": "fullscreen", "hotkey": "Ctrl+Alt+S", "exe": "", "tips_shown": False}
+    assert s["lossless"] == {"mode": "manual", "app_shortcut": "Ctrl+Z", "hotkey": "Ctrl+Alt+S", "exe": "",
+                             "tips_shown": False}
     vod = opt.play_options(s, "movie", "http://x/film.mkv")
     assert vod["interpolation"] == "yes" and vod["video-sync"] == "display-resample"
     ls = opt.play_options(s, "movie", "http://x/film.mkv", external_framegen=True)
     assert ls["interpolation"] == "no" and ls["video-sync"] == "audio"
     # bozuk değerler varsayılana döner
     bad = settings_mod._sanitize({"lossless": {"mode": "evet", "hotkey": 5}})
-    assert bad["lossless"]["mode"] == "fullscreen" and bad["lossless"]["hotkey"] == "Ctrl+Alt+S"
+    assert bad["lossless"]["mode"] == "manual" and bad["lossless"]["hotkey"] == "Ctrl+Alt+S"
 
 
 def test_send_hotkey_requires_windows(monkeypatch):
@@ -88,3 +91,49 @@ def test_enhancement_summary_live_and_vod():
     plan = opt.vsr_plan(s, {"w": 1280, "h": 720}, platform="linux", kind="live")
     enh = opt.enhancement_summary(s, plan, False, {"w": 1280, "h": 720}, "linux")
     assert enh and "Gürültü azaltma" in enh and "Keskinlik" in enh
+
+
+def test_ctrl_z_toggles_lossless_and_fullscreen_does_not(tmp_path, monkeypatch):
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("HELOOTV_HOME", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from helootv.player.engine import INPUT_CONF, write_input_conf
+    from helootv.store import Store
+    from helootv.ui.main_window import MainWindow
+    assert lossless.mpv_key("Ctrl+Z") == "ctrl+z" and lossless.mpv_key("Alt+F9") == "alt+F9"
+    assert lossless.mpv_key("bozuk+++") == ""
+    conf = write_input_conf(tmp_path, "ctrl+z  script-message helootv lossless\n")
+    assert conf.read_text(encoding="utf-8").endswith("ctrl+z  script-message helootv lossless\n")
+    assert "lossless" not in INPUT_CONF
+    app = QApplication.instance() or QApplication([])
+    s = settings_mod.merged_defaults()
+    s["ui"]["resume_last_channel"] = False
+    s["ui"]["auto_refresh_hours"] = 0
+    win = MainWindow(Store(tmp_path / "t.db"), s, headless=True)
+    calls = []
+    monkeypatch.setattr(win, "toggle_lossless", lambda quiet=False, want=None: calls.append((quiet, want)))
+    win._ls_shortcut.activated.disconnect()
+    win._ls_shortcut.activated.connect(win.toggle_lossless)
+    try:
+        assert win._ls_shortcut.key().toString() == "Ctrl+Z"
+        win._ls_shortcut.activated.emit()                    # Heloo TV penceresinde Ctrl+Z
+        win._on_key("lossless", [])                          # video (mpv) penceresinde Ctrl+Z
+        assert calls == [(False, None), (False, None)]
+        from helootv.player.engine import PlayRequest
+        win.current_req = PlayRequest(url="x", title="beIN SPORTS 1", kind="live")
+        monkeypatch.setattr(win, "showFullScreen", lambda: None)
+        win._set_fullscreen(True)                            # tam ekran: kendiliğinden AÇILMAZ (kip: elle)
+        end = time.time() + 1.5
+        while time.time() < end:
+            app.processEvents()
+            time.sleep(0.02)
+        assert len(calls) == 2
+        win._set_fullscreen(False)
+        s["lossless"]["app_shortcut"] = "Ctrl+Shift+L"       # ayardan değiştirilebilir
+        win._on_settings_changed()
+        assert win._ls_shortcut.key().toString() == "Ctrl+Shift+L"
+    finally:
+        win.current_req = None
+        win.close()

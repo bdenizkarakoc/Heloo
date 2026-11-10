@@ -426,28 +426,35 @@ class SettingsPage(QScrollArea):
         self.ls_status.setWordWrap(True)
         self.ls_status.setObjectName("Muted")
         self.ls_mode = QComboBox()
-        for label, val in (("Tam ekranda otomatik — canlı yayın dahil (önerilen)", "fullscreen"),
-                           ("Her zaman — pencere kipinde de (listelerle birlikte büyütür)", "always"),
-                           ("Elle (Ctrl+G)", "manual")):
+        for label, val in (("Elle — yalnız kısayolla aç/kapat (önerilen)", "manual"),
+                           ("Tam ekrana geçince otomatik", "fullscreen"),
+                           ("Her zaman — pencere kipinde de (listelerle birlikte büyütür)", "always")):
             self.ls_mode.addItem(label, val)
         self.ls_hotkey = QLineEdit()
         self.ls_hotkey.setPlaceholderText(lossless.DEFAULT_HOTKEY)
         self.ls_hotkey.setToolTip("Lossless Scaling'deki 'Ölçekle' kısayolu ile aynı olmalı (örn. Ctrl+Alt+S)")
         self.ls_exe = QLineEdit()
         self.ls_exe.setPlaceholderText("Boş: Steam kütüphanelerinde aranır")
-        note = QLabel(lossless.TIPS + "\nOynarken: Görüntü menüsü → ⚡ Lossless Scaling ya da Ctrl+G.")
+        from PySide6.QtWidgets import QKeySequenceEdit
+        self.ls_app_key = QKeySequenceEdit()
+        self.ls_app_key.setMaximumSequenceLength(1)
+        self.ls_app_key.setToolTip("Heloo TV içinde Lossless Scaling'i açıp kapatan kısayol (tıklayıp tuşlara basın)")
+        note = QLabel(lossless.TIPS + "\nOynarken: Heloo TV kısayolu (varsayılan Ctrl+Z) ya da Görüntü menüsü → "
+                      "⚡ Lossless Scaling. Video kısayolu değişince video penceresinde yeniden başlatınca geçerli olur.")
         note.setWordWrap(True)
         note.setObjectName("Muted")
         r = 0
         lay.addWidget(self.ls_status, r, 0, 1, 2); r += 1
         lay.addWidget(QLabel("Kare üretimi"), r, 0); lay.addWidget(self.ls_mode, r, 1); r += 1
-        lay.addWidget(QLabel("Kısayol"), r, 0); lay.addWidget(self.ls_hotkey, r, 1); r += 1
+        lay.addWidget(QLabel("Heloo TV kısayolu"), r, 0); lay.addWidget(self.ls_app_key, r, 1); r += 1
+        lay.addWidget(QLabel("Lossless Scaling'in kendi kısayolu"), r, 0); lay.addWidget(self.ls_hotkey, r, 1); r += 1
         lay.addWidget(QLabel("Program yolu"), r, 0); lay.addWidget(self.ls_exe, r, 1); r += 1
         lay.addWidget(note, r, 0, 1, 2)
         lay.setColumnStretch(1, 1)
         self.ls_mode.currentIndexChanged.connect(self._changed)
         self.ls_hotkey.editingFinished.connect(self._changed)
         self.ls_exe.editingFinished.connect(self._changed)
+        self.ls_app_key.editingFinished.connect(self._changed)
         self.body.addWidget(g)
 
     # ------------------------------------------------------------------ oynatma kontrolleri
@@ -697,6 +704,8 @@ class SettingsPage(QScrollArea):
         self.ls_mode.setCurrentIndex(max(0, self.ls_mode.findData(ls["mode"])))
         self.ls_hotkey.setText(ls["hotkey"])
         self.ls_exe.setText(ls["exe"])
+        from PySide6.QtGui import QKeySequence
+        self.ls_app_key.setKeySequence(QKeySequence(ls.get("app_shortcut") or "Ctrl+Z"))
         i = self.ua.findData(n["user_agent"])
         if i >= 0:
             self.ua.setCurrentIndex(i)
@@ -764,6 +773,8 @@ class SettingsPage(QScrollArea):
         except ValueError:
             self.ls_hotkey.setStyleSheet("border: 1px solid #ff5c7a;")
         ls["exe"] = self.ls_exe.text().strip()
+        seq = self.ls_app_key.keySequence().toString()
+        ls["app_shortcut"] = seq or "Ctrl+Z"
         ua_data = self.ua.currentData()
         text = self.ua.currentText().strip()
         n["user_agent"] = ua_data if (ua_data and self.ua.itemText(self.ua.currentIndex()) == text) else (text or n["user_agent"])

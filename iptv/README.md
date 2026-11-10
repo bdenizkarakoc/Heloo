@@ -285,18 +285,15 @@ işlemcide sorunsuzdur. "Kapalı"da sıfır kopya `d3d11va`'ya döner.
 ## Lossless Scaling ile kare üretimi (isteğe bağlı)
 
 [Lossless Scaling](https://store.steampowered.com/app/993090/Lossless_Scaling/) (THS) Steam'de satılan, kapalı
-kaynaklı bir Windows uygulamasıdır; GitHub'da resmi deposu yoktur ve Heloo TV onu içermez. Bilgisayarınızda
-kuruluysa Heloo TV onunla birlikte çalışır:
+kaynaklı bir Windows uygulamasıdır; Heloo TV onu içermez. Bilgisayarınızda kuruluysa Heloo TV onunla çalışır:
 
-- **Her zaman (varsayılan)**: bir yayın/film/dizi/dosya oynamaya başlayınca (canlı yayın dahil) kare üretimi
-  kendiliğinden açılır ve açık kalır. Program kapalıysa Steam üzerinden başlatılır; kısayol yalnız Heloo TV
-  penceresi öndeyken gönderilir (başka pencere öndeyse Heloo TV öne gelene kadar bekler).
-- **Görüntü menüsü → ⚡ Lossless Scaling** ya da **Ctrl+G**: elle aç/kapat.
-- **Ayarlar → Lossless Scaling**: kip (Her zaman / Yalnız tam ekranda / Elle), kısayol, program yolu (boşsa bütün
-  Steam kütüphaneleri `libraryfolders.vdf` üzerinden aranır). Lossless Scaling'in kendi "Auto scale" profilini
-  kullanıyorsanız kipi **Elle** yapın (iki taraf aynı anda kısayola basarsa birbirini kapatır).
-- Açıkken mpv'nin kendi interpolasyonu (film/dizide "akıcı oynatma") kapatılır; iki kare üretimi üst üste
-  titreme yapar. Kapanınca geri gelir.
+- **Ctrl+Z** (varsayılan; video penceresi seçiliyken de çalışır) ya da Görüntü menüsü → ⚡ Lossless Scaling:
+  program kapalıysa Steam üzerinden başlatılır, Heloo TV öne alınır ve Lossless Scaling'in kendi "Ölçekle"
+  kısayolu (varsayılan Ctrl+Alt+S) gönderilir. Tekrar Ctrl+Z: kapanır.
+- **Kendiliğinden açılmaz** (varsayılan kip "Elle"): tam ekrana geçmek Lossless Scaling'i açmaz. İsterseniz
+  Ayarlar → Lossless Scaling → kip: "Tam ekrana geçince otomatik" / "Her zaman".
+- Ayarlar'da Heloo TV kısayolu (Ctrl+Z yerine başka tuş), Lossless Scaling'in kendi kısayolu ve program yolu
+  değiştirilebilir. Açıkken mpv'nin kendi interpolasyonu kapanır (iki kare üretimi titreme yapar).
 
 Lossless Scaling'de önerilen ayar: **Ölçekleme türü: Kapalı** (4K büyütmeyi RTX VSR yapıyor; ikisi birlikte
 görüntüyü bozar), **Kare üretimi: LSFG 3, ×2** (25/30 fps yayın → 50/60 fps), **Max frame latency: 1**, yakalama
