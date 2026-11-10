@@ -62,7 +62,7 @@ def test_multiview_four_channels(tmp_path, monkeypatch):
 
     assert pump(5, lambda: len(win.live_page.model.items) == 4)
     resumed = []
-    win.play_live = lambda it: resumed.append(it.name)
+    win.play_live = lambda it, reason="": resumed.append((it.name, reason))
     win.open_multiview()
     mv = win._multiview
     try:
@@ -106,8 +106,30 @@ def test_multiview_four_channels(tmp_path, monkeypatch):
         QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
         app.processEvents()
         assert all(c.engine is None for c in mv.cells)
-        assert pump(2, lambda: resumed == ["Kanal 1"])     # etkin hücre ana oynatıcıda sürer
+        assert pump(2, lambda: resumed == [("Kanal 1", "çoklu görüntüden dönüş")])   # seçilen hücre ana oynatıcıda sürer
     finally:
         if getattr(win, "_multiview", None):
             win._multiview.shutdown()
         win.close()
+
+
+def test_multiview_close_returns_clicked_cell_not_hovered(monkeypatch, tmp_path):
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("HELOOTV_HOME", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from helootv.store import Item
+    from helootv.ui import multiview as mv_mod
+    QApplication.instance() or QApplication([])
+    items = [Item(1, "live", str(i), i, f"Kanal {i}", "", "", "", "", "", None, "", 0, 0, 0, "") for i in range(1, 5)]
+    mv = mv_mod.MultiViewWindow(settings_mod.merged_defaults(), items, lambda it: None, headless=True)
+    monkeypatch.setattr(mv, "_play", lambda c, item: setattr(c, "item", item))
+    for i in range(4):
+        mv.assign(i, items[i])
+    got = []
+    mv.open_in_main.connect(lambda it: got.append(it.name))
+    mv._on_event(1, "key", {"action": "click"})       # kullanıcı 2. hücreye tıkladı
+    mv.set_active(3)                                   # sonra fare 4. hücrenin üstünden geçti (ses izler)
+    mv.close()
+    assert got == ["Kanal 2"]                          # kapatınca tıklanan kanal sürer, fareyle geçilen değil

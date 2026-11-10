@@ -74,6 +74,8 @@ class MainWindow(QMainWindow):
         self._file_index = 0
         self._ai_task: dict | None = None
         self._ls_active = False
+        self.switch_log: list[tuple] = []          # (zaman, önceki, yeni, sebep) — "kanal neden değişti?"
+        self._switch_reason = ""
         self._pip = False
         self._pre_pip: dict = {}
         from ..recorder import Recorder, Scheduler
@@ -243,8 +245,8 @@ class MainWindow(QMainWindow):
         pl.fullscreen_clicked.connect(lambda: self._set_fullscreen(not self._fs))
         pl.external_clicked.connect(lambda: self.open_external(None))
         pl.volume_changed.connect(self._on_volume)
-        pl.prev_clicked.connect(lambda: self._on_key("prev", []))
-        pl.next_clicked.connect(lambda: self._on_key("next", []))
+        pl.prev_clicked.connect(lambda: self._on_key("ch_prev", []))
+        pl.next_clicked.connect(lambda: self._on_key("ch_next", []))
         pl.record_clicked.connect(self.toggle_record)
         pl.pip_clicked.connect(lambda: self._set_pip(not self._pip))
         pl.seek_to.connect(lambda sec: self.engine and self.engine.seek_abs(sec))
@@ -257,8 +259,8 @@ class MainWindow(QMainWindow):
             ("Esc", lambda: self._on_key("esc", [])),
             ("Ctrl+F", self._focus_search),
             ("F5", lambda: self.refresh(None)),
-            ("Ctrl+Up", lambda: self.zap(-1)),
-            ("Ctrl+Down", lambda: self.zap(1)),
+            ("Ctrl+Up", lambda: self.zap(-1, "Ctrl+↑")),
+            ("Ctrl+Down", lambda: self.zap(1, "Ctrl+↓")),
             ("Ctrl+Space", lambda: self.engine and self.engine.toggle_pause()),
             ("Ctrl+L", lambda: self.engine and self.engine.go_live()),
             ("Ctrl+I", self._show_info),
@@ -452,9 +454,16 @@ class MainWindow(QMainWindow):
         self._update_layout()
         return True
 
-    def play_live(self, item: Item | None) -> None:
+    def play_live(self, item: Item | None, reason: str = "") -> None:
+        """reason: kanal neden değişti (tuş, hatırlatıcı, çoklu görüntü…) — ekranda ve günlükte gösterilir; boş = seçim."""
         if item is None:
             return
+        prev = self.current_item.name if (self.current_item and self.current_req
+                                          and self.current_req.kind == "live") else ""
+        self.switch_log.append((time.time(), prev, item.name, reason or "listeden seçim"))
+        del self.switch_log[:-30]
+        log.info("kanal: %s → %s (%s)", prev or "—", item.name, reason or "listeden seçim")
+        self._switch_reason = reason
         if item.extra_dict().get("drm"):
             self._status("⚠ Bu kanal DRM korumalı olabilir; oynatılamayabilir.")
         cur, nxt = self._now_next(item)
@@ -502,7 +511,7 @@ class MainWindow(QMainWindow):
                              extra_options=getattr(self, "_mv_extra_options", None),
                              numbers=self._channel_numbers(), parent=self)
         mv.setAttribute(Qt.WA_DeleteOnClose, True)
-        mv.open_in_main.connect(lambda it: QTimer.singleShot(300, lambda: self.play_live(it)))
+        mv.open_in_main.connect(lambda it: QTimer.singleShot(300, lambda: self.play_live(it, "çoklu görüntüden dönüş")))
         mv.destroyed.connect(lambda *_: setattr(self, "_multiview", None))
         self._multiview = mv
         mv.show()
@@ -521,7 +530,7 @@ class MainWindow(QMainWindow):
             return
         row = self.live_page.model.row_of(item.key)
         num = f"{self.live_page.model.number_of(row)}  " if row >= 0 else ""
-        lines = [f"{num}{item.name}"]
+        lines = [f"{num}{item.name}" + (f"   ({self._switch_reason})" if self._switch_reason else "")]
         if cur:
             lines.append(f"▶ {cur['title']}  ({time.strftime('%H:%M', time.localtime(cur['start']))}–"
                          f"{time.strftime('%H:%M', time.localtime(cur['stop']))})")
@@ -613,7 +622,7 @@ class MainWindow(QMainWindow):
             self.open_url(extra.get("source_url", ""))
             return
         if kind == "live":
-            self.play_live(self.store.item(sid, "live", item_id))
+            self.play_live(self.store.item(sid, "live", item_id), "geçmişten")
         elif kind == "movie":
             self.play_movie(self.store.item(sid, "movie", item_id), start)
         elif kind == "episode":
@@ -826,7 +835,7 @@ class MainWindow(QMainWindow):
             return
         item = self.store.item(int(last[0]), "live", str(last[1]))
         if item:
-            self.play_live(item)
+            self.play_live(item, "açılışta son kanal")
             self.live_page.select_key(item.key)
 
     # ================================================================== tuşlar
@@ -838,19 +847,37 @@ class MainWindow(QMainWindow):
                 action in ("next", "prev") or req.kind == "image"):
             self._step_file(1 if action in ("next", "down", "pgdn") else -1)
             return
+        ctl = self.settings["controls"]
         if action in ("up", "down"):
-            if live:
-                self.zap(-1 if action == "up" else 1)
+            if ctl.get("arrow_keys", "volume") == "channel":
+                if live:
+                    self.zap(-1 if action == "up" else 1, "↑ tuşu" if action == "up" else "↓ tuşu")
+                elif eng:
+                    eng.seek(60 if action == "up" else -60)
             elif eng:
-                eng.seek(60 if action == "up" else -60)
-        elif action in ("next", "prev"):
+                # YouTube gibi: ok tuşları sesi açar/kısar (yanlışlıkla kanal değişmesin)
+                eng.add_volume(5 if action == "up" else -5)
+                vol = eng._get("volume")
+                if isinstance(vol, (int, float)):
+                    eng.show_text(f"🔊 Ses %{vol:.0f}", 800)
+        elif action in ("ch_next", "ch_prev"):
+            # açık kanal değiştirme: ⏮/⏭ düğmeleri, kumandanın kanal tuşları
             if live:
-                self.zap(1 if action == "next" else -1)
+                self.zap(1 if action == "ch_next" else -1, "kanal tuşu")
+            elif not self._step_episode(1 if action == "ch_next" else -1) and eng:
+                eng.seek(60 if action == "ch_next" else -60)
+        elif action in ("next", "prev"):
+            # medya tuşları (kulaklık/klavye): canlıda yalnız ayar açıksa kanal değiştirir
+            if live:
+                if ctl.get("media_keys_zap", False):
+                    self.zap(1 if action == "next" else -1, "medya tuşu")
+                elif eng:
+                    eng.show_text("Medya tuşu kanal değiştirmez (Ayarlar → Oynatma kontrolleri)", 1500)
             elif not self._step_episode(1 if action == "next" else -1) and eng:
                 eng.seek(60 if action == "next" else -60)
         elif action in ("pgup", "pgdn"):
             if live:
-                self.zap(-10 if action == "pgup" else 10)
+                self.zap(-10 if action == "pgup" else 10, "PgUp/PgDn")
             elif eng:
                 eng.seek(600 if action == "pgup" else -600)
         elif action in ("left", "right") and eng:
@@ -889,7 +916,7 @@ class MainWindow(QMainWindow):
             self._set_theater(not self._theater)
         elif action == "last":
             if self.prev_item:
-                self.play_live(self.prev_item)
+                self.play_live(self.prev_item, "son kanal (⌫)")
         elif action == "info":
             self._show_info()
         elif action == "epg":
@@ -929,7 +956,7 @@ class MainWindow(QMainWindow):
             eng.seek(step if what == "forward" else -step)
             eng.show_text(f"{step} sn ⏩" if what == "forward" else f"⏪ {step} sn", 700)
 
-    def zap(self, delta: int) -> None:
+    def zap(self, delta: int, reason: str = "") -> None:
         items = self.live_page.model.items
         if not items:
             return
@@ -938,7 +965,7 @@ class MainWindow(QMainWindow):
             i = self.live_page.view.currentIndex().row()
         j = (i + delta) % len(items) if i >= 0 else 0
         item = items[j]
-        self.play_live(item)
+        self.play_live(item, reason or "kanal değiştirme")
         self.live_page.select_key(item.key)
 
     def _commit_digits(self) -> None:
@@ -951,7 +978,7 @@ class MainWindow(QMainWindow):
         row = model.row_for_number(n)
         if row >= 0:
             item = model.items[row]
-            self.play_live(item)
+            self.play_live(item, f"{n} numara")
             self.live_page.select_key(item.key)
         elif self.engine:
             self.engine.show_text(f"Kanal {n} bu listede yok", 1800)
@@ -975,6 +1002,10 @@ class MainWindow(QMainWindow):
             lines.append(f"Gecikme: {st['cache']:.1f} sn ({opt.LATENCY_MODES[self.settings['latency']['mode']]['label']})")
         elif st.get("duration"):
             lines.append(f"{fmt_clock(st.get('pos'))} / {fmt_clock(st['duration'])}")
+        if self.switch_log:
+            lines.append("Son kanal değişiklikleri:")
+            for ts, a, b, why in self.switch_log[-3:]:
+                lines.append(f"  {time.strftime('%H:%M:%S', time.localtime(ts))}  {a or '—'} → {b}  ({why})")
         self.engine.show_text("\n".join(l for l in lines if l), 5000)
 
     def _show_epg_osd(self) -> None:
@@ -1565,7 +1596,7 @@ class MainWindow(QMainWindow):
             if box.clickedButton() is watch:
                 it = self.store.item(int(job.key[0]), job.key[1], str(job.key[2])) if len(job.key) == 3 else None
                 if it:
-                    self.play_live(it)
+                    self.play_live(it, "hatırlatıcı")
         box.finished.connect(done)
         box.show()
         QApplication.alert(self)

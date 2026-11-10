@@ -146,9 +146,14 @@ def test_ui_end_to_end(tmp_path, monkeypatch):
         assert pump(5, lambda: "Keskinlik" in win.player.vsr_badge.toolTip()), win.player.vsr_badge.toolTip()
         assert "Gürültü azaltma" in win.player.vsr_badge.toolTip()
         assert win.live_page.model.playing_key == first.key
-        # kanal geçişi (Aşağı ok mpv'den gelir) ve numara ile kanal açma
+        # ↓ ok tuşu varsayılan olarak sesi kısar, kanal DEĞİŞMEZ (yanlışlıkla kanal değişmesin)
         win._on_key("down", [])
+        pump(0.5)
+        assert win.current_item.name == first.name
+        # açık kanal değiştirme (⏭ düğmesi / kumandanın kanal tuşu) ve numara ile kanal açma
+        win._on_key("ch_next", [])
         assert pump(10, lambda: "1920×1080" in win.status_stats.text())
+        assert win.switch_log[-1][1:] == (first.name, "Kanal 2", "kanal tuşu")
         win._on_key("digit", ["3"])
         win._on_key("enter", [])
         assert pump(10, lambda: "720×576" in win.status_stats.text())

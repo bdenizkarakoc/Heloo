@@ -72,6 +72,8 @@ DEFAULTS: dict[str, Any] = {
         "click_action": "zones",  # zones (orta: duraklat, kenarlar: sar) | pause (her yer duraklat) | none
         "seek_step": 5,           # kenara tıklayınca kaç saniye sarılsın
         "mv_audio_hover": True,   # çoklu görüntüde ses fare imlecinin üstündeki hücreye geçsin
+        "arrow_keys": "volume",   # ↑/↓: volume (ses, YouTube gibi) | channel (kanal değiştir)
+        "media_keys_zap": False,  # kulaklık/klavye "sonraki/önceki" tuşları canlı yayında kanal değiştirsin
     },
     "metadata": {
         "tmdb_key": "",           # themoviedb.org/settings/api (ücretsiz): film/dizi açıklama, poster, oyuncular
@@ -119,6 +121,7 @@ CHOICES: dict[tuple[str, str], tuple] = {
     ("latency", "live_format"): ("ts", "m3u8"),
     ("lossless", "mode"): ("always", "fullscreen", "manual"),
     ("controls", "click_action"): ("zones", "pause", "none"),
+    ("controls", "arrow_keys"): ("volume", "channel"),
     ("audio", "prefer"): ("tr", "original"),
     ("subtitles", "prefer"): ("tr", "off"),
 }

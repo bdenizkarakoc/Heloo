@@ -18,7 +18,8 @@ def test_click_zones():
     assert z(None, None, "movie") == "pause"            # konum bilinmiyorsa duraklat
     assert z(100, 1200, "image") == "none"              # fotoğrafta sarma/duraklatma yok
     s = settings_mod.merged_defaults()
-    assert s["controls"] == {"click_action": "zones", "seek_step": 5, "mv_audio_hover": True}
+    assert s["controls"] == {"click_action": "zones", "seek_step": 5, "mv_audio_hover": True,
+                             "arrow_keys": "volume", "media_keys_zap": False}
     bad = settings_mod._sanitize({"controls": {"click_action": "x", "seek_step": 999}})
     assert bad["controls"]["click_action"] == "zones" and bad["controls"]["seek_step"] == 60
 

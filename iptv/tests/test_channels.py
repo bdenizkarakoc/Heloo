@@ -297,3 +297,109 @@ def test_ui_hides_old_picture_until_new_channel_plays(tmp_path, monkeypatch):
         assert (eng.status()["w"], eng.status()["h"]) == (320, 180) and win.player.title.text() == "beIN SPORTS 2"
     finally:
         win.close()
+
+
+@pytest.mark.skipif(not _mpv_ok(), reason="libmpv yok")
+def test_beIN1_stays_on_beIN1(tmp_path, monkeypatch):
+    """beIN SPORTS 1 açıldıktan sonra kendiliğinden başka kanala geçmemeli: ↑/↓ (ses), medya tuşları, takılma
+    sonrası yeniden açma ve 20 sn oynatma boyunca kanal ve görüntü aynı kalır; kanal değişirse sebebi kaydedilir."""
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("HELOOTV_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from helootv.player.engine import MpvEngine
+    from helootv.ui.main_window import MainWindow
+    app = QApplication.instance() or QApplication([])
+    m3u = tmp_path / "k.m3u"
+    chans = [("beIN SPORTS 1 HD", 640, 360), ("beIN SPORTS 2 HD", 480, 270), ("beIN SPORTS 3 HD", 320, 180)]
+    m3u.write_text("#EXTM3U\n" + "".join(f'#EXTINF:-1 group-title="Spor",{n}\nav://lavfi:testsrc2=size={w}x{h}:rate=25\n'
+                                         for n, w, h in chans), encoding="utf-8")
+    store = Store(tmp_path / "t.db")
+    sid = store.add_source(name="Test", kind="m3u", url=str(m3u))
+    s = settings_mod.merged_defaults()
+    s["ui"]["resume_last_channel"] = False
+    s["ui"]["auto_refresh_hours"] = 0
+    catalog.refresh_source(store, store.get_source(sid), s)
+    win = MainWindow(store, s, headless=True)
+    win.show()
+    eng = MpvEngine(s, headless=True, on_event=lambda n, d: win.bridge.event.emit(n, d), extra_options={"ao": "null"})
+    eng.start()
+    win.engine = eng
+
+    def pump(sec, until=None):
+        end = time.time() + sec
+        while time.time() < end:
+            app.processEvents()
+            if until and until():
+                return True
+            time.sleep(0.02)
+        return bool(until and until())
+
+    def on_bein1():
+        st = eng.status()
+        return win.current_item.name == "beIN SPORTS 1 HD" and (st.get("w"), st.get("h")) == (640, 360)
+    try:
+        assert pump(5, lambda: len(win.live_page.model.items) == 3)
+        bein1 = win.live_page.model.items[0]
+        win.play_live(bein1)
+        assert pump(10, on_bein1)
+        vol = float(eng._get("volume"))
+        for action in ("down", "down", "up", "next", "prev"):        # ses tuşları ve medya tuşları
+            win._on_key(action, [])
+            pump(0.3)
+            assert on_bein1(), action
+        assert float(eng._get("volume")) == vol - 5
+        eng._schedule_retry(0.05)                                    # takılma sonrası yeniden açma
+        pump(3)
+        assert pump(10, on_bein1)
+        end = time.time() + 20                                       # 20 sn izle: hep beIN 1
+        while time.time() < end:
+            pump(0.5)
+            assert on_bein1()
+        assert [e[2] for e in win.switch_log] == ["beIN SPORTS 1 HD"]
+        # ayardan ok tuşları kanal değiştirsin: değişir ve sebebi kaydedilir
+        s["controls"]["arrow_keys"] = "channel"
+        win._on_key("down", [])
+        assert pump(10, lambda: win.current_item.name == "beIN SPORTS 2 HD")
+        assert win.switch_log[-1][1:] == ("beIN SPORTS 1 HD", "beIN SPORTS 2 HD", "↓ tuşu")
+        s["controls"]["media_keys_zap"] = True
+        win._on_key("next", [])
+        assert pump(10, lambda: win.current_item.name == "beIN SPORTS 3 HD")
+        assert win.switch_log[-1][3] == "medya tuşu"
+    finally:
+        win.close()
+
+
+@pytest.mark.skipif(not (_mpv_ok() and shutil.which("ffmpeg")), reason="libmpv/ffmpeg yok")
+def test_playlist_url_does_not_advance_to_other_stream(tmp_path):
+    """Sağlayıcı kanal adresi olarak birden çok öğeli bir oynatma listesi verirse ilk öğe bitince mpv listedeki BAŞKA
+    yayına geçerdi ("başka programa geçiyor"). Aynı kanal yeniden açılmalı."""
+    from helootv.player.engine import MpvEngine, PlayRequest
+    www = tmp_path / "www"
+    www.mkdir()
+    for name, (w, h), dur in (("kanal", (640, 360), 3), ("baska", (320, 180), 30)):
+        subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", f"testsrc2=size={w}x{h}:rate=25", "-t", str(dur),
+                        "-c:v", "libx264", "-preset", "ultrafast", "-f", "mpegts", str(www / f"{name}.ts")], check=True)
+    httpd = _serve(www)
+    base = f"http://127.0.0.1:{httpd.server_address[1]}"
+    (www / "bein1.m3u").write_text(f"#EXTM3U\n#EXTINF:-1,beIN 1\n{base}/kanal.ts\n#EXTINF:-1,Başka\n{base}/baska.ts\n",
+                                   encoding="utf-8")
+    eng = MpvEngine(settings_mod.merged_defaults(), headless=True, extra_options={"ao": "null"})
+    eng.start()
+    try:
+        eng.play(PlayRequest(url=f"{base}/bein1.m3u", title="beIN SPORTS 1", kind="live"))
+        seen, late = set(), set()
+        t0 = time.time()
+        while time.time() - t0 < 14:                 # ilk öğe 3 sn; bitince aynı kanal yeniden açılmalı
+            st = eng.tick() or {}
+            if st.get("w"):
+                seen.add((st["w"], st["h"]))
+                if time.time() - t0 > 7:
+                    late.add((st["w"], st["h"]))
+            time.sleep(0.1)
+        assert seen == {(640, 360)}, seen            # başka yayına geçmedi
+        assert late == {(640, 360)}, "kanal bitince durdu, yeniden açılmadı"
+    finally:
+        eng.shutdown()
+        httpd.shutdown()

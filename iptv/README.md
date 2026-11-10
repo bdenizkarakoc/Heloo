@@ -146,6 +146,17 @@ TiviMate / IPTVnator / OTT Navigator'daki özelliklerin karşılıkları:
 - **Kanal numaraları**: sağlayıcının kanal numaraları eksiksiz ve tekrarsızsa liste, numarayla açma (0–9), rehber,
   çoklu görüntü ve ekran yazısı hep aynı numarayı kullanır — kategori değişse de kanal aynı numarayı taşır. Numaralar
   eksik/tekrarlıysa sıra numarası.
+- **"beIN SPORTS 1 açıkken kendiliğinden başka yayına geçiyor"**:
+  - Bazı sağlayıcılar kanal adresi olarak birden çok yayın içeren bir **oynatma listesi** verir; oynatıcı ilk yayın
+    bitince listedeki BAŞKA yayına geçiyordu. Artık yalnız kanalın kendi yayını tutulur; biterse aynı kanal yeniden
+    açılır (test bunu eski kodda yakalar).
+  - **↑ / ↓ ok tuşları varsayılan olarak sesi** açar/kısar (YouTube gibi); eskiden komşu kanala geçiyordu. Kanal
+    değiştirmek için ⏮/⏭, PgUp/PgDn, Ctrl+↑/↓, numara tuşları, kumandanın kanal tuşları. Ayarlar → Oynatma
+    kontrolleri'nden ok tuşları yeniden "kanal değiştir" yapılabilir.
+  - Kulaklık/klavye **medya tuşları** canlı yayında kanal değiştirmez (ayardan açılabilir).
+  - Çoklu görüntü kapanınca **tıklanarak seçilen** kanal sürer (fareyle üzerinden geçilen değil).
+  - Kanal her değiştiğinde ekranda **sebebi** yazar ("beIN SPORTS 2 (↓ tuşu)"); **I** tuşu son değişiklikleri
+    gösterir, günlükte de kayıtlıdır.
 - **"Yeni kanala geçince eski kanal görünüyor"**: bazı Xtream panelleri kanal adresini kanala değil *oturuma* bağlı bir
   adrese yönlendirir (`/hls/<oturum>/…`); bu adres o oturumda en son izlenen kanalı yayınlar. Heloo TV eskiden HLS
   kalite adresini 5 dk önbellekte tutuyordu; bir kanala geri dönünce eski kanal görünebiliyordu. Artık yönlendirilen

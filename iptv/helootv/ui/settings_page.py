@@ -463,6 +463,10 @@ class SettingsPage(QScrollArea):
         self.seek_step.setSuffix(" sn")
         self.seek_step.setToolTip("Videonun sağ/sol kenarına tıklayınca kaç saniye sarılsın")
         self.mv_hover = QCheckBox("Çoklu görüntüde ses, fare imlecinin üstündeki ekrana geçsin")
+        self.arrow_keys = QComboBox()
+        self.arrow_keys.addItem("Ses aç / kıs (YouTube gibi; yanlışlıkla kanal değişmez)", "volume")
+        self.arrow_keys.addItem("Kanal değiştir (TV kumandası gibi)", "channel")
+        self.media_zap = QCheckBox("Kulaklık/klavye medya tuşları (sonraki/önceki) canlı yayında kanal değiştirsin")
         note = QLabel("Çift tık her zaman tam ekran. Kenar alanları videonun sol ve sağ üçte biridir; ekranda "
                       "\"⏪ 5 sn\" / \"5 sn ⏩\" yazar.")
         note.setWordWrap(True)
@@ -470,12 +474,18 @@ class SettingsPage(QScrollArea):
         r = 0
         lay.addWidget(QLabel("Videoya tek tıklama"), r, 0); lay.addWidget(self.click_action, r, 1); r += 1
         lay.addWidget(QLabel("Kenara tıklayınca sarma"), r, 0); lay.addWidget(self.seek_step, r, 1); r += 1
+        lay.addWidget(QLabel("↑ / ↓ ok tuşları"), r, 0); lay.addWidget(self.arrow_keys, r, 1); r += 1
+        lay.addWidget(self.media_zap, r, 0, 1, 2); r += 1
         lay.addWidget(self.mv_hover, r, 0, 1, 2); r += 1
+        note.setText(note.text() + " Kanal değiştirmek için: ⏮/⏭ düğmeleri, PgUp/PgDn, Ctrl+↑/↓, numara tuşları; "
+                     "kanal her değiştiğinde ekranda sebebi yazar (I tuşu: son değişiklikler).")
         lay.addWidget(note, r, 0, 1, 2)
         lay.setColumnStretch(1, 1)
         self.click_action.currentIndexChanged.connect(self._changed)
         self.seek_step.valueChanged.connect(self._changed)
         self.mv_hover.toggled.connect(self._changed)
+        self.arrow_keys.currentIndexChanged.connect(self._changed)
+        self.media_zap.toggled.connect(self._changed)
         self.body.addWidget(g)
 
     # ------------------------------------------------------------------ gecikme
@@ -669,6 +679,8 @@ class SettingsPage(QScrollArea):
         self.click_action.setCurrentIndex(max(0, self.click_action.findData(ctl["click_action"])))
         self.seek_step.setValue(int(ctl["seek_step"]))
         self.mv_hover.setChecked(bool(ctl["mv_audio_hover"]))
+        self.arrow_keys.setCurrentIndex(max(0, self.arrow_keys.findData(ctl["arrow_keys"])))
+        self.media_zap.setChecked(bool(ctl["media_keys_zap"]))
         self.amd_fsr.setChecked(bool(v["amd_fsr"]))
         ls = s["lossless"]
         self.ls_mode.setCurrentIndex(max(0, self.ls_mode.findData(ls["mode"])))
@@ -726,7 +738,8 @@ class SettingsPage(QScrollArea):
         pic["denoise"] = self.denoise.currentData()
         v["low_boost"] = self.low_boost.isChecked()
         s["controls"].update(click_action=self.click_action.currentData(), seek_step=self.seek_step.value(),
-                             mv_audio_hover=self.mv_hover.isChecked())
+                             mv_audio_hover=self.mv_hover.isChecked(), arrow_keys=self.arrow_keys.currentData(),
+                             media_keys_zap=self.media_zap.isChecked())
         v["amd_fsr"] = self.amd_fsr.isChecked()
         from .. import lossless
         ls = s["lossless"]

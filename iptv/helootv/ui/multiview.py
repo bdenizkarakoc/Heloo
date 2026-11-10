@@ -91,6 +91,7 @@ class MultiViewWindow(QDialog):
         self.headless = headless
         self.extra_options = extra_options or {}
         self.active = 0
+        self.chosen = 0                   # tıklanarak seçilen hücre: kapatınca ana oynatıcıda bu sürer (fare değil)
         self.solo: int | None = None
         self.bridge = _Bridge()
         self.bridge.event.connect(self._on_event)
@@ -200,6 +201,7 @@ class MultiViewWindow(QDialog):
     def _picked(self, c: Cell) -> None:
         self._play(c, c.pick.currentData())
         self.set_active(c.index)
+        self.chosen = c.index
 
     def _play(self, c: Cell, item) -> None:
         c.item = item
@@ -258,6 +260,7 @@ class MultiViewWindow(QDialog):
             action = data.get("action")
             if action == "click":
                 self.set_active(index)
+                self.chosen = index
             elif action == "fullscreen":
                 self.set_active(index)
                 self.set_solo(None if self.solo == index else index)
@@ -274,7 +277,9 @@ class MultiViewWindow(QDialog):
             self._stop_cell(c)
 
     def closeEvent(self, event) -> None:
-        active = self.cells[self.active].item if self.active < len(self.cells) else None
+        # fareyle gezinmek (ses imleci izler) ana kanalı değiştirmez: tıklanarak seçilen hücre, o boşsa ilk dolu hücre
+        cands = [self.chosen] + [c.index for c in self.cells[:self.count]]
+        active = next((self.cells[i].item for i in cands if i < self.count and self.cells[i].item is not None), None)
         self.shutdown()
         if active is not None:
             self.open_in_main.emit(active)

@@ -64,8 +64,8 @@ INPUT_CONF = """\
 # Heloo TV — mpv tuşları. Eylemler uygulamaya "script-message helootv <eylem>" olarak gider.
 UP            script-message helootv up
 DOWN          script-message helootv down
-CHANNEL_UP    script-message helootv next
-CHANNEL_DOWN  script-message helootv prev
+CHANNEL_UP    script-message helootv ch_next
+CHANNEL_DOWN  script-message helootv ch_prev
 PGUP          script-message helootv pgup
 PGDWN         script-message helootv pgdn
 LEFT          script-message helootv left
@@ -489,13 +489,22 @@ class MpvEngine:
             self._entry_id = event.data.playlist_entry_id
         elif eid == E.FILE_LOADED:
             self._loaded_at = time.monotonic()
+            req = self.request
+            if req is not None and req.kind in ("live", "catchup"):
+                count = self._get("playlist-count")
+                if isinstance(count, int) and count > 1:
+                    # sağlayıcının adresi birden çok öğeli bir oynatma listesi: mpv bu öğe bitince listedeki BAŞKA
+                    # yayına geçerdi. Yalnız şu anki öğe kalır; biterse aynı kanal yeniden açılır.
+                    log.warning("kanal adresi %d öğeli oynatma listesi; yalnız ilk öğe tutuldu: %s", count, req.url)
+                    self.command("playlist-clear")
             self._emit("file-loaded", {})
         elif eid == E.PLAYBACK_RESTART:
             self._emit("playing", {})
         elif eid == E.END_FILE:
             d = event.data
             expected = self._expect_entry if self._expect_entry is not None else self._entry_id
-            if d.playlist_entry_id != expected:
+            # oynatma listesi açıldıysa çocuk öğenin kimliği farklıdır (START_FILE'da öğrenilen); o da bizim yayınımız
+            if d.playlist_entry_id not in (expected, self._entry_id):
                 return
             if d.reason in (0, 4):  # EOF ya da hata
                 self._handle_end(d.reason)
