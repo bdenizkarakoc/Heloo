@@ -132,6 +132,18 @@ TiviMate / IPTVnator / OTT Navigator'daki özelliklerin karşılıkları:
 - Oynatıcı çubuğu iki satıra bölündü (sarma düğmeleri ilerleme çubuğunun yanında; ses ve pencere düğmeleri başlık
   satırında): pencerenin en küçük genişliği 2157 → 1328 piksel (1366 px dizüstü ekrana sığar).
 
+## Çoklu görüntü (2 / 4 kanal)
+
+Üst çubukta **▦ Çoklu** ya da **F4**: TiviMate/OTT Navigator'daki gibi aynı anda 2 ya da 4 kanal. Her hücrenin
+üstündeki kutudan kanal seçilir (yazarak arama). Ses yalnız etkin hücrededir: **tıklayın** → ses o hücreye geçer
+(mor çerçeve, 🔊); **çift tık** → hücre tek başına büyür, yeniden çift tık ya da Esc → geri. Kapatınca etkin hücredeki
+kanal ana oynatıcıda sürer.
+
+- Her hücre ayrı mpv'dir; dört akış birden akıcı oynasın diye hücrelerde RTX VSR / yapay zekâ büyütme / gürültü
+  azaltma kapalı, keskinlik açıktır. Bekçi (takılınca yeniden aç) her hücrede çalışır.
+- Ana oynatıcı açılırken durdurulur: çoğu IPTV hesabı aynı anda 1–2 bağlantıya izin verir. Xtream hesabının sınırı
+  aşılırsa pencerenin üstünde uyarı çıkar (fazla kanal açılmayabilir).
+
 ## Film ve dizi bilgileri (TMDB)
 
 IPTVnator'daki gibi, kendi ücretsiz [TMDB](https://www.themoviedb.org/settings/api) anahtarınızla (Ayarlar → Ses ve

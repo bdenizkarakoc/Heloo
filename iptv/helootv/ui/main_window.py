@@ -149,6 +149,12 @@ class MainWindow(QMainWindow):
         self.guide_btn.setCursor(Qt.PointingHandCursor)
         self.guide_btn.clicked.connect(self.open_guide)
         h.addWidget(self.guide_btn)
+        self.multi_btn = QPushButton("▦ Çoklu")
+        self.multi_btn.setObjectName("Flat")
+        self.multi_btn.setToolTip("Çoklu görüntü: aynı anda 2 ya da 4 kanal (F4)")
+        self.multi_btn.setCursor(Qt.PointingHandCursor)
+        self.multi_btn.clicked.connect(self.open_multiview)
+        h.addWidget(self.multi_btn)
         self.update_btn = QPushButton("⬆ Güncelleme var")
         self.update_btn.setObjectName("Primary")
         self.update_btn.setCursor(Qt.PointingHandCursor)
@@ -255,6 +261,7 @@ class MainWindow(QMainWindow):
             ("Ctrl+G", self.toggle_lossless),
             ("Ctrl+R", self.toggle_record),
             ("F2", self.open_guide),
+            ("F4", self.open_multiview),
             ("Ctrl+M", lambda: self._set_pip(not self._pip)),
         ]
         shortcuts += [("Ctrl+O", self.open_file_dialog), ("Ctrl+U", self.open_url_dialog),
@@ -358,6 +365,9 @@ class MainWindow(QMainWindow):
             self.player.set_idle("Oynatıcı kapandı", "Uygulamayı yeniden başlatın.")
 
     def _tick(self) -> None:
+        mv = getattr(self, "_multiview", None)
+        if mv is not None and mv.isVisible():
+            mv.tick()
         if not self.engine or not self.current_req:
             return
         st = self.engine.tick()
@@ -429,14 +439,10 @@ class MainWindow(QMainWindow):
     def play_live(self, item: Item | None) -> None:
         if item is None:
             return
-        src = self.ctx.source(item.source_id)
-        url = catalog.play_url(self.store, item, self.settings, src)
         if item.extra_dict().get("drm"):
             self._status("⚠ Bu kanal DRM korumalı olabilir; oynatılamayabilir.")
         cur, nxt = self._now_next(item)
-        sub = f"Şimdi: {cur['title']}" if cur else ""
-        req = PlayRequest(url=url, title=item.name, kind="live", key=item.key, logo=item.logo,
-                          headers=catalog.item_headers(item, src), subtitle=sub)
+        req = self._live_request(item, f"Şimdi: {cur['title']}" if cur else "")
         if self.current_item and self.current_item.key != item.key:
             self.prev_item = self.current_item
         self.current_item = item
@@ -452,6 +458,34 @@ class MainWindow(QMainWindow):
         if self._theater and not self._fs:
             self._set_theater(False)
         self._osd_channel(item, cur, nxt)
+
+    def _live_request(self, item: Item, subtitle: str = "") -> PlayRequest:
+        src = self.ctx.source(item.source_id)
+        url = catalog.play_url(self.store, item, self.settings, src)
+        return PlayRequest(url=url, title=item.name, kind="live", key=item.key, logo=item.logo,
+                           headers=catalog.item_headers(item, src), subtitle=subtitle)
+
+    # ------------------------------------------------------------------ çoklu görüntü
+    def open_multiview(self) -> None:
+        from .multiview import MultiViewWindow
+        items = list(self.live_page.model.items)
+        if not items:
+            self._status("Çoklu görüntü için önce Canlı TV'de bir kategori seçin.")
+            return
+        first = self.current_item if (self.current_req and self.current_req.kind == "live") else None
+        src = self.ctx.source((first or items[0]).source_id) or {}
+        max_conn = int(((src.get("info") or {}).get("account") or {}).get("max_connections") or 0)
+        if self.current_req:
+            self.stop()               # ana oynatıcının bağlantısı boşalsın (çoğu hesap 1–2 bağlantı verir)
+        mv = MultiViewWindow(self.settings, items, self._live_request, max_conn, headless=self.headless,
+                             extra_options=getattr(self, "_mv_extra_options", None), parent=self)
+        mv.setAttribute(Qt.WA_DeleteOnClose, True)
+        mv.open_in_main.connect(lambda it: QTimer.singleShot(300, lambda: self.play_live(it)))
+        mv.destroyed.connect(lambda *_: setattr(self, "_multiview", None))
+        self._multiview = mv
+        mv.show()
+        if first is not None:
+            mv.assign(0, first)
 
     def _now_next(self, item: Item):
         cur, nxt = self.live_page.model.now_next(item)

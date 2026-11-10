@@ -57,6 +57,7 @@ python -m pytest tests -q              # testler (libmpv2/ffmpeg/7z varsa başs�
 - Güncelleme `updater.py` (Qt'siz; `check` git fetch + rev-list, `apply` yalnız `--ff-only`, kirli/ileride ise durur).
 - TMDB `tmdb.py` (Qt'siz; `lookup` arama+ayrıntı+önbellek `cache/tmdb.json`, `merge` yalnız boşları doldurur);
   arayüzde `_DetailsBase._tmdb` (anahtar `settings.metadata.tmdb_key`).
+- Çoklu görüntü `ui/multiview.py` (hücre başına `MpvEngine`, `cell_settings` hafif; tık = `click` script-message).
 - Veritabanı: `store.py` (iş parçacığı başına bağlantı, WAL). EPG ayrı dosyada (`*-epg.db`); uzun EPG içe aktarımı
   katalog/geçmiş yazmalarını bekletmez. Arayüzden uzun sorguları `ui/workers.run_task` ile arka planda çalıştır.
 - Kullanıcı metinleri Türkçe. `.ps1`/`.bat` dosyaları yalnız ASCII (Windows kod sayfası sorunları).

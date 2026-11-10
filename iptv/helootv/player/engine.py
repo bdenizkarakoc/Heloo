@@ -76,6 +76,7 @@ BS            script-message helootv last
 f             script-message helootv fullscreen
 F11           script-message helootv fullscreen
 MBTN_LEFT_DBL script-message helootv fullscreen
+MBTN_LEFT     script-message helootv click
 t             script-message helootv theater
 i             script-message helootv info
 e             script-message helootv epg
