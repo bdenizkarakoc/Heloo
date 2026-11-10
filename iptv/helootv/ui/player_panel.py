@@ -233,11 +233,16 @@ class PlayerPanel(QWidget):
             b.hide()
         self.btn_live.hide()
 
-    def set_now_playing(self, title: str, subtitle: str, live: bool) -> None:
+    def set_now_playing(self, title: str, subtitle: str, live: bool, replay: bool = False) -> None:
+        """replay: geri izleme (tekrar) — canlı olmadığı açıkça görünsün, "Canlıya dön" ile canlı kanala geçilsin."""
         self.title.setText(title)
         self.subtitle.setText(subtitle)
-        self.live_badge.setVisible(live)
-        self.btn_live.setVisible(live)
+        self.live_badge.setText("⟲ TEKRAR" if replay else "● CANLI")
+        self.live_badge.setToolTip("Bu bir tekrar (geri izleme); canlı yayın değil. Canlıya dönmek için: ⦿ Canlıya dön"
+                                   if replay else "")
+        self.live_badge.setVisible(live or replay)
+        self.btn_live.setText("⦿ Canlıya dön" if replay else "⦿ Canlı")
+        self.btn_live.setVisible(live or replay)
 
     def _seek_release(self) -> None:
         self._seeking = False

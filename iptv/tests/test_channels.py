@@ -261,7 +261,7 @@ def test_ui_hides_old_picture_until_new_channel_plays(tmp_path, monkeypatch):
     app = QApplication.instance() or QApplication([])
     m3u = tmp_path / "k.m3u"
     m3u.write_text("#EXTM3U\n" + "".join(
-        f'#EXTINF:-1 group-title="Spor",beIN SPORTS {i}\nav://lavfi:testsrc2=size={w}x{h}:rate=25\n'
+        f'#EXTINF:-1 group-title="Spor",beIN SPORTS {i}\nav://lavfi:testsrc2=size={w}x{h}:rate=25,realtime\n'
         for i, (w, h) in ((1, (640, 360)), (2, (320, 180)))), encoding="utf-8")
     store = Store(tmp_path / "t.db")
     sid = store.add_source(name="Test", kind="m3u", url=str(m3u))
@@ -313,7 +313,7 @@ def test_beIN1_stays_on_beIN1(tmp_path, monkeypatch):
     app = QApplication.instance() or QApplication([])
     m3u = tmp_path / "k.m3u"
     chans = [("beIN SPORTS 1 HD", 640, 360), ("beIN SPORTS 2 HD", 480, 270), ("beIN SPORTS 3 HD", 320, 180)]
-    m3u.write_text("#EXTM3U\n" + "".join(f'#EXTINF:-1 group-title="Spor",{n}\nav://lavfi:testsrc2=size={w}x{h}:rate=25\n'
+    m3u.write_text("#EXTM3U\n" + "".join(f'#EXTINF:-1 group-title="Spor",{n}\nav://lavfi:testsrc2=size={w}x{h}:rate=25,realtime\n'
                                          for n, w, h in chans), encoding="utf-8")
     store = Store(tmp_path / "t.db")
     sid = store.add_source(name="Test", kind="m3u", url=str(m3u))

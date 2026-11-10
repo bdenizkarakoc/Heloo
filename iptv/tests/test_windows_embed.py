@@ -46,7 +46,7 @@ def test_embedded_d3d11_playback(tmp_path, monkeypatch):
 
     assert pump(15, lambda: win.engine is not None), win.status_msg.text()
     assert win.engine.wid == int(win.player.host.winId())
-    win._start(PlayRequest(url="av://lavfi:testsrc2=size=1280x720:rate=25", title="Gömülü test", kind="live"))
+    win._start(PlayRequest(url="av://lavfi:testsrc2=size=1280x720:rate=25,realtime", title="Gömülü test", kind="live"))
     assert pump(20, lambda: (win.engine.status().get("out_w") or 0) == 1280), win.engine.status()
     vo = win.engine._get("current-vo")
     gpu_ctx = win.engine._get("current-gpu-context")

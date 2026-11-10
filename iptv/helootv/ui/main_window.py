@@ -238,9 +238,9 @@ class MainWindow(QMainWindow):
         st.clear_history_requested.connect(self._clear_history)
         st.picture_requested.connect(self.picture_dialog)
         pl = self.player
-        pl.pause_clicked.connect(lambda: self.engine and self.engine.toggle_pause())
+        pl.pause_clicked.connect(self._toggle_pause)
         pl.stop_clicked.connect(self.stop)
-        pl.live_clicked.connect(lambda: self.engine and self.engine.go_live())
+        pl.live_clicked.connect(self._back_to_live)
         pl.theater_clicked.connect(lambda: self._set_theater(not self._theater))
         pl.fullscreen_clicked.connect(lambda: self._set_fullscreen(not self._fs))
         pl.external_clicked.connect(lambda: self.open_external(None))
@@ -261,7 +261,7 @@ class MainWindow(QMainWindow):
             ("F5", lambda: self.refresh(None)),
             ("Ctrl+Up", lambda: self.zap(-1, "Ctrl+↑")),
             ("Ctrl+Down", lambda: self.zap(1, "Ctrl+↓")),
-            ("Ctrl+Space", lambda: self.engine and self.engine.toggle_pause()),
+            ("Ctrl+Space", self._toggle_pause),
             ("Ctrl+L", lambda: self.engine and self.engine.go_live()),
             ("Ctrl+I", self._show_info),
             ("Ctrl+T", lambda: self._set_theater(not self._theater)),
@@ -444,7 +444,7 @@ class MainWindow(QMainWindow):
         self.current_req = req
         self._last_save = time.time()
         self.player.show_loading(req.title, req.subtitle)
-        self.player.set_now_playing(req.title, req.subtitle, req.kind == "live")
+        self.player.set_now_playing(req.title, req.subtitle, req.kind == "live", replay=req.kind == "catchup")
         self._loading_timer.start()
         try:
             self.engine.play(req)
@@ -583,7 +583,31 @@ class MainWindow(QMainWindow):
             return True
         return False
 
-    def play_catchup(self, item: Item, prog: dict) -> None:
+    def confirm_catchup(self, item: Item, prog: dict) -> bool:
+        """Tekrar (geri izleme) kendiliğinden/yanlışlıkla açılmasın: ayara göre sorulur ya da hiç açılmaz."""
+        mode = self.settings["controls"].get("catchup", "ask")
+        if mode == "off":
+            self._status("Tekrar (geri izleme) kapalı — Ayarlar → Oynatma kontrolleri'nden açılabilir.")
+            if self.engine and self.current_req:
+                self.engine.show_text("Tekrar kapalı: canlı yayında kalındı", 1500)
+            return False
+        if mode == "direct":
+            return True
+        when = f"{time.strftime('%d.%m %H:%M', time.localtime(prog['start']))}–" \
+               f"{time.strftime('%H:%M', time.localtime(prog['stop']))}"
+        box = QMessageBox(QMessageBox.Question, "Tekrar izlensin mi?",
+                          f"{item.name}\n{prog.get('title', '')}  ({when})\n\nBu programın TEKRARI açılsın mı? "
+                          "Canlı yayından çıkılır.", parent=self)
+        yes = box.addButton("⟲ Tekrarı aç", QMessageBox.AcceptRole)
+        stay = box.addButton("● Canlıda kal", QMessageBox.RejectRole)
+        box.setDefaultButton(stay)
+        box.setEscapeButton(stay)
+        box.exec()
+        return box.clickedButton() is yes
+
+    def play_catchup(self, item: Item, prog: dict, confirmed: bool = False) -> None:
+        if not confirmed and not self.confirm_catchup(item, prog):
+            return
         src = self.ctx.source(item.source_id) or {}
         dur_min = max(1, math.ceil((prog["stop"] - prog["start"]) / 60))
         url = None
@@ -601,7 +625,7 @@ class MainWindow(QMainWindow):
                           headers=catalog.item_headers(item, src),
                           subtitle=f"Geri izleme · {time.strftime('%d.%m %H:%M', time.localtime(prog['start']))}")
         if self._start(req):
-            self.player.set_now_playing(req.title, req.subtitle, False)
+            self.player.set_now_playing(req.title, req.subtitle, False, replay=True)
 
     def play_history(self, h: dict | None) -> None:
         if not isinstance(h, dict):
@@ -880,6 +904,8 @@ class MainWindow(QMainWindow):
                 self.zap(-10 if action == "pgup" else 10, "PgUp/PgDn")
             elif eng:
                 eng.seek(600 if action == "pgup" else -600)
+        elif action in ("left", "right") and eng and live and ctl.get("stay_live", True):
+            eng.show_text("Canlı yayında: hep canlı (geri sarma kapalı — Ayarlar → Oynatma kontrolleri)", 1500)
         elif action in ("left", "right") and eng:
             eng.seek(-10 if action == "left" else 10)
         elif action == "digit" and args:
@@ -922,10 +948,10 @@ class MainWindow(QMainWindow):
         elif action == "epg":
             self._show_epg_osd()
         elif action == "live" and eng:
-            eng.go_live()
+            self._back_to_live()
             eng.show_text("Canlı yayına dönüldü", 1500)
         elif action == "pause" and eng:
-            eng.toggle_pause()
+            self._toggle_pause()
         elif action == "stop":
             self.stop()
 
@@ -942,6 +968,27 @@ class MainWindow(QMainWindow):
                           osd.get("w") if isinstance(osd, dict) else None)
         self._click_timer.start()
 
+    def _toggle_pause(self) -> None:
+        """Duraklat / sürdür. Canlı yayında "hep canlı" açıksa sürdürünce canlı kenara dönülür (geriden, tekrar gibi
+        izlenmez)."""
+        eng, req = self.engine, self.current_req
+        if not eng:
+            return
+        paused = eng.toggle_pause()
+        if not paused and req and req.kind == "live" and self.settings["controls"].get("stay_live", True):
+            eng.go_live()
+            eng.show_text("▶ Canlı", 900)
+        else:
+            eng.show_text("⏸ Duraklatıldı" if paused else "▶ Sürüyor", 900)
+
+    def _back_to_live(self) -> None:
+        """⦿ düğmesi: zaman kaydırmadan canlıya; tekrar (geri izleme) izleniyorsa kanalın canlı yayınına geç."""
+        req = self.current_req
+        if req and req.kind == "catchup" and self.current_item is not None:
+            self.play_live(self.current_item, "tekrardan canlıya dönüş")
+        elif self.engine:
+            self.engine.go_live()
+
     def _do_video_click(self) -> None:
         eng, req = self.engine, self.current_req
         if not eng or not req:
@@ -950,8 +997,9 @@ class MainWindow(QMainWindow):
         what = opt.click_zone(self._click_at[0], self._click_at[1], req.kind, ctl.get("click_action", "zones"))
         step = int(ctl.get("seek_step", 5))
         if what == "pause":
-            paused = eng.toggle_pause()
-            eng.show_text("⏸ Duraklatıldı" if paused else "▶ Sürüyor", 900)
+            self._toggle_pause()
+        elif what in ("back", "forward") and req.kind == "live" and ctl.get("stay_live", True):
+            eng.show_text("Canlı yayında: hep canlı (geri sarma kapalı — Ayarlar → Oynatma kontrolleri)", 1500)
         elif what in ("back", "forward"):
             eng.seek(step if what == "forward" else -step)
             eng.show_text(f"{step} sn ⏩" if what == "forward" else f"⏪ {step} sn", 700)

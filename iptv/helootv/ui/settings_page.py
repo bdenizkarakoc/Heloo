@@ -467,6 +467,11 @@ class SettingsPage(QScrollArea):
         self.arrow_keys.addItem("Ses aç / kıs (YouTube gibi; yanlışlıkla kanal değişmez)", "volume")
         self.arrow_keys.addItem("Kanal değiştir (TV kumandası gibi)", "channel")
         self.media_zap = QCheckBox("Kulaklık/klavye medya tuşları (sonraki/önceki) canlı yayında kanal değiştirsin")
+        self.stay_live = QCheckBox("Canlı yayın hep canlı: duraklatıp sürdürünce canlıya dön, canlıda geri sarma yok")
+        self.catchup_mode = QComboBox()
+        self.catchup_mode.addItem("Sorarak aç (varsayılan: canlıda kal)", "ask")
+        self.catchup_mode.addItem("Hiç açılmasın", "off")
+        self.catchup_mode.addItem("Sormadan aç", "direct")
         note = QLabel("Çift tık her zaman tam ekran. Kenar alanları videonun sol ve sağ üçte biridir; ekranda "
                       "\"⏪ 5 sn\" / \"5 sn ⏩\" yazar.")
         note.setWordWrap(True)
@@ -476,6 +481,8 @@ class SettingsPage(QScrollArea):
         lay.addWidget(QLabel("Kenara tıklayınca sarma"), r, 0); lay.addWidget(self.seek_step, r, 1); r += 1
         lay.addWidget(QLabel("↑ / ↓ ok tuşları"), r, 0); lay.addWidget(self.arrow_keys, r, 1); r += 1
         lay.addWidget(self.media_zap, r, 0, 1, 2); r += 1
+        lay.addWidget(self.stay_live, r, 0, 1, 2); r += 1
+        lay.addWidget(QLabel("Tekrar (geri izleme)"), r, 0); lay.addWidget(self.catchup_mode, r, 1); r += 1
         lay.addWidget(self.mv_hover, r, 0, 1, 2); r += 1
         note.setText(note.text() + " Kanal değiştirmek için: ⏮/⏭ düğmeleri, PgUp/PgDn, Ctrl+↑/↓, numara tuşları; "
                      "kanal her değiştiğinde ekranda sebebi yazar (I tuşu: son değişiklikler).")
@@ -486,6 +493,8 @@ class SettingsPage(QScrollArea):
         self.mv_hover.toggled.connect(self._changed)
         self.arrow_keys.currentIndexChanged.connect(self._changed)
         self.media_zap.toggled.connect(self._changed)
+        self.stay_live.toggled.connect(self._changed)
+        self.catchup_mode.currentIndexChanged.connect(self._changed)
         self.body.addWidget(g)
 
     # ------------------------------------------------------------------ gecikme
@@ -681,6 +690,8 @@ class SettingsPage(QScrollArea):
         self.mv_hover.setChecked(bool(ctl["mv_audio_hover"]))
         self.arrow_keys.setCurrentIndex(max(0, self.arrow_keys.findData(ctl["arrow_keys"])))
         self.media_zap.setChecked(bool(ctl["media_keys_zap"]))
+        self.stay_live.setChecked(bool(ctl["stay_live"]))
+        self.catchup_mode.setCurrentIndex(max(0, self.catchup_mode.findData(ctl["catchup"])))
         self.amd_fsr.setChecked(bool(v["amd_fsr"]))
         ls = s["lossless"]
         self.ls_mode.setCurrentIndex(max(0, self.ls_mode.findData(ls["mode"])))
@@ -739,7 +750,8 @@ class SettingsPage(QScrollArea):
         v["low_boost"] = self.low_boost.isChecked()
         s["controls"].update(click_action=self.click_action.currentData(), seek_step=self.seek_step.value(),
                              mv_audio_hover=self.mv_hover.isChecked(), arrow_keys=self.arrow_keys.currentData(),
-                             media_keys_zap=self.media_zap.isChecked())
+                             media_keys_zap=self.media_zap.isChecked(), stay_live=self.stay_live.isChecked(),
+                             catchup=self.catchup_mode.currentData())
         v["amd_fsr"] = self.amd_fsr.isChecked()
         from .. import lossless
         ls = s["lossless"]

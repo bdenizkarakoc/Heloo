@@ -62,6 +62,10 @@ python -m pytest tests -q              # testler (libmpv2/ffmpeg/7z varsa başs�
 - Kanal değişimi: her `play_live(item, reason)` `switch_log`'a yazılır ve OSD'de sebep gösterilir; ↑/↓ varsayılan ses
   (`controls.arrow_keys`), açık kanal eylemleri `ch_next/ch_prev` (düğmeler, CHANNEL_UP/DOWN), medya tuşları
   `controls.media_keys_zap`. Canlı adres çok öğeli oynatma listesiyse FILE_LOADED'da `playlist-clear`.
+- Canlı "hep canlı" (`controls.stay_live`): `_toggle_pause` sürdürünce `go_live`, canlıda ←/sol tık sarmaz, canlı
+  `demuxer-max-back-bytes` 32MiB. Tekrar yalnız `confirm_catchup` ile (`controls.catchup`: ask/off/direct); TEKRAR
+  etiketi `set_now_playing(replay=True)`, `_back_to_live`. Testlerde lavfi canlı kaynakları `,realtime` (yoksa bellek
+  sınırsız büyür, CI makinesi kapanır).
 - Videoya tık: `MainWindow._on_video_click` (çift tık süresi kadar bekler) → `opt.click_zone` (`settings.controls`).
 - HLS kalite önbelleği (`_pin_cache`) yalnız yönlendirmesiz adreslerde (`urljoin(req.url, info.uri) == variant`):
   oturum adresi önbelleğe alınırsa eski kanal görünür. Kanal geçişinde `PlayerPanel.show_loading` → "playing" olayıyla video.

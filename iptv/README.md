@@ -158,6 +158,14 @@ TiviMate / IPTVnator / OTT Navigator'daki özelliklerin karşılıkları:
   - Çoklu görüntü kapanınca **tıklanarak seçilen** kanal sürer (fareyle üzerinden geçilen değil).
   - Kanal her değiştiğinde ekranda **sebebi** yazar ("beIN SPORTS 2 (↓ tuşu)"); **I** tuşu son değişiklikleri
     gösterir, günlükte de kayıtlıdır.
+- **"Canlıdayken tekrar izliyorum" / "tekrarı açılıyor"**:
+  - **Hep canlı** (varsayılan): canlı yayında duraklatıp sürdürünce canlı kenara dönülür (eskiden geriden, tekrar gibi
+    izleniyordu); canlıda ← tuşu ve sola tıklama geri sarmaz. Canlı yayının geçmiş tamponu da küçültüldü (uzun maçta
+    bellek ~450 MB yerine ~200 MB).
+  - **Tekrar (geri izleme) kendiliğinden açılmaz**: yayın akışında / rehberde geçmiş programa çift tıklayınca
+    "Tekrarı açılsın mı?" diye sorulur, varsayılan cevap **Canlıda kal**. Ayarlar → Oynatma kontrolleri → "Tekrar":
+    Sorarak aç / **Hiç açılmasın** / Sormadan aç.
+  - Tekrar açıksa oynatıcıda **⟲ TEKRAR** etiketi ve **⦿ Canlıya dön** düğmesi görünür (canlı kanala geçer).
 - **"Yeni kanala geçince eski kanal görünüyor"**: bazı Xtream panelleri kanal adresini kanala değil *oturuma* bağlı bir
   adrese yönlendirir (`/hls/<oturum>/…`); bu adres o oturumda en son izlenen kanalı yayınlar. Heloo TV eskiden HLS
   kalite adresini 5 dk önbellekte tutuyordu; bir kanala geri dönünce eski kanal görünebiliyordu. Artık yönlendirilen

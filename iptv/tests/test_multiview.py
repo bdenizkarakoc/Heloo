@@ -39,7 +39,7 @@ def test_multiview_four_channels(tmp_path, monkeypatch):
     m3u = tmp_path / "k.m3u"
     m3u.write_text("#EXTM3U\n" + "".join(
         f'#EXTINF:-1 tvg-id="k{i}" group-title="Ulusal",Kanal {i}\n'
-        f"av://lavfi:testsrc2=size={w}x{h}:rate=25\n" for i, (w, h) in enumerate(
+        f"av://lavfi:testsrc2=size={w}x{h}:rate=25,realtime\n" for i, (w, h) in enumerate(
             [(640, 360), (480, 270), (320, 180), (800, 450)], 1)), encoding="utf-8")
     store = Store(tmp_path / "t.db")
     sid = store.add_source(name="Test", kind="m3u", url=str(m3u))

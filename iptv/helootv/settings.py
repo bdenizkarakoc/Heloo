@@ -74,6 +74,8 @@ DEFAULTS: dict[str, Any] = {
         "mv_audio_hover": True,   # çoklu görüntüde ses fare imlecinin üstündeki hücreye geçsin
         "arrow_keys": "volume",   # ↑/↓: volume (ses, YouTube gibi) | channel (kanal değiştir)
         "media_keys_zap": False,  # kulaklık/klavye "sonraki/önceki" tuşları canlı yayında kanal değiştirsin
+        "stay_live": True,        # canlı yayın hep canlı: duraklat→devam canlıya döner, canlıda geri sarma yok
+        "catchup": "ask",         # tekrar (geri izleme): ask (sorarak) | off (hiç açılmasın) | direct (sormadan)
     },
     "metadata": {
         "tmdb_key": "",           # themoviedb.org/settings/api (ücretsiz): film/dizi açıklama, poster, oyuncular
@@ -122,6 +124,7 @@ CHOICES: dict[tuple[str, str], tuple] = {
     ("lossless", "mode"): ("always", "fullscreen", "manual"),
     ("controls", "click_action"): ("zones", "pause", "none"),
     ("controls", "arrow_keys"): ("volume", "channel"),
+    ("controls", "catchup"): ("ask", "off", "direct"),
     ("audio", "prefer"): ("tr", "original"),
     ("subtitles", "prefer"): ("tr", "off"),
 }

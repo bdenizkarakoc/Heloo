@@ -19,7 +19,7 @@ def test_click_zones():
     assert z(100, 1200, "image") == "none"              # fotoğrafta sarma/duraklatma yok
     s = settings_mod.merged_defaults()
     assert s["controls"] == {"click_action": "zones", "seek_step": 5, "mv_audio_hover": True,
-                             "arrow_keys": "volume", "media_keys_zap": False}
+                             "arrow_keys": "volume", "media_keys_zap": False, "stay_live": True, "catchup": "ask"}
     bad = settings_mod._sanitize({"controls": {"click_action": "x", "seek_step": 999}})
     assert bad["controls"]["click_action"] == "zones" and bad["controls"]["seek_step"] == 60
 
@@ -156,3 +156,81 @@ def test_multiview_audio_follows_mouse_and_resize(tmp_path, monkeypatch):
         assert not mv.rows[0].isHidden()
     finally:
         mv.close()
+
+
+@pytest.mark.skipif(not _mpv_ok(), reason="libmpv/PySide6 yok")
+def test_live_stays_live_and_replay_never_opens_by_itself(tmp_path, monkeypatch):
+    monkeypatch.setenv("HELOOTV_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QMessageBox
+
+    from helootv import catalog
+    from helootv.player.engine import MpvEngine
+    from helootv.store import Store
+    from helootv.ui.main_window import MainWindow
+    app = QApplication.instance() or QApplication([])
+    m3u = tmp_path / "k.m3u"
+    m3u.write_text('#EXTM3U catchup="shift" catchup-days="3"\n'
+                   '#EXTINF:-1 tvg-id="b1" group-title="Spor",beIN SPORTS 1\nav://lavfi:testsrc2=size=640x360:rate=25,realtime\n',
+                   encoding="utf-8")
+    store = Store(tmp_path / "t.db")
+    sid = store.add_source(name="Test", kind="m3u", url=str(m3u))
+    s = settings_mod.merged_defaults()
+    s["ui"]["resume_last_channel"] = False
+    s["ui"]["auto_refresh_hours"] = 0
+    catalog.refresh_source(store, store.get_source(sid), s)
+    win = MainWindow(store, s, headless=True)
+    win.show()
+    eng = MpvEngine(s, headless=True, on_event=lambda n, d: win.bridge.event.emit(n, d), extra_options={"ao": "null"})
+    eng.start()
+    win.engine = eng
+    went_live = []
+    real_go_live = eng.go_live
+    eng.go_live = lambda: (went_live.append(1), real_go_live())
+
+    def pump(sec, until=None):
+        end = time.time() + sec
+        while time.time() < end:
+            app.processEvents()
+            if until and until():
+                return True
+            time.sleep(0.02)
+        return bool(until and until())
+    try:
+        assert pump(5, lambda: len(win.live_page.model.items) == 1)
+        bein = win.live_page.model.items[0]
+        win.play_live(bein)
+        assert pump(10, lambda: eng.status().get("w") == 640)
+        assert win.player.live_badge.text() == "● CANLI"
+        # duraklat → sürdür: canlı kenara döner (geriden "tekrar gibi" izlenmez)
+        win._toggle_pause()
+        assert eng._get("pause") is True
+        win._toggle_pause()
+        assert eng._get("pause") is False and went_live and eng._user_paused is False
+        # canlıda geri sarma yok (← tuşu ve sola tıklama)
+        p0 = float(eng._get("time-pos") or 0)
+        win._on_key("left", [])
+        pump(0.5)
+        assert float(eng._get("time-pos") or 0) >= p0
+        prog = {"start": int(time.time()) - 7200, "stop": int(time.time()) - 3600, "title": "Maç (1. yarı)"}
+        # tekrar kapalı: hiç açılmaz
+        s["controls"]["catchup"] = "off"
+        win.play_catchup(bein, prog)
+        assert win.current_req.kind == "live"
+        # sorarak: soru penceresinde varsayılan "Canlıda kal" → açılmaz
+        s["controls"]["catchup"] = "ask"
+        monkeypatch.setattr(QMessageBox, "exec", lambda self: 0)       # kullanıcı Enter/Esc: varsayılan
+        win.play_catchup(bein, prog)
+        assert win.current_req.kind == "live"
+        # bilerek onaylanırsa açılır ve TEKRAR olduğu açıkça görünür; "Canlıya dön" canlı kanala geçer
+        monkeypatch.setattr(win, "confirm_catchup", lambda it, p: True)
+        win.play_catchup(bein, prog)
+        assert win.current_req.kind == "catchup"
+        assert win.player.live_badge.text() == "⟲ TEKRAR" and not win.player.live_badge.isHidden()
+        assert win.player.btn_live.text() == "⦿ Canlıya dön" and not win.player.btn_live.isHidden()
+        win.player.live_clicked.emit()
+        assert win.current_req.kind == "live" and win.switch_log[-1][3] == "tekrardan canlıya dönüş"
+        assert pump(10, lambda: eng.status().get("w") == 640)
+        assert win.player.live_badge.text() == "● CANLI"
+    finally:
+        win.close()

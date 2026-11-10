@@ -227,7 +227,9 @@ def play_options(settings: dict, kind: str, url: str, headers: dict | None = Non
             lavf.append(f"live_start_index={m['hls-start']}")
         o.update({
             "demuxer-max-bytes": "96MiB",
-            "demuxer-max-back-bytes": "256MiB",
+            # geri sarma tamponu: "hep canlı"da canlıda geri sarma yok → küçük (uzun maçta bellek şişmesin);
+            # zaman kaydırma açıksa ~10 dk HD
+            "demuxer-max-back-bytes": "32MiB" if settings.get("controls", {}).get("stay_live", True) else "256MiB",
             "cache-pause": m["cache-pause"],
             "cache-pause-wait": m["cache-pause-wait"],
             "cache-pause-initial": m["cache-pause-initial"],

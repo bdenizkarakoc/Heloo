@@ -88,7 +88,7 @@ def test_ui_end_to_end(tmp_path, monkeypatch):
     from helootv.ui.main_window import MainWindow
     from helootv.ui.theme import apply_theme
 
-    lavfi = "av://lavfi:testsrc2=size={w}x{h}:rate=25"
+    lavfi = "av://lavfi:testsrc2=size={w}x{h}:rate=25,realtime"
     m3u = tmp_path / "kanallar.m3u"
     m3u.write_text("#EXTM3U\n" + "".join(
         f'#EXTINF:-1 tvg-id="k{i}" group-title="{g}",Kanal {i}\n{lavfi.format(w=w, h=h)}\n'

@@ -216,7 +216,7 @@ def engine(tmp_path, monkeypatch):
 @needs_mpv
 def test_engine_plays_live_lavfi(engine):
     from helootv.player.engine import PlayRequest
-    engine.play(PlayRequest(url="av://lavfi:testsrc2=size=1280x720:rate=25", title="Test Kanal", kind="live"))
+    engine.play(PlayRequest(url="av://lavfi:testsrc2=size=1280x720:rate=25,realtime", title="Test Kanal", kind="live"))
     assert engine.rec.wait("file-loaded", 10)
     deadline = time.time() + 10
     st = {}
