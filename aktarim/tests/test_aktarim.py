@@ -89,3 +89,21 @@ def test_http_roundtrip(store):
     finally:
         srv.shutdown()
         srv.server_close()
+
+
+PS1 = Path(__file__).resolve().parents[1] / "Aktarim.ps1"
+
+
+def test_powershell_script_encoding_and_routes():
+    raw = PS1.read_bytes()
+    # Windows PowerShell 5.1 BOM'suz UTF-8'i ANSI okur; Türkçe metin bozulmasın
+    assert raw.startswith(b"\xef\xbb\xbf")
+    text = raw.decode("utf-8-sig")
+    app = (PS1.parent / "web" / "app.js").read_text("utf-8")
+    import re
+    for route in set(re.findall(r'"(/api/[a-z-]+)"', app)):
+        assert f"'{route}'" in text, route
+    assert "PositionalBinding = $false" in text
+    # kaba sözdizimi denetimi: süslü parantezler dengeli
+    code = re.sub(r"'[^'\r\n]*'", "''", text)
+    assert code.count("{") == code.count("}")

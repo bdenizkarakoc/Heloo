@@ -4,27 +4,46 @@ Bilgisayar ile **iPhone (iOS)** ve **Samsung / Android** telefon arasında foto�
 gönderip alır. Telefona uygulama kurmak gerekmez: telefon aynı Wi-Fi ağındaki bilgisayara tarayıcıdan bağlanır.
 Arayüz iOS görünümündedir ve "Ana Ekrana Ekle" ile uygulama gibi açılır.
 
-## Başlatma
+## Başlatma (Windows, PowerShell — kurulum gerekmez)
 
-1. Bilgisayarda Python 3.9+ kurulu olsun (Windows: python.org, kurulumda **Add to PATH** işaretli).
-2. Windows'ta `Aktarim.bat` dosyasına çift tıkla (macOS/Linux: `Aktarim.command` ya da `python3 aktarim.py`).
+1. `aktarim` klasörünü bilgisayara kopyala.
+2. `Aktarim.bat` dosyasına çift tıkla. Bu, `Aktarim.ps1`'i Windows'un kendi PowerShell'iyle çalıştırır
+   (Python gerekmez). Ya da PowerShell'de:
+   ```powershell
+   cd aktarim
+   powershell -ExecutionPolicy Bypass -File .\Aktarim.ps1
+   ```
 3. Açılan pencerede **Bağlan** sekmesindeki QR kodunu telefonun kamerasıyla okut.
 4. Telefonda Safari (iPhone) / Chrome ya da Samsung Internet'te Paylaş → **Ana Ekrana Ekle**.
 
-Windows güvenlik duvarı ilk açılışta izin sorarsa **Özel ağlar** için izin ver.
+Telefon bağlanamazsa güvenlik duvarına izin ver: Windows ilk açılışta sorarsa **Özel ağlar**'ı işaretle, sormazsa
+`.\Aktarim.ps1 -GuvenlikDuvari` (yönetici izni ister). Wi-Fi ağının Windows'ta **Özel** olarak ayarlı olması gerekir.
+
+PowerShell seçenekleri:
+
+| Komut | Ne yapar |
+|---|---|
+| `.\Aktarim.ps1` | Sunucuyu başlatır, tarayıcıyı açar |
+| `.\Aktarim.ps1 -Ekle dosya.pdf Klasor` | Dosyaları/klasörleri telefona gönderir |
+| `.\Aktarim.ps1 -GonderKur` | Sağ tık → Gönder → *Telefona gönder (Aktarım)* ekler |
+| `.\Aktarim.ps1 -GuvenlikDuvari` | Güvenlik duvarı kuralı ekler (özel ağ) |
+| `-Klasor D:\Aktarim` · `-Port 9000` · `-TarayiciAcma` | Veri klasörü, kapı, tarayıcı açmadan başlat |
+
+Python sürümü de aynı arayüzü ve aynı veri biçimini kullanır: `Aktarim-python.bat` ya da `python3 aktarim.py`
+(macOS/Linux: `Aktarim.command`).
 
 ## Kullanım
 
 | Ne yapmak istiyorsun | Nasıl |
 |---|---|
 | Bilgisayardan telefona | Dosyaları/klasörleri pencereye **sürükle-bırak**, ya da Ctrl+V ile görsel/yazı yapıştır |
-| Sağ tıkla gönder (Windows) | Bir kez `python aktarim.py gonder-kur` → dosyaya sağ tık → Gönder → *Telefona gönder (Aktarım)* |
+| Sağ tıkla gönder (Windows) | Bir kez `.\Aktarim.ps1 -GonderKur` → dosyaya sağ tık → Gönder → *Telefona gönder (Aktarım)* |
 | Telefondan bilgisayara | **Gönder** sekmesi → fotoğraf/video/dosya seç, kamerayla çek ya da yazı yaz |
 | Telefona kaydet | Öğeye dokun → *Fotoğraflara kaydet* / *Galeriye kaydet* / *Dosyalara indir* |
 | Yazıyı/bağlantıyı al | Öğeye dokun → *Kopyala* ya da *Bağlantıyı aç* |
 
 Yeni gelen öğeler iki saniye içinde öbür cihazda görünür. Gelen dosyalar bilgisayarda `Masaüstü\Aktarım\files`
-klasöründe durur (`--dir` ile değiştirilebilir).
+klasöründe durur (`-Klasor` ile değiştirilebilir).
 
 ## Sonradan Sil
 

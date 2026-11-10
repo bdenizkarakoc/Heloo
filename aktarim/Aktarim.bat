@@ -1,5 +1,5 @@
 @echo off
-rem Aktarım'ı başlatır (Python 3.9+ gerekir: https://www.python.org/downloads/ — "Add to PATH" işaretli)
+rem Aktarim: PowerShell ile baslatir (Python gerekmez)
 cd /d "%~dp0"
-where py >nul 2>nul && (py -3 aktarim.py %*) || (python aktarim.py %*)
-pause
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0Aktarim.ps1" %*
+if errorlevel 1 pause
