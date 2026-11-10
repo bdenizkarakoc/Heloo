@@ -57,7 +57,9 @@ python -m pytest tests -q              # testler (libmpv2/ffmpeg/7z varsa başs�
 - Güncelleme `updater.py` (Qt'siz; `check` git fetch + rev-list, `apply` yalnız `--ff-only`, kirli/ileride ise durur).
 - TMDB `tmdb.py` (Qt'siz; `lookup` arama+ayrıntı+önbellek `cache/tmdb.json`, `merge` yalnız boşları doldurur);
   arayüzde `_DetailsBase._tmdb` (anahtar `settings.metadata.tmdb_key`).
-- Çoklu görüntü `ui/multiview.py` (hücre başına `MpvEngine`, `cell_settings` hafif; tık = `click` script-message).
+- Çoklu görüntü `ui/multiview.py` (hücre başına `MpvEngine`, `cell_settings` hafif; tık = `click` script-message;
+  yerleşim bir kez kurulan QSplitter'lar — hücreler asla yeniden üst öğeye taşınmaz; ses `cursor_pos` yoklamasıyla).
+- Videoya tık: `MainWindow._on_video_click` (çift tık süresi kadar bekler) → `opt.click_zone` (`settings.controls`).
 - HLS kalite önbelleği (`_pin_cache`) yalnız yönlendirmesiz adreslerde (`urljoin(req.url, info.uri) == variant`):
   oturum adresi önbelleğe alınırsa eski kanal görünür. Kanal geçişinde `PlayerPanel.show_loading` → "playing" olayıyla video.
 - Veritabanı: `store.py` (iş parçacığı başına bağlantı, WAL). EPG ayrı dosyada (`*-epg.db`); uzun EPG içe aktarımı

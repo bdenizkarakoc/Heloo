@@ -108,6 +108,11 @@ ETKİNLEŞTİRDİ" ya da ne yapmanız gerektiği. Komut satırından: `.venv\Scr
 Uygulama genelinde: **Ctrl+F** ara, **F5** yenile, **Ctrl+↑/↓** kanal, **Ctrl+1…5** sekmeler, **Ctrl+D** favori,
 **Ctrl+P** görüntü ayarları.
 
+**Videoya tıklama (YouTube gibi)**: tek tık ortada → duraklat / sürdür; sağ üçte bir → **5 sn ileri**, sol üçte bir →
+**5 sn geri** (ekranda "5 sn ⏩" / "⏪ 5 sn"). Çift tık her zaman tam ekran (bekleyen tek tık iptal edilir, video
+duraklamaz). Ayarlar → **Oynatma kontrolleri**: davranış (kenarlar sarar / her yer duraklatır / kapalı) ve sarma
+süresi (1–60 sn). Canlı yayında sağ/sol zaman kaydırma tamponu içinde sarar.
+
 **İleri / geri sarma:** film, dizi ve dosyalarda alt çubukta ilerleme çubuğu (sürükleyin ya da tıklayın), geçen/toplam
 süre ve **−1 dk / −10 / +10 / +1 dk** düğmeleri vardır. Canlı yayında çubuk gizlenir; ←/→ zaman kaydırma yapar.
 
@@ -154,8 +159,10 @@ TiviMate / IPTVnator / OTT Navigator'daki özelliklerin karşılıkları:
 ## Çoklu görüntü (2 / 4 kanal)
 
 Üst çubukta **▦ Çoklu** ya da **F4**: TiviMate/OTT Navigator'daki gibi aynı anda 2 ya da 4 kanal. Her hücrenin
-üstündeki kutudan kanal seçilir (yazarak arama). Ses yalnız etkin hücrededir: **tıklayın** → ses o hücreye geçer
-(mor çerçeve, 🔊); **çift tık** → hücre tek başına büyür, yeniden çift tık ya da Esc → geri. Kapatınca etkin hücredeki
+üstündeki kutudan kanal seçilir (yazarak arama). Ses yalnız etkin hücrededir ve **fare imlecini takip eder**: imleç
+hangi ekranın üstündeyse ses ondadır (mor çerçeve, 🔊; Ayarlar → Oynatma kontrolleri'nden kapatılırsa tıklayınca
+geçer). Hücreler arasındaki **çizgileri sürükleyerek** ekranları büyütüp küçültebilirsiniz, "⟲ Eşit böl" eski haline
+getirir. **Çift tık** → hücre tek başına tam boy, yeniden çift tık ya da Esc → geri. Kapatınca etkin hücredeki
 kanal ana oynatıcıda sürer.
 
 - Her hücre ayrı mpv'dir; dört akış birden akıcı oynasın diye hücrelerde RTX VSR / yapay zekâ büyütme / gürültü

@@ -474,3 +474,18 @@ def enhancement_summary(settings: dict, plan: dict | None, vsr_active: bool, vp:
     if framegen:
         out.append("Lossless Scaling kare üretimi")
     return out
+
+
+def click_zone(x: float | None, width: float | None, kind: str | None, action: str = "zones") -> str:
+    """Videoya tek tıklamanın anlamı: pause | back | forward | none.
+    zones: sol üçte bir geri, sağ üçte bir ileri, orta duraklat/sürdür (fotoğrafta sarma yok)."""
+    if action == "none" or kind is None:
+        return "none"
+    if action == "pause" or kind == "image" or not x or not width or width <= 0:
+        return "none" if kind == "image" else "pause"
+    f = float(x) / float(width)
+    if f < 1 / 3:
+        return "back"
+    if f > 2 / 3:
+        return "forward"
+    return "pause"

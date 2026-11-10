@@ -67,6 +67,12 @@ DEFAULTS: dict[str, Any] = {
         "exe": "",                # boş: Steam kütüphanelerinde aranır
         "tips_shown": False,
     },
+    # videoya tıklama (YouTube gibi): ortası duraklat/sürdür, sağ kenar ileri, sol kenar geri
+    "controls": {
+        "click_action": "zones",  # zones (orta: duraklat, kenarlar: sar) | pause (her yer duraklat) | none
+        "seek_step": 5,           # kenara tıklayınca kaç saniye sarılsın
+        "mv_audio_hover": True,   # çoklu görüntüde ses fare imlecinin üstündeki hücreye geçsin
+    },
     "metadata": {
         "tmdb_key": "",           # themoviedb.org/settings/api (ücretsiz): film/dizi açıklama, poster, oyuncular
     },
@@ -112,12 +118,14 @@ CHOICES: dict[tuple[str, str], tuple] = {
     ("latency", "mode"): ("auto", "ultra", "low", "balanced", "stable"),
     ("latency", "live_format"): ("ts", "m3u8"),
     ("lossless", "mode"): ("always", "fullscreen", "manual"),
+    ("controls", "click_action"): ("zones", "pause", "none"),
     ("audio", "prefer"): ("tr", "original"),
     ("subtitles", "prefer"): ("tr", "off"),
 }
 
 RANGES: dict[tuple[str, str], tuple[float, float]] = {
     ("audio", "volume"): (0, 150),
+    ("controls", "seek_step"): (1, 60),
     ("picture", "brightness"): (-100, 100), ("picture", "contrast"): (-100, 100),
     ("picture", "saturation"): (-100, 100), ("picture", "gamma"): (-100, 100), ("picture", "hue"): (-100, 100),
     ("picture", "deband"): (0, 3),

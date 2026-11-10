@@ -226,6 +226,7 @@ class SettingsPage(QScrollArea):
         self._build_video()
         self._build_lossless()
         self._build_latency()
+        self._build_controls()
         self._build_audio_subs()
         self._build_network_ui()
         self._build_system()
@@ -449,6 +450,34 @@ class SettingsPage(QScrollArea):
         self.ls_exe.editingFinished.connect(self._changed)
         self.body.addWidget(g)
 
+    # ------------------------------------------------------------------ oynatma kontrolleri
+    def _build_controls(self) -> None:
+        g = QGroupBox("Oynatma kontrolleri")
+        lay = QGridLayout(g)
+        self.click_action = QComboBox()
+        for label, val in (("Ortası duraklat / sürdür, sağ kenar ileri, sol kenar geri (YouTube gibi)", "zones"),
+                           ("Her yer duraklat / sürdür", "pause"), ("Hiçbir şey yapma", "none")):
+            self.click_action.addItem(label, val)
+        self.seek_step = QSpinBox()
+        self.seek_step.setRange(1, 60)
+        self.seek_step.setSuffix(" sn")
+        self.seek_step.setToolTip("Videonun sağ/sol kenarına tıklayınca kaç saniye sarılsın")
+        self.mv_hover = QCheckBox("Çoklu görüntüde ses, fare imlecinin üstündeki ekrana geçsin")
+        note = QLabel("Çift tık her zaman tam ekran. Kenar alanları videonun sol ve sağ üçte biridir; ekranda "
+                      "\"⏪ 5 sn\" / \"5 sn ⏩\" yazar.")
+        note.setWordWrap(True)
+        note.setObjectName("Muted")
+        r = 0
+        lay.addWidget(QLabel("Videoya tek tıklama"), r, 0); lay.addWidget(self.click_action, r, 1); r += 1
+        lay.addWidget(QLabel("Kenara tıklayınca sarma"), r, 0); lay.addWidget(self.seek_step, r, 1); r += 1
+        lay.addWidget(self.mv_hover, r, 0, 1, 2); r += 1
+        lay.addWidget(note, r, 0, 1, 2)
+        lay.setColumnStretch(1, 1)
+        self.click_action.currentIndexChanged.connect(self._changed)
+        self.seek_step.valueChanged.connect(self._changed)
+        self.mv_hover.toggled.connect(self._changed)
+        self.body.addWidget(g)
+
     # ------------------------------------------------------------------ gecikme
     def _build_latency(self) -> None:
         g = QGroupBox("Canlı yayın gecikmesi")
@@ -636,6 +665,10 @@ class SettingsPage(QScrollArea):
         self.sharpen.setCurrentIndex(max(0, self.sharpen.findData(v["sharpen"])))
         self.denoise.setCurrentIndex(max(0, self.denoise.findData(s["picture"]["denoise"])))
         self.low_boost.setChecked(bool(v["low_boost"]))
+        ctl = s["controls"]
+        self.click_action.setCurrentIndex(max(0, self.click_action.findData(ctl["click_action"])))
+        self.seek_step.setValue(int(ctl["seek_step"]))
+        self.mv_hover.setChecked(bool(ctl["mv_audio_hover"]))
         self.amd_fsr.setChecked(bool(v["amd_fsr"]))
         ls = s["lossless"]
         self.ls_mode.setCurrentIndex(max(0, self.ls_mode.findData(ls["mode"])))
@@ -692,6 +725,8 @@ class SettingsPage(QScrollArea):
         v["sharpen"] = self.sharpen.currentData()
         pic["denoise"] = self.denoise.currentData()
         v["low_boost"] = self.low_boost.isChecked()
+        s["controls"].update(click_action=self.click_action.currentData(), seek_step=self.seek_step.value(),
+                             mv_audio_hover=self.mv_hover.isChecked())
         v["amd_fsr"] = self.amd_fsr.isChecked()
         from .. import lossless
         ls = s["lossless"]

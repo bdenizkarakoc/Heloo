@@ -91,6 +91,10 @@ class MainWindow(QMainWindow):
         self._search_timer = QTimer(self, singleShot=True, interval=280, timeout=self._apply_search)
         self._digit_timer = QTimer(self, singleShot=True, interval=1600, timeout=self._commit_digits)
         self._tick_timer = QTimer(self, interval=500, timeout=self._tick)
+        # tek tıklama, çift tıklama süresi kadar bekletilir (çift tık = tam ekran; ikisi birden olmasın)
+        self._click_timer = QTimer(self, singleShot=True, interval=max(200, QApplication.doubleClickInterval()),
+                                   timeout=self._do_video_click)
+        self._click_at: tuple = (None, None)
         # yedek: "oynatılıyor" olayı gelmese de (yalnız ses, eski mpv) 10 sn sonra video gösterilir
         self._loading_timer = QTimer(self, singleShot=True, interval=10000,
                                      timeout=lambda: self.current_req and self.player.show_video())
@@ -864,6 +868,12 @@ class MainWindow(QMainWindow):
                 self._commit_digits()
             else:
                 self._show_info()
+        elif action == "click":
+            self._on_video_click()
+        elif action == "fullscreen" and self._click_timer.isActive():
+            # çift tık: bekleyen tek tıklama (duraklat/sar) iptal, yalnız tam ekran
+            self._click_timer.stop()
+            self._on_key("fullscreen" if not self._pip else "esc", [])
         elif action == "esc" and self._pip:
             self._set_pip(False)
         elif action == "fullscreen" and self._pip:
@@ -891,6 +901,33 @@ class MainWindow(QMainWindow):
             eng.toggle_pause()
         elif action == "stop":
             self.stop()
+
+    # ------------------------------------------------------------------ videoya tıklama (YouTube gibi)
+    def _on_video_click(self) -> None:
+        if self._click_timer.isActive():          # ikinci tıklama: çift tık olayı gelecek
+            self._click_timer.stop()
+            return
+        if not self.engine or not self.current_req:
+            return
+        pos = self.engine._get("mouse-pos") or {}
+        osd = self.engine._get("osd-dimensions") or {}
+        self._click_at = (pos.get("x") if isinstance(pos, dict) else None,
+                          osd.get("w") if isinstance(osd, dict) else None)
+        self._click_timer.start()
+
+    def _do_video_click(self) -> None:
+        eng, req = self.engine, self.current_req
+        if not eng or not req:
+            return
+        ctl = self.settings["controls"]
+        what = opt.click_zone(self._click_at[0], self._click_at[1], req.kind, ctl.get("click_action", "zones"))
+        step = int(ctl.get("seek_step", 5))
+        if what == "pause":
+            paused = eng.toggle_pause()
+            eng.show_text("⏸ Duraklatıldı" if paused else "▶ Sürüyor", 900)
+        elif what in ("back", "forward"):
+            eng.seek(step if what == "forward" else -step)
+            eng.show_text(f"{step} sn ⏩" if what == "forward" else f"⏪ {step} sn", 700)
 
     def zap(self, delta: int) -> None:
         items = self.live_page.model.items

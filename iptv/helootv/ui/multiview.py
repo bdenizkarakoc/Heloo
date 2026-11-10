@@ -10,9 +10,10 @@ from __future__ import annotations
 import copy
 import logging
 
-from PySide6.QtCore import QObject, Qt, Signal
-from PySide6.QtWidgets import (QComboBox, QDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton,
-                               QVBoxLayout, QWidget)
+from PySide6.QtCore import QObject, Qt, QTimer, Signal
+from PySide6.QtGui import QCursor
+from PySide6.QtWidgets import (QComboBox, QDialog, QFrame, QHBoxLayout, QLabel, QPushButton, QSplitter,
+                               QVBoxLayout)
 
 from ..player.engine import EngineError, MpvEngine
 from . import theme
@@ -109,18 +110,35 @@ class MultiViewWindow(QDialog):
             b.clicked.connect(lambda _c=False, n=n: self.set_layout(n))
             top.addWidget(b)
             self.layout_btns[n] = b
+        eq = QPushButton("⟲ Eşit böl")
+        eq.setToolTip("Hücreleri yeniden eşit boyuta getir")
+        eq.clicked.connect(self.equalize)
+        top.addWidget(eq)
         lay.addLayout(top)
-        hint = QLabel("Tıklayın: sesi o hücreye ver · Çift tık: büyüt / geri · Kapatınca etkin kanal ana oynatıcıda sürer")
+        hint = QLabel("Ses fare imlecinin üstündeki hücrede (ya da tıkladığınız) · Aradaki çizgileri sürükleyin: "
+                      "büyüt / küçült · Çift tık: tek hücre tam boy · Kapatınca etkin kanal ana oynatıcıda sürer")
         hint.setObjectName("Muted")
+        hint.setWordWrap(True)
         lay.addWidget(hint)
-        self.grid_host = QWidget()
-        self.grid = QGridLayout(self.grid_host)
-        self.grid.setContentsMargins(0, 0, 0, 0)
-        self.grid.setSpacing(6)
-        lay.addWidget(self.grid_host, 1)
+        # yerleşim bir kez kurulur (hücreler hiçbir zaman başka üst öğeye taşınmaz: mpv'nin yerel penceresi bozulmasın);
+        # bölücüler sürüklenerek hücreler büyütülüp küçültülür
         self.cells = [Cell(i, self.items, numbers) for i in range(4)]
+        self.vsplit = QSplitter(Qt.Vertical)
+        self.rows = [QSplitter(Qt.Horizontal), QSplitter(Qt.Horizontal)]
+        for r, row in enumerate(self.rows):
+            row.setChildrenCollapsible(False)
+            row.setHandleWidth(8)
+            for c in self.cells[r * 2:r * 2 + 2]:
+                row.addWidget(c)
+            self.vsplit.addWidget(row)
+        self.vsplit.setChildrenCollapsible(False)
+        self.vsplit.setHandleWidth(8)
+        lay.addWidget(self.vsplit, 1)
         for c in self.cells:
             c.pick.activated.connect(lambda _i, c=c: self._picked(c))
+        # ses fareyi izler: imlecin üstündeki hücre etkin olur (mpv penceresi fare olaylarını Qt'ye vermez → konum yoklanır)
+        self._hover = QTimer(self, interval=150, timeout=self._follow_mouse)
+        self._hover.start()
         self.count = 0
         self.set_layout(4 if len(self.items) >= 4 else 2)
 
@@ -129,15 +147,13 @@ class MultiViewWindow(QDialog):
         self.count = n
         for k, b in self.layout_btns.items():
             b.setChecked(k == n)
-        for c in self.cells:
-            self.grid.removeWidget(c)
-            c.hide()
+        self.rows[1].setVisible(n == 4)
         for i, c in enumerate(self.cells):
-            if i < n:
-                self.grid.addWidget(c, i // 2 if n == 4 else 0, i % 2)
-                c.show()
-            elif c.engine:                # gizlenen hücrenin yayını kapanır (bağlantı boşalsın)
+            c.setVisible(i < n)
+            if i >= n and c.engine:       # gizlenen hücrenin yayını kapanır (bağlantı boşalsın)
                 self._stop_cell(c)
+        self.equalize()
+        QTimer.singleShot(0, self.equalize)   # gizliyken verilen boyut 0 kalır: görünür olunca yeniden böl
         self.solo = None
         if self.active >= n:
             self.set_active(0)
@@ -149,6 +165,30 @@ class MultiViewWindow(QDialog):
         self.solo = index
         for i, c in enumerate(self.cells[:self.count]):
             c.setVisible(index is None or i == index)
+        if self.count == 4:
+            self.rows[0].setVisible(index is None or index < 2)
+            self.rows[1].setVisible(index is None or index >= 2)
+
+    def equalize(self) -> None:
+        w = max(2, self.rows[0].width())
+        for row in self.rows:
+            row.setSizes([w // 2, w // 2])
+        h = max(2, self.vsplit.height())
+        self.vsplit.setSizes([h // 2, h // 2] if self.count == 4 else [h, 0])
+
+    @staticmethod
+    def cursor_pos():
+        return QCursor.pos()
+
+    def _follow_mouse(self) -> None:
+        if not (self.settings.get("controls") or {}).get("mv_audio_hover", True) or not self.isVisible():
+            return
+        pos = self.cursor_pos()
+        for c in self.cells[:self.count]:
+            if c.isVisible() and c.rect().contains(c.mapFromGlobal(pos)):
+                if c.index != self.active:
+                    self.set_active(c.index)
+                return
 
     # ------------------------------------------------------------------ oynatma
     def assign(self, index: int, item) -> None:
