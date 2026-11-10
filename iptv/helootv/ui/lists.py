@@ -58,11 +58,29 @@ class ItemModel(QAbstractListModel):
         self.favs: set = set()
         self.progress: dict = {}
         self.playing_key = None
+        self._by_num: dict[int, int] = {}
+        self.provider_numbers = False
 
     def set_items(self, items: list[Item]) -> None:
         self.beginResetModel()
         self.items = items
+        nums = [int(it.num or 0) for it in items]
+        # sağlayıcının kanal numaraları eksiksiz ve tekrarsızsa onlar kullanılır (kategori/sıra değişse de aynı
+        # kanal aynı numarayı taşır); değilse sıra numarası
+        self.provider_numbers = bool(nums) and all(n > 0 for n in nums) and len(set(nums)) == len(nums)
+        self._by_num = {n: i for i, n in enumerate(nums)} if self.provider_numbers else {}
         self.endResetModel()
+
+    def number_of(self, row: int) -> int:
+        """Listede gösterilen ve tuşla açılan kanal numarası."""
+        if self.provider_numbers and 0 <= row < len(self.items):
+            return int(self.items[row].num)
+        return row + 1
+
+    def row_for_number(self, n: int) -> int:
+        if self.provider_numbers:
+            return self._by_num.get(n, -1)
+        return n - 1 if 1 <= n <= len(self.items) else -1
 
     def set_epg(self, epg: dict) -> None:
         self.epg = epg
@@ -193,7 +211,8 @@ class ChannelDelegate(QStyledItemDelegate):
             small = QFont(base_font)
             small.setPointSizeF(base_font.pointSizeF() * 0.9)
             p.setFont(small)
-            p.drawText(QRectF(x, rect.top(), 34, rect.height()), Qt.AlignVCenter | Qt.AlignRight, str(index.row() + 1))
+            num = index.model().number_of(index.row()) if hasattr(index.model(), "number_of") else index.row() + 1
+            p.drawText(QRectF(x, rect.top(), 34, rect.height()), Qt.AlignVCenter | Qt.AlignRight, str(num))
             x += 42
         logo_rect = QRectF(x, rect.top() + 8, 68, rect.height() - 16)
         p.fillPath(_rounded(logo_rect, 7), QColor("#0b0e14"))

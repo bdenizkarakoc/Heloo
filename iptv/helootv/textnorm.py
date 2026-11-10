@@ -34,8 +34,15 @@ def match_key(name: str | None) -> str:
     s = _PREFIX_RE.sub("", s)
     s = re.sub(r"[|:•·]", " ", s)
     s = _QUALITY_RE.sub(" ", s)
+    s = re.sub(r"\bsport\b", "sports", s)          # "BEIN SPORT 3" = "beIN Sports 3"
     s = re.sub(r"[^a-z0-9]+", "", s)
     return s
+
+
+def channel_number(key: str) -> str:
+    """Eşleştirme anahtarının sonundaki kanal numarası ("beinsports2" → "2"; yoksa "")."""
+    m = re.search(r"(\d+)$", key or "")
+    return m.group(1) if m else ""
 
 
 GROUP_TR = {

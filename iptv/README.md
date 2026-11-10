@@ -132,6 +132,18 @@ TiviMate / IPTVnator / OTT Navigator'daki özelliklerin karşılıkları:
 - Oynatıcı çubuğu iki satıra bölündü (sarma düğmeleri ilerleme çubuğunun yanında; ses ve pencere düğmeleri başlık
   satırında): pencerenin en küçük genişliği 2157 → 1328 piksel (1366 px dizüstü ekrana sığar).
 
+## Kanallar karışmasın (beIN Sports gibi benzer adlar)
+
+- **Yayın akışı eşleştirme**: sağlayıcılar benzer kanallara sık sık yanlış EPG kimliği verir (ör. beIN SPORTS 2'ye
+  beIN SPORTS 1'inki). Heloo TV kanal adındaki numarayı EPG kanalının adlarıyla karşılaştırır; uyuşmazsa bağı koparır,
+  adla doğru kanalı bulur, bulamazsa yanlış program göstermek yerine boş bırakır. "BEIN SPORT 3" ile "beIN Sports 3"
+  aynı sayılır; "HD/FHD/4K/HEVC/TR:" gibi etiketler numarayı bozmaz.
+- **Kanal numaraları**: sağlayıcının kanal numaraları eksiksiz ve tekrarsızsa liste, numarayla açma (0–9), rehber,
+  çoklu görüntü ve ekran yazısı hep aynı numarayı kullanır — kategori değişse de kanal aynı numarayı taşır. Numaralar
+  eksik/tekrarlıysa sıra numarası.
+- **Hızlı kanal değiştirme**: arka planda geç biten işler (HLS kalite seçimi) eski kanalı asla açmaz; test: beIN 1→2→3→4
+  hızla geçilip her kanal farklı çözünürlükte yayınla doğrulanır.
+
 ## Çoklu görüntü (2 / 4 kanal)
 
 Üst çubukta **▦ Çoklu** ya da **F4**: TiviMate/OTT Navigator'daki gibi aynı anda 2 ya da 4 kanal. Her hücrenin

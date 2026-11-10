@@ -12,7 +12,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterable, Iterator, NamedTuple
 
-from .textnorm import match_key, norm
+from .textnorm import channel_number, match_key, norm
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS sources(
@@ -85,6 +85,18 @@ ITEM_COLS = ("source_id, kind, item_id, num, name, cat_id, logo, url, epg_id, ex
              "archive, adult, extra")
 SOURCE_FIELDS = ("name", "kind", "url", "username", "password", "epg_url", "user_agent", "enabled", "sort",
                  "last_refresh", "last_epg", "last_error", "info")
+
+
+def _number_conflict(item_key: str, epg_keys: set) -> bool:
+    """Kanal adındaki numara EPG kanalının adlarındaki numaralardan hiçbiriyle uyuşmuyorsa True.
+    ("beinsports2" ↔ {"beinsports1"} → True; numarasız adlarda karar verilmez → False)"""
+    n = channel_number(item_key)
+    if not n or not epg_keys:
+        return False
+    nums = {channel_number(k) for k in epg_keys}
+    if "" in nums:
+        return False
+    return n not in nums
 
 
 class Item(NamedTuple):
@@ -455,14 +467,27 @@ class Store:
         if not known:
             return 0
         keymap = {}
+        names_of: dict[str, set] = {}
         for k, ch in e.execute("SELECT key, channel FROM epg_channels WHERE source_id=?", (source_id,)):
             keymap.setdefault(k, ch)
+            if not k.startswith("id:"):
+                names_of.setdefault(ch, set()).add(k)
         updates = []
         for item_id, name, epg_id in self.conn.execute(
                 "SELECT item_id, name, epg_id FROM items WHERE source_id=? AND kind='live'", (source_id,)):
+            own = match_key(name)
             if epg_id and epg_id in known:
+                if not _number_conflict(own, names_of.get(epg_id, set())):
+                    continue
+                # sağlayıcı yanlış EPG kimliği vermiş (ör. beIN Sports 2'ye beIN Sports 1'in kimliği): adla eşleştir,
+                # bulunamazsa yanlış yayın akışı göstermektense boş bırak
+                ch = keymap.get(own)
+                ch = ch if ch and not _number_conflict(own, names_of.get(ch, set())) else ""
+                updates.append((ch, source_id, item_id))
                 continue
-            ch = (keymap.get("id:" + epg_id.lower()) if epg_id else None) or keymap.get(match_key(name))
+            ch = (keymap.get("id:" + epg_id.lower()) if epg_id else None) or keymap.get(own)
+            if ch and _number_conflict(own, names_of.get(ch, set())):
+                ch = keymap.get(own) if keymap.get(own) != ch else None
             if ch and ch != epg_id:
                 updates.append((ch, source_id, item_id))
         if updates:

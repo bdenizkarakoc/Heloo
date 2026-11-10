@@ -39,6 +39,7 @@ class GuideCanvas(QWidget):
         self.sel: tuple[int, dict | None] | None = None
         self.marks = lambda item, prog: ""        # ⏺ / 🔔 işareti (ana pencere verir)
         self.playing_key = None
+        self.numbers: dict = {}                   # kanal anahtarı → listede gösterilen numara
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.StrongFocus)
 
@@ -133,7 +134,8 @@ class GuideCanvas(QWidget):
             playing = self.playing_key == item.key
             p.setPen(QColor(theme.ACCENT_2 if playing else theme.TEXT))
             p.setFont(bold)
-            num = f"{item.num}  " if item.num else ""
+            n = self.numbers.get(item.key)
+            num = f"{n}  " if n else ""
             p.drawText(cell.adjusted(10, 0, -6, 0), Qt.AlignVCenter | Qt.AlignLeft,
                        fm.elidedText(("▶ " if playing else "") + num + item.name, Qt.ElideRight, CH_W - 18))
             p.setFont(self.font())
@@ -220,8 +222,9 @@ class GuideWindow(QDialog):
         self._timer = QTimer(self, interval=60_000, timeout=self.canvas.update)
         self._timer.start()
 
-    def load(self, items: list, title: str = "") -> None:
+    def load(self, items: list, title: str = "", numbers: dict | None = None) -> None:
         items = [it for it in items if it is not None][:400]
+        self.canvas.numbers = numbers or {}
         self.title.setText(f"TV Rehberi — {title}" if title else "TV Rehberi")
         now = time.time()
         t0 = (int(now) // 1800) * 1800 - BEFORE_H * 3600

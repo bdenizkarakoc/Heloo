@@ -35,7 +35,7 @@ class _Bridge(QObject):
 
 
 class Cell(QFrame):
-    def __init__(self, index: int, items: list, parent=None):
+    def __init__(self, index: int, items: list, numbers: dict | None = None, parent=None):
         super().__init__(parent)
         self.index = index
         self.item = None
@@ -52,8 +52,10 @@ class Cell(QFrame):
         self.pick.setInsertPolicy(QComboBox.NoInsert)
         self.pick.lineEdit().setPlaceholderText("Kanal seçin ya da yazın…")
         self.pick.addItem("— boş —", None)
+        numbers = numbers or {}
         for it in items:
-            self.pick.addItem(f"{it.num}  {it.name}" if it.num else it.name, it)
+            n = numbers.get(it.key)
+            self.pick.addItem(f"{n}  {it.name}" if n else it.name, it)
         self.pick.completer().setFilterMode(Qt.MatchContains)
         self.pick.completer().setCaseSensitivity(Qt.CaseInsensitive)
         self.state = QLabel("")
@@ -75,7 +77,8 @@ class MultiViewWindow(QDialog):
     open_in_main = Signal(object)          # kapatırken etkin hücrenin kanalı ana oynatıcıda sürsün
 
     def __init__(self, settings: dict, items: list, make_request, max_connections: int = 0,
-                 headless: bool = False, extra_options: dict | None = None, parent=None):
+                 headless: bool = False, extra_options: dict | None = None, numbers: dict | None = None,
+                 parent=None):
         super().__init__(parent)
         self.setWindowTitle("Çoklu görüntü")
         self.setWindowFlag(Qt.WindowMaximizeButtonHint, True)
@@ -115,7 +118,7 @@ class MultiViewWindow(QDialog):
         self.grid.setContentsMargins(0, 0, 0, 0)
         self.grid.setSpacing(6)
         lay.addWidget(self.grid_host, 1)
-        self.cells = [Cell(i, self.items) for i in range(4)]
+        self.cells = [Cell(i, self.items, numbers) for i in range(4)]
         for c in self.cells:
             c.pick.activated.connect(lambda _i, c=c: self._picked(c))
         self.count = 0

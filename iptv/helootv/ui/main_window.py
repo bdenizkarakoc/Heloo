@@ -459,6 +459,11 @@ class MainWindow(QMainWindow):
             self._set_theater(False)
         self._osd_channel(item, cur, nxt)
 
+    def _channel_numbers(self) -> dict:
+        """Listede gösterilen numaralar (rehber, çoklu görüntü ve OSD aynı numarayı göstersin)."""
+        m = self.live_page.model
+        return {it.key: m.number_of(i) for i, it in enumerate(m.items)}
+
     def _live_request(self, item: Item, subtitle: str = "") -> PlayRequest:
         src = self.ctx.source(item.source_id)
         url = catalog.play_url(self.store, item, self.settings, src)
@@ -478,7 +483,8 @@ class MainWindow(QMainWindow):
         if self.current_req:
             self.stop()               # ana oynatıcının bağlantısı boşalsın (çoğu hesap 1–2 bağlantı verir)
         mv = MultiViewWindow(self.settings, items, self._live_request, max_conn, headless=self.headless,
-                             extra_options=getattr(self, "_mv_extra_options", None), parent=self)
+                             extra_options=getattr(self, "_mv_extra_options", None),
+                             numbers=self._channel_numbers(), parent=self)
         mv.setAttribute(Qt.WA_DeleteOnClose, True)
         mv.open_in_main.connect(lambda it: QTimer.singleShot(300, lambda: self.play_live(it)))
         mv.destroyed.connect(lambda *_: setattr(self, "_multiview", None))
@@ -498,7 +504,7 @@ class MainWindow(QMainWindow):
         if not self.engine:
             return
         row = self.live_page.model.row_of(item.key)
-        num = f"{row + 1}  " if row >= 0 else ""
+        num = f"{self.live_page.model.number_of(row)}  " if row >= 0 else ""
         lines = [f"{num}{item.name}"]
         if cur:
             lines.append(f"▶ {cur['title']}  ({time.strftime('%H:%M', time.localtime(cur['start']))}–"
@@ -892,12 +898,14 @@ class MainWindow(QMainWindow):
         if not digits:
             return
         n = int(digits)
-        items = self.live_page.model.items
-        if 1 <= n <= len(items):
-            self.play_live(items[n - 1])
-            self.live_page.select_key(items[n - 1].key)
+        model = self.live_page.model
+        row = model.row_for_number(n)
+        if row >= 0:
+            item = model.items[row]
+            self.play_live(item)
+            self.live_page.select_key(item.key)
         elif self.engine:
-            self.engine.show_text(f"Kanal {n} yok (1–{len(items)})", 1800)
+            self.engine.show_text(f"Kanal {n} bu listede yok", 1800)
 
     def _show_info(self) -> None:
         if not self.engine or not self.current_req:
@@ -1585,7 +1593,7 @@ class MainWindow(QMainWindow):
         items = list(self.live_page.model.items)
         g = self._guide
         g.canvas.playing_key = self.current_item.key if self.current_item else None
-        g.load(items, self.live_page.header.text())
+        g.load(items, self.live_page.header.text(), self._channel_numbers())
         g.show()
         g.raise_()
 
