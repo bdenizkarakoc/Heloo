@@ -91,6 +91,9 @@ class MainWindow(QMainWindow):
         self._search_timer = QTimer(self, singleShot=True, interval=280, timeout=self._apply_search)
         self._digit_timer = QTimer(self, singleShot=True, interval=1600, timeout=self._commit_digits)
         self._tick_timer = QTimer(self, interval=500, timeout=self._tick)
+        # yedek: "oynatılıyor" olayı gelmese de (yalnız ses, eski mpv) 10 sn sonra video gösterilir
+        self._loading_timer = QTimer(self, singleShot=True, interval=10000,
+                                     timeout=lambda: self.current_req and self.player.show_video())
         self._tick_timer.start()
         QTimer.singleShot(0, self._post_show)
 
@@ -321,12 +324,20 @@ class MainWindow(QMainWindow):
     def _on_engine_event(self, name: str, data: dict) -> None:
         req = self.current_req
         if name == "loading":
-            self.player.show_video()
+            if req:
+                self.player.show_loading(req.title, req.subtitle)
+                self._loading_timer.start()
             self._status(f"Açılıyor: {data.get('title', '')}…")
-        elif name in ("file-loaded", "playing"):
+        elif name == "playing":
+            # yeni yayının ilk karesi geldi: video artık gösterilebilir
+            self._loading_timer.stop()
+            self.player.show_video()
             if req:
                 self._status(f"Oynatılıyor: {req.title}")
                 QTimer.singleShot(1200, self._lossless_auto)
+        elif name == "file-loaded":
+            if req:
+                self._status(f"Bağlandı: {req.title} — görüntü bekleniyor…")
         elif name == "reconnecting":
             if data.get("max") == 1:     # bekçi: takılan yayın yeniden açılıyor (motor ekrana kendisi yazdı)
                 self._status(f"{data.get('error') or 'Yayın takıldı'} — yeniden açılıyor…")
@@ -426,8 +437,9 @@ class MainWindow(QMainWindow):
                 return False
         self.current_req = req
         self._last_save = time.time()
-        self.player.show_video()
+        self.player.show_loading(req.title, req.subtitle)
         self.player.set_now_playing(req.title, req.subtitle, req.kind == "live")
+        self._loading_timer.start()
         try:
             self.engine.play(req)
         except EngineError as e:

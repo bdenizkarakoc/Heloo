@@ -17,6 +17,7 @@ import shutil
 import subprocess
 import sys
 import threading
+from urllib.parse import urljoin
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -375,7 +376,13 @@ class MpvEngine:
             if gen != self._gen or self.mpv is None:
                 return
             if variant != req.url:
-                self._pin_cache[req.url] = (variant, time.monotonic(), label)
+                # yalnız kanala ait sabit adres önbelleğe alınır. Sunucu başka bir adrese yönlendirdiyse (Xtream
+                # panellerinde oturum adresi: /hls/<oturum>/…) o adres kanala değil oturuma bağlıdır ve o oturumda en
+                # son izlenen kanalı yayınlar — yeniden kullanılırsa yeni kanal yerine ESKİ kanal görünür.
+                if info is not None and urljoin(req.url, info.uri) == variant:
+                    self._pin_cache[req.url] = (variant, time.monotonic(), label)
+                else:
+                    self._pin_cache.pop(req.url, None)
                 self._load(dataclasses.replace(req, url=variant), pinned_label=label)
             else:
                 self._no_pin.add(req.url)  # ana liste değil: bir dahakine doğrudan aç

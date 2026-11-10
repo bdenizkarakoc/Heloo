@@ -58,6 +58,8 @@ python -m pytest tests -q              # testler (libmpv2/ffmpeg/7z varsa başs�
 - TMDB `tmdb.py` (Qt'siz; `lookup` arama+ayrıntı+önbellek `cache/tmdb.json`, `merge` yalnız boşları doldurur);
   arayüzde `_DetailsBase._tmdb` (anahtar `settings.metadata.tmdb_key`).
 - Çoklu görüntü `ui/multiview.py` (hücre başına `MpvEngine`, `cell_settings` hafif; tık = `click` script-message).
+- HLS kalite önbelleği (`_pin_cache`) yalnız yönlendirmesiz adreslerde (`urljoin(req.url, info.uri) == variant`):
+  oturum adresi önbelleğe alınırsa eski kanal görünür. Kanal geçişinde `PlayerPanel.show_loading` → "playing" olayıyla video.
 - Veritabanı: `store.py` (iş parçacığı başına bağlantı, WAL). EPG ayrı dosyada (`*-epg.db`); uzun EPG içe aktarımı
   katalog/geçmiş yazmalarını bekletmez. Arayüzden uzun sorguları `ui/workers.run_task` ile arka planda çalıştır.
 - Kullanıcı metinleri Türkçe. `.ps1`/`.bat` dosyaları yalnız ASCII (Windows kod sayfası sorunları).

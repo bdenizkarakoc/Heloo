@@ -212,6 +212,15 @@ class PlayerPanel(QWidget):
     def show_video(self) -> None:
         self.stack.setCurrentWidget(self.host)
 
+    def show_loading(self, title: str, text: str = "") -> None:
+        """Kanal geçişinde eski kanalın son karesi ekranda kalmasın: yeni yayının ilk karesi gelene kadar bekleme ekranı."""
+        self.placeholder.set_message(f"Açılıyor: {title}" if title else "Açılıyor…", text or "Yayın bağlanıyor…")
+        self.stack.setCurrentWidget(self.placeholder)
+
+    @property
+    def loading(self) -> bool:
+        return self.stack.currentWidget() is self.placeholder
+
     def set_idle(self, title: str = "Heloo TV", text: str | None = None) -> None:
         self.stack.setCurrentWidget(self.placeholder)
         if hasattr(self, "seek_box"):

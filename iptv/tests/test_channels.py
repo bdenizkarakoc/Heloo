@@ -178,3 +178,122 @@ def test_fast_zapping_plays_the_last_chosen_channel(tmp_path):
     finally:
         eng.shutdown()
         httpd.shutdown()
+
+
+@pytest.mark.skipif(not (_mpv_ok() and shutil.which("ffmpeg")), reason="libmpv/ffmpeg yok")
+def test_session_redirect_panel_does_not_show_old_channel(tmp_path):
+    """Bazı Xtream panelleri: /live/u/p/N.m3u8 → 302 → /hls/oturum/index.m3u8 (kanala değil OTURUMA bağlı adres).
+    Oturum adresi, o oturumda en son istenen kanalı yayınlar. Bu adres önbellekten yeniden kullanılırsa 1→2→1 geçişinde
+    ekranda 2 (eski kanal) kalırdı. Doğru davranış: her geçişte ana adres yeniden istenir → doğru kanal."""
+    from helootv.player.engine import MpvEngine, PlayRequest
+    www = tmp_path / "www"
+    sizes = {1: (640, 360), 2: (320, 180)}
+    for i, (w, h) in sizes.items():
+        d = www / f"ch{i}"
+        d.mkdir(parents=True)
+        subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", f"testsrc2=size={w}x{h}:rate=25", "-t", "8",
+                        "-c:v", "libx264", "-preset", "ultrafast", "-g", "25", "-f", "hls", "-hls_time", "2",
+                        "-hls_list_size", "0", "-hls_base_url", f"/ch{i}/", str(d / "v.m3u8")], check=True)
+    state = {"current": 1}
+
+    class Panel(http.server.SimpleHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def do_GET(self):
+            if self.path.startswith("/live/"):
+                state["current"] = int(self.path.split("/")[-1].split(".")[0])
+                self.send_response(302)
+                self.send_header("Location", "/hls/session/index.m3u8")
+                self.end_headers()
+                return
+            if self.path.startswith("/hls/session/"):
+                w, h = sizes[state["current"]]
+                if self.path.endswith("chunks.m3u8"):     # oturumun kalite listesi: şu anki kanalın parçaları
+                    body = (www / f"ch{state['current']}" / "v.m3u8").read_bytes()
+                else:
+                    body = (f"#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=800000,RESOLUTION={w}x{h}\n"
+                            "chunks.m3u8\n").encode()
+                if self.path.endswith(".m3u8"):
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/vnd.apple.mpegurl")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
+            return super().do_GET()
+
+    handler = functools.partial(Panel, directory=str(www))
+    httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{httpd.server_address[1]}"
+    eng = MpvEngine(settings_mod.merged_defaults(), headless=True, extra_options={"ao": "null"})
+    eng.start()
+    try:
+        def play(i):
+            eng.play(PlayRequest(url=f"{base}/live/u/p/{i}.m3u8", title=f"Kanal {i}", kind="live"))
+            end = time.time() + 15
+            while time.time() < end:
+                st = eng.tick() or {}
+                if st.get("w"):
+                    return (st["w"], st["h"])
+                time.sleep(0.1)
+            return None
+
+        assert play(1) == sizes[1]
+        assert play(2) == sizes[2]
+        assert play(1) == sizes[1], "eski kanal (2) gösterildi"
+    finally:
+        eng.shutdown()
+        httpd.shutdown()
+
+
+@pytest.mark.skipif(not _mpv_ok(), reason="libmpv yok")
+def test_ui_hides_old_picture_until_new_channel_plays(tmp_path, monkeypatch):
+    """Kanal değişince eski kanalın görüntüsü kalmaz: 'Açılıyor: <kanal>' ekranı, yeni yayının ilk karesiyle video."""
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("HELOOTV_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from helootv.player.engine import MpvEngine
+    from helootv.ui.main_window import MainWindow
+    app = QApplication.instance() or QApplication([])
+    m3u = tmp_path / "k.m3u"
+    m3u.write_text("#EXTM3U\n" + "".join(
+        f'#EXTINF:-1 group-title="Spor",beIN SPORTS {i}\nav://lavfi:testsrc2=size={w}x{h}:rate=25\n'
+        for i, (w, h) in ((1, (640, 360)), (2, (320, 180)))), encoding="utf-8")
+    store = Store(tmp_path / "t.db")
+    sid = store.add_source(name="Test", kind="m3u", url=str(m3u))
+    s = settings_mod.merged_defaults()
+    s["ui"]["resume_last_channel"] = False
+    s["ui"]["auto_refresh_hours"] = 0
+    catalog.refresh_source(store, store.get_source(sid), s)
+    win = MainWindow(store, s, headless=True)
+    win.show()
+    eng = MpvEngine(s, headless=True, on_event=lambda n, d: win.bridge.event.emit(n, d), extra_options={"ao": "null"})
+    eng.start()
+    win.engine = eng
+
+    def pump(sec, until):
+        end = time.time() + sec
+        while time.time() < end:
+            app.processEvents()
+            if until():
+                return True
+            time.sleep(0.02)
+        return until()
+    try:
+        assert pump(5, lambda: len(win.live_page.model.items) == 2)
+        ch1, ch2 = win.live_page.model.items
+        win.play_live(ch1)
+        assert win.player.loading and "beIN SPORTS 1" in win.player.placeholder.title.text()
+        assert pump(10, lambda: not win.player.loading)                 # ilk kare geldi → video
+        assert pump(5, lambda: (eng.status().get("w"), eng.status().get("h")) == (640, 360))
+        win.play_live(ch2)
+        # geçişte eski kanalın karesi değil bekleme ekranı görünür
+        assert win.player.loading and "beIN SPORTS 2" in win.player.placeholder.title.text()
+        assert pump(10, lambda: not win.player.loading)
+        assert (eng.status()["w"], eng.status()["h"]) == (320, 180) and win.player.title.text() == "beIN SPORTS 2"
+    finally:
+        win.close()
