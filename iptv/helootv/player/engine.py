@@ -487,16 +487,10 @@ class MpvEngine:
         eid = event.event_id.value
         if eid == E.START_FILE:
             self._entry_id = event.data.playlist_entry_id
+            self._keep_only_current()
         elif eid == E.FILE_LOADED:
             self._loaded_at = time.monotonic()
-            req = self.request
-            if req is not None and req.kind in ("live", "catchup"):
-                count = self._get("playlist-count")
-                if isinstance(count, int) and count > 1:
-                    # sağlayıcının adresi birden çok öğeli bir oynatma listesi: mpv bu öğe bitince listedeki BAŞKA
-                    # yayına geçerdi. Yalnız şu anki öğe kalır; biterse aynı kanal yeniden açılır.
-                    log.warning("kanal adresi %d öğeli oynatma listesi; yalnız ilk öğe tutuldu: %s", count, req.url)
-                    self.command("playlist-clear")
+            self._keep_only_current()
             self._emit("file-loaded", {})
         elif eid == E.PLAYBACK_RESTART:
             self._emit("playing", {})
@@ -510,6 +504,18 @@ class MpvEngine:
                 self._handle_end(d.reason)
         elif eid == E.SHUTDOWN:
             self._emit("shutdown", {})
+
+    def _keep_only_current(self) -> None:
+        """Sağlayıcının kanal adresi birden çok öğeli bir oynatma listesiyse (yedek/başka kanallar) mpv şu anki öğe biterse
+        YA DA HATA VERİRSE listedeki başka kanala geçerdi. Liste açılır açılmaz (öğe yüklenmeden, START_FILE'da) yalnız
+        şu anki öğe kalır; sorun olursa aynı kanal yeniden denenir."""
+        req = self.request
+        if req is None or req.kind not in ("live", "catchup"):
+            return
+        count = self._get("playlist-count")
+        if isinstance(count, int) and count > 1:
+            log.warning("kanal adresi %d öğeli oynatma listesi; yalnız kanalın kendisi tutuldu: %s", count, req.url)
+            self.command("playlist-clear")
 
     def _handle_end(self, reason: int) -> None:
         with self._lock:

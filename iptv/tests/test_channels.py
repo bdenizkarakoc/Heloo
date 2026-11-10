@@ -403,3 +403,49 @@ def test_playlist_url_does_not_advance_to_other_stream(tmp_path):
     finally:
         eng.shutdown()
         httpd.shutdown()
+
+
+@pytest.mark.skipif(not (_mpv_ok() and shutil.which("ffmpeg")), reason="libmpv/ffmpeg yok")
+def test_failing_channel_does_not_jump_to_other_channels(tmp_path):
+    """beIN 1 geçici olarak hata verince (sunucu 404/kopma) listedeki diğer kanallara ATLAMAMALI; beIN 1 yeniden
+    denenip düzelince beIN 1'den devam etmeli."""
+    from helootv.player.engine import MpvEngine, PlayRequest
+    www = tmp_path / "www"
+    www.mkdir()
+    for name, (w, h) in (("bein1", (640, 360)), ("bein2", (480, 270)), ("bein3", (320, 180))):
+        subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", f"testsrc2=size={w}x{h}:rate=25", "-t", "30",
+                        "-c:v", "libx264", "-preset", "ultrafast", "-f", "mpegts", str(www / f"{name}.ts")], check=True)
+    fails = {"left": 2}
+
+    class Flaky(http.server.SimpleHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def do_GET(self):
+            if self.path.startswith("/bein1.ts") and fails["left"] > 0:
+                fails["left"] -= 1
+                self.send_error(404)                   # beIN 1 geçici sorun
+                return
+            return super().do_GET()
+
+    httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(Flaky, directory=str(www)))
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{httpd.server_address[1]}"
+    (www / "liste.m3u").write_text("#EXTM3U\n" + "".join(f"#EXTINF:-1,beIN {i}\n{base}/bein{i}.ts\n" for i in (1, 2, 3)),
+                                   encoding="utf-8")
+    eng = MpvEngine(settings_mod.merged_defaults(), headless=True, extra_options={"ao": "null"})
+    eng.start()
+    try:
+        eng.play(PlayRequest(url=f"{base}/liste.m3u", title="beIN SPORTS 1", kind="live"))
+        seen = set()
+        t0 = time.time()
+        while time.time() - t0 < 15:
+            st = eng.tick() or {}
+            if st.get("w"):
+                seen.add((st["w"], st["h"]))
+            time.sleep(0.1)
+        assert (480, 270) not in seen and (320, 180) not in seen, f"başka kanala atladı: {seen}"
+        assert seen == {(640, 360)}, "beIN 1 düzelince yeniden açılmadı"
+    finally:
+        eng.shutdown()
+        httpd.shutdown()
