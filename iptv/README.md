@@ -148,8 +148,9 @@ TiviMate / IPTVnator / OTT Navigator'daki özelliklerin karşılıkları:
   eksik/tekrarlıysa sıra numarası.
 - **"beIN SPORTS 1 açıkken kendiliğinden başka yayına geçiyor"**:
   - Bazı sağlayıcılar kanal adresi olarak birden çok yayın içeren bir **oynatma listesi** verir; oynatıcı ilk yayın
-    bitince listedeki BAŞKA yayına geçiyordu. Artık yalnız kanalın kendi yayını tutulur; biterse aynı kanal yeniden
-    açılır (test bunu eski kodda yakalar).
+    bitince ya da **hata verince** listedeki BAŞKA kanala (ör. beIN 1 → beIN 2) geçiyordu. Artık liste açılır açılmaz
+    yalnız kanalın kendi yayını tutulur; sorun olursa aynı kanal yeniden denenir ve düzelince oradan devam eder
+    (testler bunu eski kodda yakalar).
   - **↑ / ↓ ok tuşları varsayılan olarak sesi** açar/kısar (YouTube gibi); eskiden komşu kanala geçiyordu. Kanal
     değiştirmek için ⏮/⏭, PgUp/PgDn, Ctrl+↑/↓, numara tuşları, kumandanın kanal tuşları. Ayarlar → Oynatma
     kontrolleri'nden ok tuşları yeniden "kanal değiştir" yapılabilir.
