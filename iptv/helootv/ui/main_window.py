@@ -149,6 +149,12 @@ class MainWindow(QMainWindow):
         self.guide_btn.setCursor(Qt.PointingHandCursor)
         self.guide_btn.clicked.connect(self.open_guide)
         h.addWidget(self.guide_btn)
+        self.update_btn = QPushButton("⬆ Güncelleme var")
+        self.update_btn.setObjectName("Primary")
+        self.update_btn.setCursor(Qt.PointingHandCursor)
+        self.update_btn.clicked.connect(lambda: self.check_updates(manual=True))
+        self.update_btn.hide()
+        h.addWidget(self.update_btn)
         h.addWidget(self.refresh_btn)
         v.addWidget(self.topbar)
 
@@ -212,6 +218,7 @@ class MainWindow(QMainWindow):
         st.refresh_requested.connect(lambda sid: self.refresh(sid))
         st.epg_refresh_requested.connect(lambda sid: self.refresh(sid, epg_only=True))
         st.fetch_mpv_requested.connect(self.fetch_mpv)
+        st.update_requested.connect(lambda: self.check_updates(manual=True))
         st.vsr_test_requested.connect(self.test_vsr)
         st.clear_history_requested.connect(self._clear_history)
         st.picture_requested.connect(self.picture_dialog)
@@ -269,6 +276,9 @@ class MainWindow(QMainWindow):
         run_task(gpu.query_gpus, on_done=self._on_gpu)
         self._schedule_auto_refresh()
         QTimer.singleShot(300, self._resume_last_channel)
+        ui = self.settings["ui"]
+        if ui.get("update_check", True) and not self.headless and time.time() - float(ui.get("last_update_check") or 0) > 86400:
+            QTimer.singleShot(8000, lambda: self.check_updates(manual=False))
         self._sched_timer = QTimer(self, interval=15000, timeout=self._sched_tick)
         self._sched_timer.start()
         QTimer.singleShot(2000, self._sched_tick)
@@ -1468,6 +1478,63 @@ class MainWindow(QMainWindow):
         box.finished.connect(done)
         box.show()
         QApplication.alert(self)
+
+    # ------------------------------------------------------------------ uygulama içi güncelleme
+    def check_updates(self, manual: bool = False) -> None:
+        from .. import updater
+        if manual:
+            self._status("Güncellemeler denetleniyor…")
+
+        def done(info):
+            self.settings["ui"]["last_update_check"] = time.time()
+            self._save_timer.start()
+            if not info["behind"]:
+                self.update_btn.hide()
+                if manual:
+                    QMessageBox.information(self, APP_NAME, f"Heloo TV güncel ({info['current']}).")
+                return
+            self.update_btn.setText(f"⬆ Güncelleme var ({info['behind']})")
+            self.update_btn.setToolTip("\n".join("• " + c for c in info["changes"][:10]))
+            self.update_btn.show()
+            self._status(f"Heloo TV için {info['behind']} yenilik var.")
+            if manual:
+                self._offer_update(info)
+
+        def fail(err):
+            if manual:
+                QMessageBox.warning(self, APP_NAME, f"Güncellemeler denetlenemedi:\n{err}")
+            else:
+                log.info("güncelleme denetimi: %s", err)
+
+        run_task(updater.check, on_done=done, on_error=fail)
+
+    def _offer_update(self, info: dict) -> None:
+        from .. import updater
+        changes = "\n".join("• " + c for c in info["changes"][:12])
+        more = f"\n… ve {info['behind'] - 12} değişiklik daha" if info["behind"] > 12 else ""
+        if QMessageBox.question(self, "Güncelleme", f"Heloo TV için {info['behind']} yenilik var:\n\n{changes}{more}"
+                                "\n\nŞimdi güncellenip yeniden başlatılsın mı? (Ayarlar, listeler ve kayıtlar korunur.)"
+                                ) != QMessageBox.Yes:
+            return
+        if self.recorder.active:
+            QMessageBox.warning(self, "Güncelleme", "Kayıt sürerken güncellenemez; kayıt bitince yeniden deneyin.")
+            return
+
+        def done(res):
+            self._status(f"Güncellendi: {res['from']} → {res['to']}. Yeniden başlatılıyor…")
+            QTimer.singleShot(600, self._restart)
+
+        run_task(updater.apply, on_done=done, on_progress=self._status,
+                 on_error=lambda e: QMessageBox.warning(self, "Güncelleme", f"Güncellenemedi:\n{e}"))
+
+    def _restart(self) -> None:
+        from PySide6.QtCore import QProcess
+        import sys
+        if QProcess.startDetached(sys.executable, ["-m", "helootv"], str(Path(__file__).resolve().parents[2]))[0]:
+            self.close()
+            QApplication.quit()
+        else:
+            QMessageBox.information(self, APP_NAME, "Güncellendi. Lütfen Heloo TV'yi kapatıp yeniden açın.")
 
     # ------------------------------------------------------------------ TV rehberi
     def open_guide(self) -> None:

@@ -54,6 +54,7 @@ python -m pytest tests -q              # testler (libmpv2/ffmpeg/7z varsa başs�
   değiştirmek pencereyi yeniden oluşturur, gömülü mpv bozulur).
 - TV rehberi `ui/guide.py` (kendi çizen `GuideCanvas`, `store.epg_grid` toplu sorgu, en çok 400 kanal).
 - Ebeveyn kilidi `parental.py` (`ui.pin_hash`, PBKDF2); açılışta `hide_adult` zorla açılır, sıfırlamada PIN korunur.
+- Güncelleme `updater.py` (Qt'siz; `check` git fetch + rev-list, `apply` yalnız `--ff-only`, kirli/ileride ise durur).
 - Veritabanı: `store.py` (iş parçacığı başına bağlantı, WAL). EPG ayrı dosyada (`*-epg.db`); uzun EPG içe aktarımı
   katalog/geçmiş yazmalarını bekletmez. Arayüzden uzun sorguları `ui/workers.run_task` ile arka planda çalıştır.
 - Kullanıcı metinleri Türkçe. `.ps1`/`.bat` dosyaları yalnız ASCII (Windows kod sayfası sorunları).

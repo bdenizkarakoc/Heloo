@@ -209,6 +209,7 @@ class SettingsPage(QScrollArea):
     epg_refresh_requested = Signal(object)
     fetch_mpv_requested = Signal()
     vsr_test_requested = Signal()
+    update_requested = Signal()
     clear_history_requested = Signal()
     picture_requested = Signal()
 
@@ -577,6 +578,10 @@ class SettingsPage(QScrollArea):
         b0.setToolTip("Küçük bir test penceresinde 720p → 4K ölçekler ve NVIDIA sürücüsünün VSR'yi açıp açmadığını gösterir")
         b0.clicked.connect(self.vsr_test_requested.emit)
         row.addWidget(b0)
+        bu = QPushButton("🔄 Güncellemeleri denetle")
+        bu.setToolTip("Heloo TV'nin yeni sürümünü GitHub'dan denetler ve kurar (ayarlar, listeler korunur)")
+        bu.clicked.connect(self.update_requested.emit)
+        row.addWidget(bu)
         b1 = QPushButton("mpv bileşenlerini indir / güncelle (GitHub)")
         b1.clicked.connect(self.fetch_mpv_requested.emit)
         b2 = QPushButton("NVIDIA ayarlarını aç")

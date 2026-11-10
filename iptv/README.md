@@ -132,6 +132,13 @@ TiviMate / IPTVnator / OTT Navigator'daki özelliklerin karşılıkları:
 - Oynatıcı çubuğu iki satıra bölündü (sarma düğmeleri ilerleme çubuğunun yanında; ses ve pencere düğmeleri başlık
   satırında): pencerenin en küçük genişliği 2157 → 1328 piksel (1366 px dizüstü ekrana sığar).
 
+## Uygulama içi güncelleme
+
+Ayarlar → Sistem → **🔄 Güncellemeleri denetle**. Heloo TV ayrıca açılışta günde bir kez denetler; yeni sürüm varsa
+üst çubukta **⬆ Güncelleme var** düğmesi çıkar (üzerine gelince yenilikler listelenir). "Güncelle" yalnız ileri sarar
+(`git pull --ff-only`): ayarlar, listeler, kayıtlar korunur; program dosyalarında yerel değişiklik varsa hiçbir şeyi
+ezmeden durur. Paket listesi (`requirements.txt`) değiştiyse paketler de güncellenir, sonra uygulama yeniden açılır.
+
 ## Altyazı ve ses izi
 
 Alt çubuktaki **💬 Altyazı** menüsü:

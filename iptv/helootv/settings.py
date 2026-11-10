@@ -86,6 +86,8 @@ DEFAULTS: dict[str, Any] = {
         "auto_refresh_hours": 12,
         "last_channel": None,     # [source_id, item_id]
         "last_tab": "live",
+        "update_check": True,     # açılışta günde bir kez yeni sürümü denetle
+        "last_update_check": 0.0,
     },
 }
 
