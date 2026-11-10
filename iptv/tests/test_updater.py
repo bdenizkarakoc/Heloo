@@ -74,11 +74,11 @@ def test_apply_refuses_to_overwrite_local_changes(tmp_path):
     (dev / "a.txt").write_text("2")
     _git(dev, "commit", "-am", "yeni")
     _git(dev, "push", "origin", "HEAD:main")
-    (user / "a.txt").write_text("kullanıcının değişikliği")
+    (user / "a.txt").write_text("kullanıcının değişikliği", encoding="utf-8")
     assert updater.check(user)["dirty"]
     with pytest.raises(updater.UpdateError, match="yerel değişiklik"):
         updater.apply(user)
-    assert (user / "a.txt").read_text() == "kullanıcının değişikliği"
+    assert (user / "a.txt").read_text(encoding="utf-8") == "kullanıcının değişikliği"
 
 
 def test_not_a_git_checkout(tmp_path):
