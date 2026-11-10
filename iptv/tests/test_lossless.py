@@ -137,3 +137,7 @@ def test_ctrl_z_toggles_lossless_and_fullscreen_does_not(tmp_path, monkeypatch):
     finally:
         win.current_req = None
         win.close()
+        # pencereyi Qt'de sil: yorumlayıcı kapanırken sırasız silinip Windows'ta çıkış kodu bozulmasın
+        from PySide6.QtCore import QCoreApplication, QEvent
+        win.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
