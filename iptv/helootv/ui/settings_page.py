@@ -503,6 +503,10 @@ class SettingsPage(QScrollArea):
         self.oskey.setEchoMode(QLineEdit.PasswordEchoOnEdit)
         self.oskey.setPlaceholderText("opensubtitles.com/consumers adresinden ücretsiz")
         self.oskey.editingFinished.connect(self._changed)
+        self.tmdbkey = QLineEdit()
+        self.tmdbkey.setEchoMode(QLineEdit.PasswordEchoOnEdit)
+        self.tmdbkey.setPlaceholderText("themoviedb.org/settings/api — ücretsiz; film/dizi açıklaması, poster, oyuncular")
+        self.tmdbkey.editingFinished.connect(self._changed)
         lay.addWidget(QLabel("Ses dili"), 0, 0); lay.addWidget(self.aprefer, 0, 1)
         lay.addWidget(self.normalize, 1, 0, 1, 2)
         lay.addWidget(self.spdif, 2, 0, 1, 2)
@@ -512,6 +516,7 @@ class SettingsPage(QScrollArea):
         lay.addWidget(QLabel("Altyazı rengi"), 6, 0); lay.addWidget(self.scolor, 6, 1)
         lay.addWidget(QLabel("Yapay zekâ altyazı modeli"), 7, 0); lay.addWidget(self.saimodel, 7, 1)
         lay.addWidget(QLabel("OpenSubtitles API anahtarı"), 8, 0); lay.addWidget(self.oskey, 8, 1)
+        lay.addWidget(QLabel("TMDB anahtarı (film/dizi bilgisi)"), 9, 0); lay.addWidget(self.tmdbkey, 9, 1)
         lay.setColumnStretch(1, 1)
         for w in (self.normalize, self.spdif):
             w.toggled.connect(self._changed)
@@ -627,6 +632,7 @@ class SettingsPage(QScrollArea):
         self.scolor.setCurrentIndex(max(0, self.scolor.findData(sub["color"])))
         self.saimodel.setCurrentIndex(max(0, self.saimodel.findData(sub["ai_model"])))
         self.oskey.setText(sub.get("opensubtitles_key", ""))
+        self.tmdbkey.setText(s["metadata"].get("tmdb_key", ""))
         self.sharpen.setCurrentIndex(max(0, self.sharpen.findData(v["sharpen"])))
         self.denoise.setCurrentIndex(max(0, self.denoise.findData(s["picture"]["denoise"])))
         self.low_boost.setChecked(bool(v["low_boost"]))
@@ -680,6 +686,7 @@ class SettingsPage(QScrollArea):
         sub["color"] = self.scolor.currentData()
         sub["ai_model"] = self.saimodel.currentData()
         sub["opensubtitles_key"] = self.oskey.text().strip()
+        s["metadata"]["tmdb_key"] = self.tmdbkey.text().strip()
         if v["sharpen"] != self.sharpen.currentData() or pic.get("denoise") != self.denoise.currentData():
             pic["preset"] = "custom"
         v["sharpen"] = self.sharpen.currentData()

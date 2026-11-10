@@ -67,6 +67,9 @@ DEFAULTS: dict[str, Any] = {
         "exe": "",                # boş: Steam kütüphanelerinde aranır
         "tips_shown": False,
     },
+    "metadata": {
+        "tmdb_key": "",           # themoviedb.org/settings/api (ücretsiz): film/dizi açıklama, poster, oyuncular
+    },
     "record": {
         "folder": "",             # boş: Videolar\Heloo TV Kayıtlar
     },

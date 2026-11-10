@@ -132,6 +132,15 @@ TiviMate / IPTVnator / OTT Navigator'daki özelliklerin karşılıkları:
 - Oynatıcı çubuğu iki satıra bölündü (sarma düğmeleri ilerleme çubuğunun yanında; ses ve pencere düğmeleri başlık
   satırında): pencerenin en küçük genişliği 2157 → 1328 piksel (1366 px dizüstü ekrana sığar).
 
+## Film ve dizi bilgileri (TMDB)
+
+IPTVnator'daki gibi, kendi ücretsiz [TMDB](https://www.themoviedb.org/settings/api) anahtarınızla (Ayarlar → Ses ve
+altyazı → "TMDB anahtarı"; "API Key" ya da "API Read Access Token" olur): sağlayıcının vermediği Türkçe açıklama,
+poster, puan, tür, süre, yönetmen ve oyuncular Filmler/Diziler ayrıntısında doldurulur. Özellikle M3U listelerinde
+(sağlayıcı bilgisi olmayan) işe yarar; Xtream bilgisi varsa o önceliklidir. Başlıktaki `TR:`, `[4K]`, `1080p`, yıl
+gibi etiketler aramadan temizlenir; Türkçe açıklama yoksa İngilizcesi gelir. Sonuçlar 30 gün önbellekte tutulur.
+*This product uses the TMDB API but is not endorsed or certified by TMDB.*
+
 ## Uygulama içi güncelleme
 
 Ayarlar → Sistem → **🔄 Güncellemeleri denetle**. Heloo TV ayrıca açılışta günde bir kez denetler; yeni sürüm varsa

@@ -1,6 +1,8 @@
 """Sayfalar: Canlı TV, Filmler, Diziler, Favoriler + yayın akışı (EPG) paneli."""
 from __future__ import annotations
 
+import logging
+
 import time
 
 from PySide6.QtCore import QSize, Qt, QTimer, Signal
@@ -40,6 +42,8 @@ def _category_view(model: CategoryModel) -> QListView:
     v.setMinimumWidth(200)
     return v
 
+
+log = logging.getLogger("helootv.ui")
 
 class _BrowserBase(QWidget):
     """Kategori listesi + öğe listesi ortak davranışı (arka planda yükleme, arama, seçimi koruma)."""
@@ -506,6 +510,26 @@ class _PosterBrowser(_BrowserBase):
 
 
 class _DetailsBase(QScrollArea):
+    def _tmdb(self, kind: str, item: Item, have: dict, apply) -> None:
+        """Sağlayıcı bilgisi eksikse TMDB'den tamamlar (kullanıcının anahtarı varsa). apply(tmdb_bilgisi) çağrılır."""
+        key = (self.ctx.settings.get("metadata") or {}).get("tmdb_key", "").strip()
+        if not key or (have.get("plot") and have.get("cast") and (have.get("poster") or item.logo)):
+            return
+        cache_key = (item.key, "tmdb")
+        if cache_key in self.ctx.vod_info_cache:
+            apply(self.ctx.vod_info_cache[cache_key])
+            return
+        token = self._token
+        from .. import tmdb
+
+        def done(extra):
+            self.ctx.vod_info_cache[cache_key] = extra
+            if token == self._token and extra:
+                apply(extra)
+
+        run_task(tmdb.lookup, key, kind, item.name, item.year or "", on_done=done,
+                 on_error=lambda e: log.info("TMDB: %s", e))
+
     def __init__(self, ctx: AppContext, parent=None):
         super().__init__(parent)
         self.ctx = ctx
@@ -605,17 +629,28 @@ class MovieDetails(_DetailsBase):
         self.people.setText("")
         self.refresh_buttons()
         client = self.ctx.client(item.source_id)
+        base = {"plot": item.extra_dict().get("plot", ""), "year": item.year, "rating": item.rating}
+
+        def with_tmdb(info):
+            from .. import tmdb
+            self._tmdb("movie", item, info, lambda extra: self._fill(tmdb.merge(info, extra)))
+
         if client is None:
+            if base["plot"]:
+                self._fill(base)
+            with_tmdb(base)
             return
         cache_key = item.key
         if cache_key in self.ctx.vod_info_cache:
             self._fill(self.ctx.vod_info_cache[cache_key])
+            with_tmdb(self.ctx.vod_info_cache[cache_key])
             return
 
         def done(info):
             self.ctx.vod_info_cache[cache_key] = info
             if token == self._token:
                 self._fill(info)
+                with_tmdb(info)
 
         self.plot.setText("Ayrıntılar yükleniyor…")
         run_task(client.vod_info, item.item_id, on_done=done, on_error=lambda e: self.plot.setText(""))
@@ -655,6 +690,8 @@ class MovieDetails(_DetailsBase):
         self.people.setText("\n".join(people))
         if info.get("poster") and not (item and item.logo):
             self._set_poster(info["poster"])
+        if info.get("tmdb"):
+            self.people.setText((self.people.text() + "\n\nBilgiler: TMDB").strip())
 
 
 class MoviesPage(_PosterBrowser):
@@ -753,6 +790,19 @@ class SeriesDetails(_DetailsBase):
                 self.plot.setText(inf["plot"])
             if inf.get("cast") and not self.people.text():
                 self.people.setText(f"Oyuncular: {inf['cast']}")
+
+            def apply_tmdb(extra):
+                if not self.plot.text() and extra.get("plot"):
+                    self.plot.setText(extra["plot"])
+                if not self.people.text() and extra.get("cast"):
+                    self.people.setText(f"Oyuncular: {extra['cast']}")
+                if not self.meta.text().strip() and (extra.get("year") or extra.get("rating")):
+                    self.meta.setText(" · ".join(x for x in (extra.get("year"), f"★ {extra['rating']:.1f}"
+                                                             if extra.get("rating") else "", extra.get("genre")) if x))
+                if extra.get("poster") and not item.logo:
+                    self._set_poster(extra["poster"])
+            self._tmdb("tv", item, {"plot": self.plot.text(), "cast": self.people.text(), "poster": item.logo},
+                       apply_tmdb)
             seasons = sorted({e["season"] for e in self.all_eps})
             self.season.blockSignals(True)
             for s in seasons:
