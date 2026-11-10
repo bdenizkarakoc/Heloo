@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Aktarım">
+<meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icon.svg">
+<link rel="stylesheet" href="/style.css">
+<title>Aktarım</title>
+</head>
+<body>
+<div id="app">
+  <header class="nav">
+    <div class="nav-row">
+      <span class="device" id="device">…</span>
+      <span class="status" id="status"><i></i><b>Bağlı</b></span>
+    </div>
+    <h1 id="title">Paylaşılanlar</h1>
+  </header>
+
+  <!-- PAYLAŞILANLAR -->
+  <section class="page" data-page="items">
+    <div class="segmented" id="filter">
+      <button data-f="all" class="on">Tümü</button>
+      <button data-f="photo">Fotoğraf</button>
+      <button data-f="video">Video</button>
+      <button data-f="doc">Belge</button>
+      <button data-f="text">Yazı</button>
+    </div>
+    <div class="photo-grid" id="photos"></div>
+    <div class="group" id="list"></div>
+    <p class="empty" id="empty">Henüz bir şey yok.<br>Bilgisayarda dosyaları bu pencereye sürükle,
+      telefonda <b>Gönder</b> sekmesini kullan.</p>
+  </section>
+
+  <!-- GÖNDER -->
+  <section class="page" data-page="send" hidden>
+    <label class="big-btn" for="pick">
+      <span class="ico">＋</span>
+      <span><b>Fotoğraf, video ya da dosya seç</b><small id="pick-hint">Birden fazla seçebilirsin</small></span>
+    </label>
+    <input type="file" id="pick" multiple hidden>
+    <label class="big-btn alt" for="pick-cam">
+      <span class="ico">◉</span>
+      <span><b>Kamerayla çek ve gönder</b><small>Fotoğraf ya da video</small></span>
+    </label>
+    <input type="file" id="pick-cam" accept="image/*,video/*" capture="environment" hidden>
+    <div class="card">
+      <textarea id="text" rows="4" placeholder="Yazı, not ya da bağlantı yaz… (bilgisayarda Ctrl+V ile görsel de yapıştırabilirsin)"></textarea>
+      <button class="primary" id="send-text">Yazıyı gönder</button>
+    </div>
+    <div class="group" id="uploads"></div>
+  </section>
+
+  <!-- SONRADAN SİL -->
+  <section class="page" data-page="bin" hidden>
+    <p class="note">Sildiğin her şey önce buraya gelir. Süresi dolana kadar <b>geri yükleyebilirsin</b>;
+      süre dolunca kendiliğinden kalıcı olarak silinir.</p>
+    <div class="caption">Varsayılan saklama süresi</div>
+    <div class="segmented" id="retention">
+      <button data-d="7">1 hafta</button>
+      <button data-d="14">2 hafta</button>
+      <button data-d="30">1 ay</button>
+    </div>
+    <div class="group" id="bin"></div>
+    <p class="empty" id="bin-empty">Sonradan Sil kutusu boş.</p>
+    <button class="danger-btn" id="empty-bin" hidden>Kutuyu şimdi boşalt</button>
+  </section>
+
+  <!-- BAĞLAN -->
+  <section class="page" data-page="connect" hidden>
+    <div class="card center">
+      <div id="qr"></div>
+      <p class="qr-text">iPhone'da <b>Kamera</b>, Samsung'da <b>Kamera</b> ya da <b>Google Lens</b> ile okut.
+        Telefon ve bilgisayar aynı Wi-Fi ağında olmalı.</p>
+      <select id="urls"></select>
+      <button class="secondary" id="copy-url">Bağlantıyı kopyala</button>
+    </div>
+    <div class="card">
+      <b>Uygulama gibi kullan</b>
+      <ul class="tips">
+        <li><b>iPhone:</b> Safari'de Paylaş <span class="k">⬆︎</span> → <b>Ana Ekrana Ekle</b>.</li>
+        <li><b>Samsung:</b> Chrome / Samsung Internet menüsü → <b>Ana ekrana ekle</b>.</li>
+        <li><b>Bilgisayar:</b> dosyaları bu pencereye sürükle-bırak; ya da sağ tık → Gönder → Telefona gönder
+          (<code>python aktarim.py gonder-kur</code>).</li>
+      </ul>
+      <p class="muted" id="data-dir"></p>
+    </div>
+  </section>
+
+  <nav class="tabbar" id="tabs">
+    <button data-tab="items" class="on"><span>▦</span>Paylaşılanlar</button>
+    <button data-tab="send"><span>⬆︎</span>Gönder</button>
+    <button data-tab="bin"><span>🗑</span>Sonradan Sil<em id="bin-count" hidden></em></button>
+    <button data-tab="connect"><span>⌁</span>Bağlan</button>
+  </nav>
+</div>
+
+<div class="drop" id="drop"><div>Bırak, telefona gönderilsin</div></div>
+
+<div class="sheet-back" id="sheet-back" hidden>
+  <div class="sheet" role="dialog">
+    <div class="sheet-group">
+      <div class="sheet-title" id="sheet-title"></div>
+      <div id="sheet-actions"></div>
+    </div>
+    <button class="sheet-cancel" id="sheet-cancel">Vazgeç</button>
+  </div>
+</div>
+
+<div class="viewer" id="viewer" hidden>
+  <button class="viewer-close" id="viewer-close">Bitti</button>
+  <div class="viewer-body" id="viewer-body"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
+<script src="/app.js" defer></script>
+</body>
+</html>
