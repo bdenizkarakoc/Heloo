@@ -635,6 +635,32 @@ class MpvEngine:
     def add_volume(self, delta: int) -> None:
         self.command("add", "volume", str(delta))
 
+    def flash(self, text: str, where: str = "center", ms: int = 650) -> None:
+        """Ekranda kısa süre büyük bir simge/yazı (YouTube gibi): where = center | left | right."""
+        an = {"center": 5, "left": 4, "right": 6}.get(where, 5)
+        data = ("{\\an%d\\fs110\\bord5\\shad0\\1c&HFFFFFF&\\3c&H000000&\\1a&H10&}" % an
+                + ("\\h\\h\\h" if where == "left" else "") + text + ("\\h\\h\\h" if where == "right" else ""))
+        try:
+            if self.mpv is None:
+                return
+            self.mpv.command("osd-overlay", 61, "ass-events", data)
+        except Exception:
+            self.show_text(text, ms)       # eski mpv: düz ekran yazısı
+            return
+        t = getattr(self, "_flash_timer", None)
+        if t is not None:
+            t.cancel()
+
+        def clear() -> None:
+            try:
+                if self.mpv is not None:
+                    self.mpv.command("osd-overlay", 61, "none", "")
+            except Exception:
+                pass
+        self._flash_timer = threading.Timer(ms / 1000.0, clear)
+        self._flash_timer.daemon = True
+        self._flash_timer.start()
+
     def show_text(self, text: str, ms: int = 2500) -> None:
         self.command("show-text", text, str(ms))
 

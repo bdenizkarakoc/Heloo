@@ -94,6 +94,8 @@ class MainWindow(QMainWindow):
         self._search_timer = QTimer(self, singleShot=True, interval=280, timeout=self._apply_search)
         self._digit_timer = QTimer(self, singleShot=True, interval=1600, timeout=self._commit_digits)
         self._tick_timer = QTimer(self, interval=500, timeout=self._tick)
+        self._fs_bar_timer = QTimer(self, interval=200, timeout=self._fs_bar_tick)
+        self._fs_bar_seen = 0.0
         # tek tıklama, çift tıklama süresi kadar bekletilir (çift tık = tam ekran; ikisi birden olmasın)
         self._click_timer = QTimer(self, singleShot=True, interval=max(200, QApplication.doubleClickInterval()),
                                    timeout=self._do_video_click)
@@ -238,6 +240,7 @@ class MainWindow(QMainWindow):
         st.vsr_test_requested.connect(self.test_vsr)
         st.clear_history_requested.connect(self._clear_history)
         st.picture_requested.connect(self.picture_dialog)
+        st.close_requested.connect(self._close_settings)
         pl = self.player
         pl.pause_clicked.connect(self._toggle_pause)
         pl.stop_clicked.connect(self.stop)
@@ -944,6 +947,8 @@ class MainWindow(QMainWindow):
                 self._set_fullscreen(False)
             elif self._theater:
                 self._set_theater(False)
+            elif self._tab_key() == "settings":
+                self._close_settings()
         elif action == "fullscreen":
             self._set_fullscreen(not self._fs)
         elif action == "theater":
@@ -985,9 +990,9 @@ class MainWindow(QMainWindow):
         paused = eng.toggle_pause()
         if not paused and req and req.kind == "live" and self.settings["controls"].get("stay_live", True):
             eng.go_live()
-            eng.show_text("▶ Canlı", 900)
+            eng.flash("▶ Canlı")
         else:
-            eng.show_text("⏸ Duraklatıldı" if paused else "▶ Sürüyor", 900)
+            eng.flash("⏸" if paused else "▶")
 
     def _back_to_live(self) -> None:
         """⦿ düğmesi: zaman kaydırmadan canlıya; tekrar (geri izleme) izleniyorsa kanalın canlı yayınına geç."""
@@ -1010,7 +1015,10 @@ class MainWindow(QMainWindow):
             eng.show_text("Canlı yayında: hep canlı (geri sarma kapalı — Ayarlar → Oynatma kontrolleri)", 1500)
         elif what in ("back", "forward"):
             eng.seek(step if what == "forward" else -step)
-            eng.show_text(f"{step} sn ⏩" if what == "forward" else f"⏪ {step} sn", 700)
+            if what == "forward":
+                eng.flash(f"{step} sn ⏩", "right")
+            else:
+                eng.flash(f"⏪ {step} sn", "left")
 
     def zap(self, delta: int, reason: str = "") -> None:
         items = self.live_page.model.items
@@ -1080,6 +1088,11 @@ class MainWindow(QMainWindow):
     def _tab_key(self) -> str:
         return TABS[self.pages.currentIndex()][0]
 
+    def _close_settings(self) -> None:
+        """Ayarlar'daki ✕: son kullanılan sekmeye (Canlı TV / Filmler / Diziler / Favoriler) dön."""
+        tab = next((i for i, (k, _l) in enumerate(TABS) if k == self.settings["ui"].get("last_tab")), 0)
+        self._select_tab(tab if TABS[tab][0] != "settings" else 0)
+
     def _on_tab(self, i: int) -> None:
         self.pages.setCurrentIndex(i)
         key = TABS[i][0]
@@ -1126,7 +1139,10 @@ class MainWindow(QMainWindow):
             self.right.show()
             self.showFullScreen()
             self.player.host.setFocus()
+            self._fs_bar_seen = 0.0
+            self._fs_bar_timer.start()
         else:
+            self._fs_bar_timer.stop()
             self.topbar.show()
             self.statusBar().show()
             self.player.bar.show()
@@ -1140,6 +1156,28 @@ class MainWindow(QMainWindow):
             self.engine.sync_fullscreen(on)
         if self.settings["lossless"].get("mode") == "fullscreen" and self.current_req:
             QTimer.singleShot(700 if on else 0, lambda: self.toggle_lossless(quiet=True, want=on))
+
+    def _cursor_pos(self):
+        from PySide6.QtGui import QCursor
+        return QCursor.pos()
+
+    def _fs_bar_tick(self) -> None:
+        """Tam ekranda fare ekranın altına gelince denetim çubuğu (ilerleme, sarma, ses, altyazı…) görünür; fare
+        oradan ayrılınca birkaç saniye sonra gizlenir. (Video penceresi fare olaylarını Qt'ye vermez → konum yoklanır.)"""
+        if not self._fs or self._pip:
+            return
+        bar = self.player.bar
+        pos = self.mapFromGlobal(self._cursor_pos())
+        zone = (bar.height() + 24) if not bar.isHidden() else 90
+        near = 0 <= pos.x() <= self.width() and pos.y() >= self.height() - zone
+        now = time.monotonic()
+        if near or QApplication.activePopupWidget() is not None and not bar.isHidden():
+            self._fs_bar_seen = now
+            if bar.isHidden():
+                bar.show()
+        elif not bar.isHidden() and now - self._fs_bar_seen > 2.5:
+            bar.hide()
+            self.player.host.setFocus()
 
     def _focus_search(self) -> None:
         if self._fs:

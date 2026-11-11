@@ -234,3 +234,75 @@ def test_live_stays_live_and_replay_never_opens_by_itself(tmp_path, monkeypatch)
         assert win.player.live_badge.text() == "● CANLI"
     finally:
         win.close()
+
+
+@pytest.mark.skipif(not _mpv_ok(), reason="libmpv/PySide6 yok")
+def test_fullscreen_bar_settings_close_and_flash(tmp_path, monkeypatch):
+    monkeypatch.setenv("HELOOTV_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtCore import QPoint
+    from PySide6.QtWidgets import QApplication
+
+    from helootv.player.engine import MpvEngine, PlayRequest
+    from helootv.store import Store
+    from helootv.ui import main_window as mw
+    app = QApplication.instance() or QApplication([])
+    s = settings_mod.merged_defaults()
+    s["ui"]["resume_last_channel"] = False
+    s["ui"]["auto_refresh_hours"] = 0
+    win = mw.MainWindow(Store(tmp_path / "t.db"), s, headless=True)
+    win.resize(1280, 720)
+    win.show()
+    app.processEvents()
+    clock = [1000.0]
+    monkeypatch.setattr(mw.time, "monotonic", lambda: clock[0])
+    try:
+        # --- tam ekranda alt çubuk: fare alta gelince görünür, ayrılınca 2,5 sn sonra gizlenir
+        win.current_req = PlayRequest(url="x", title="Film", kind="movie")
+        monkeypatch.setattr(win, "showFullScreen", lambda: None)
+        win._set_fullscreen(True)
+        assert win.player.bar.isHidden() and win._fs_bar_timer.isActive()
+        mouse = [QPoint(600, 100)]
+        win._cursor_pos = lambda: win.mapToGlobal(mouse[0])
+        win._fs_bar_tick()
+        assert win.player.bar.isHidden()
+        mouse[0] = QPoint(600, win.height() - 10)
+        win._fs_bar_tick()
+        assert not win.player.bar.isHidden()
+        mouse[0] = QPoint(600, 100)
+        clock[0] += 1
+        win._fs_bar_tick()
+        assert not win.player.bar.isHidden()               # hemen kaybolmaz
+        clock[0] += 3
+        win._fs_bar_tick()
+        assert win.player.bar.isHidden()
+        win._set_fullscreen(False)
+        assert not win._fs_bar_timer.isActive() and not win.player.bar.isHidden()
+        win.current_req = None
+        # --- ayarlar: sabit ✕ düğmesi, en alta kaydırılsa da yerinde; basınca son sekmeye döner
+        win._select_tab(1)                                   # Filmler
+        win._select_tab(4)                                   # Ayarlar
+        app.processEvents()
+        st = win.settings_page
+        y0 = st.close_btn.y()
+        st.verticalScrollBar().setValue(st.verticalScrollBar().maximum())
+        app.processEvents()
+        assert st.verticalScrollBar().value() > 0 and st.close_btn.y() == y0 and st.close_btn.isVisible()
+        assert st.close_btn.x() + st.close_btn.width() <= st.width()
+        st.close_btn.click()
+        assert win._tab_key() == "movie"
+        win._select_tab(4)
+        win._on_key("esc", [])                               # Esc de kapatır
+        assert win._tab_key() == "movie"
+        # --- büyük ekran simgesi gerçek mpv'de hata vermez
+        eng = MpvEngine(s, headless=True, extra_options={"ao": "null"})
+        eng.start()
+        errors = []
+        monkeypatch.setattr(eng, "show_text", lambda *a, **k: errors.append(a))   # yedek yola düşerse hata say
+        eng.flash("⏸")
+        eng.flash("5 sn ⏩", "right")
+        eng.flash("⏪ 5 sn", "left")
+        assert errors == []
+        eng.shutdown()
+    finally:
+        win.close()

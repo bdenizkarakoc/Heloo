@@ -213,6 +213,7 @@ class SettingsPage(QScrollArea):
     update_requested = Signal()
     clear_history_requested = Signal()
     picture_requested = Signal()
+    close_requested = Signal()
 
     def __init__(self, ctx, parent=None):
         super().__init__(parent)
@@ -233,7 +234,21 @@ class SettingsPage(QScrollArea):
         self._build_system()
         self.body.addStretch(1)
         self.setWidget(body)
+        # sabit kapatma düğmesi: sayfa nereye kaydırılırsa kaydırılsın sağ üstte durur
+        self.close_btn = QPushButton("✕  Kapat", self)
+        self.close_btn.setObjectName("Primary")
+        self.close_btn.setCursor(Qt.PointingHandCursor)
+        self.close_btn.setToolTip("Ayarları kapat (Esc)")
+        self.close_btn.clicked.connect(self.close_requested.emit)
+        self.close_btn.adjustSize()
+        self.close_btn.raise_()
         self.load()
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        sb = self.verticalScrollBar().width() if self.verticalScrollBar().isVisible() else 0
+        self.close_btn.move(self.width() - self.close_btn.width() - sb - 16, 10)
+        self.close_btn.raise_()
 
     # ------------------------------------------------------------------ kaynaklar
     def _build_sources(self) -> None:
