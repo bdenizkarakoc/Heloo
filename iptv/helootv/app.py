@@ -22,6 +22,33 @@ def _setup_logging(debug: bool) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Açılışta beklenmeyen hata olursa sessizce kapanma (pythonw'da konsol yok): günlüğe yaz ve pencere göster."""
+    try:
+        return _main(argv)
+    except SystemExit:
+        raise
+    except BaseException:  # noqa: BLE001
+        import traceback
+        text = traceback.format_exc()
+        try:
+            logging.getLogger("helootv").critical("açılış hatası:\n%s", text)
+            with open(paths.log_path(), "a", encoding="utf-8") as f:
+                f.write("\nAÇILIŞ HATASI\n" + text)
+        except Exception:
+            pass
+        if os.name == "nt":
+            try:
+                import ctypes
+                ctypes.windll.user32.MessageBoxW(
+                    None, f"Heloo TV açılamadı.\n\n{text[-900:]}\n\nGünlük: {paths.log_path()}", "Heloo TV", 0x10)
+            except Exception:
+                pass
+        else:
+            sys.stderr.write(text) if sys.stderr else None
+        return 1
+
+
+def _main(argv: list[str] | None = None) -> int:
     paths.ensure_utf8_stdio()
     ap = argparse.ArgumentParser(prog="helootv", description=f"{APP_NAME} {__version__} — IPTV oynatıcı")
     ap.add_argument("--debug", action="store_true", help="ayrıntılı günlük (mpv dahil)")
@@ -103,6 +130,10 @@ def main(argv: list[str] | None = None) -> int:
     if server is not None:
         server.close()
     store.close()
+    logging.shutdown()
+    # süreç kesin sonlansın: arka planda takılı kalan bir kopya (mpv/ffmpeg iş parçacığı) sonraki açılışları engellemesin
+    if not os.environ.get("HELOOTV_SOFT_EXIT"):
+        os._exit(int(code))
     return code
 
 
@@ -128,9 +159,13 @@ def forward_to_running(items: list[str]) -> bool:
     sock.write(json.dumps(full).encode("utf-8") + b"\n")
     sock.flush()
     sock.waitForBytesWritten(2000)
-    sock.waitForReadyRead(3000)  # onay
+    # Yalnız "ok" onayı gelirse gerçekten açık bir Heloo TV vardır. Bağlantı kurulup onay gelmiyorsa karşıdaki kopya
+    # takılı kalmıştır (kapanamamış eski süreç): yok sayılır ve uygulama normal açılır — yoksa hiç açılmazdı.
+    ack = b""
+    if sock.waitForReadyRead(3000):
+        ack = bytes(sock.readAll())
     sock.disconnectFromServer()
-    return True
+    return ack.startswith(b"ok")
 
 
 def start_server(win=None, on_items=None, parent=None):

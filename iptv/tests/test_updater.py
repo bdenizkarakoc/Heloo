@@ -104,7 +104,7 @@ def test_silent_check_never_prompts_and_restart_flag(tmp_path, monkeypatch):
     import inspect
 
     from helootv import app
-    src = inspect.getsource(app.main)
+    src = inspect.getsource(app._main)
     assert '"--restart"' in src and "argparse.SUPPRESS" in src
     assert src.index("if args.restart:") < src.index("forward_to_running(args.paths)")
     assert argparse.SUPPRESS

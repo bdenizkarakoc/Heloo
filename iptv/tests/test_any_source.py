@@ -226,3 +226,45 @@ def test_export_pipeline(tmp_path):
     assert res.returncode == 0, res.stderr[-500:]
     out = upscale.probe(str(dst))
     assert (out["dw"], out["dh"]) == (320, 180) and out["audio"] == "aac"
+
+
+def test_stuck_old_instance_does_not_block_startup(monkeypatch):
+    """Takılı kalmış eski kopya (bağlantıyı kabul eden ama yanıt vermeyen sunucu) varken uygulama yine açılmalı:
+    onay ("ok") gelmezse 'zaten açık' sayılmaz. Eskiden her açılış sessizce kapanıyordu."""
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtNetwork import QLocalServer
+    from PySide6.QtWidgets import QApplication
+
+    from helootv import app as appmod
+    qapp = QApplication.instance() or QApplication([])
+    name = f"HelooTV-stuck-{os.getpid()}"
+    monkeypatch.setattr(appmod, "_server_name", lambda: name)
+    QLocalServer.removeServer(name)
+    dead = QLocalServer()                 # dinliyor ama gelen bağlantıya hiç yanıt vermiyor
+    assert dead.listen(name)
+    import subprocess
+    import sys
+    root = str(__import__("pathlib").Path(__file__).resolve().parents[1])
+    code = ("import sys; sys.path.insert(0, %r); from PySide6.QtCore import QCoreApplication; "
+            "a = QCoreApplication([]); import helootv.app as m; m._server_name = lambda: %r; "
+            "sys.exit(7 if m.forward_to_running([]) else 0)") % (root, name)
+    proc = subprocess.Popen([sys.executable, "-c", code])
+    end = time.time() + 15
+    while time.time() < end and proc.poll() is None:
+        qapp.processEvents()
+        time.sleep(0.02)
+    dead.close()
+    assert proc.wait(5) == 0              # 0: "açık kopya yok" → uygulama normal açılır
+
+
+def test_startup_error_is_reported_not_silent(monkeypatch, tmp_path):
+    monkeypatch.setenv("HELOOTV_HOME", str(tmp_path))
+    from helootv import app as appmod
+
+    def boom(argv=None):
+        raise RuntimeError("deneme hatası")
+
+    monkeypatch.setattr(appmod, "_main", boom)
+    assert appmod.main([]) == 1
+    assert "deneme hatası" in (tmp_path / "helootv.log").read_text(encoding="utf-8")
