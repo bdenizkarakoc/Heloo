@@ -32,7 +32,7 @@
 </head>
 <body>
 <main>
-  <div class="top"><a href="/">← Fabrika</a></div>
+  <div class="top"><a href="/" id="back">← Fabrika</a><button class="ghost" id="kapat" style="display:none;margin-left:auto">Kapat</button></div>
   <h1>🧰 Araçlar</h1>
   <div class="sub">Açık kaynak video otomasyon projeleri. Her biri <code>araclar/</code> klasörüne indirilir ve kendi ortamına kurulur; yalnızca bu bilgisayarda (127.0.0.1) çalışır. Anahtar isteyen araçların API çağrıları ücretlidir — anahtarı aracın kendi sayfasına girersin.</div>
   <div class="top"><button id="all">Hepsini indir ve kur</button><span id="msg"></span></div>
@@ -117,8 +117,19 @@ $("all").onclick = async () => {
   say("Kurulumlar başladı; kartlardan izleyebilirsin.");
   refresh();
 };
+if (location.pathname === "/") {   // ayrı uygulama (app/araclar_app.py): Fabrika bağlantısı yok, Kapat var
+  $("back").style.display = "none";
+  $("kapat").style.display = "";
+  $("kapat").onclick = async () => {
+    if (rows.some((r) => r.busy) && !confirm("Süren kurulum var; yine de kapatılsın mı?")) return;
+    try { await post("kapat", ""); } catch (e) { /* sunucu kapanırken bağlantı kopabilir */ }
+    clearInterval(timer);
+    say("Kapatıldı. Bu pencereyi kapatabilirsin.");
+    window.close();
+  };
+}
 refresh();
-setInterval(refresh, 4000);
+const timer = setInterval(refresh, 4000);
 </script>
 </body>
 </html>

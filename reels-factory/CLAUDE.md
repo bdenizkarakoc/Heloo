@@ -26,6 +26,7 @@ python scripts/factory.py anim-ses <metin> <klasör>   # animasyon kısa filmi i
 python scripts/factory.py anim-karakter <film> <Ad> "<tarif>" [--poz ...]  # Gemini ile özgün karakter kartları
 python scripts/factory.py gorsel <görsel> [--istek ".."] [--ses otomatik|benim|kadin|erkek] [--klip N]  # görselden video
 python scripts/factory.py araclar [kur hepsi|<ad> | baslat <ad>]   # açık kaynak video araçları (araclar/ altına, kendi ortamlarına)
+python app/araclar_app.py [--kisayol]             # Araçlar ayrı uygulama olarak (Araclar.bat; --kisayol: Masaüstü kısayolu)
 python scripts/factory.py status [<görev>]
 python -m pytest tests -q                         # hızlı testler (her gönderimde GitHub Actions da çalıştırır)
 ```
@@ -81,7 +82,7 @@ python -m pytest tests -q                         # hızlı testler (her gönder
 | `scripts/reels/design.py` | Tasarım temaları: `design.themes` ayar katmanı (renk, yazı tipi, altyazı biçimi, geçiş seti, efektler), son kullanılmayanı seçer; görevde `design` olarak saklanır |
 | `scripts/reels/gorsel.py` | Görselden video (`/gorsel` sayfası, `factory.py gorsel`): Claude görsel analizi (karakter/kişilik/ses tarifi, kimlik tespiti yok) → Gemini ile 9:16 kenar genişletme → konuşan başına ElevenLabs ses tasarımı (`eleven.py`; yoksa Edge sesi + perde) → Higgsfield görselden video klipleri (`higgsfield.py`) → fabrika hattı (sahne başına `voice_id`) |
 | `scripts/reels/supa.py` | Supabase: biten video, kapak, paylaşım metni → Storage (`reels`) + `reels_videos` tablosu (`supabase/schema.sql`); `SUPABASE_URL` + `SUPABASE_SERVICE_KEY` |
-| `scripts/reels/araclar.py` | Araçlar (`/araclar`, `app/araclar.html`, `factory.py araclar`): OpenMontage, MoneyPrinterTurbo, ViMax, Video-Shotcraft, Toonflow, do-mpc — sabit sürümle `araclar/<ad>/` altına indirir (depoya eklenmez), kendi `.venv`/`node_modules` ortamına kurar, arayüzünü 127.0.0.1'de başlatır; Claude Code `/tanitim` (Shotcraft) |
+| `scripts/reels/araclar.py` | Araçlar (`/araclar`, `app/araclar.html`, `factory.py araclar`): OpenMontage, MoneyPrinterTurbo, ViMax, Video-Shotcraft, Toonflow, do-mpc — sabit sürümle `araclar/<ad>/` altına indirir (depoya eklenmez), kendi `.venv`/`node_modules` ortamına kurar, arayüzünü 127.0.0.1'de başlatır; Claude Code `/tanitim` (Shotcraft). Ayrı uygulama: `app/araclar_app.py` (`Araclar.bat`, kapı 8790, kendi penceresi, Fabrika gerekmez; `--kisayol` Masaüstü kısayolu) |
 | `animasyon/` | Çizgi-3D animasyon kısa film (MIT, Mr omi'nin Claude Animated Shorts becerisi): `studio/` three.js + Remotion projesi, `SKILL.md` akış, **`TURKCE.md` fabrika kuralları (öncelikli)**; Türkçe ses `factory.py anim-ses`; Gemini karakter kartları `factory.py anim-karakter` (`scripts/reels/characters.py`, `GEMINI_API_KEY`) → sahnede `gemcast.ts`; Claude Code `/animasyon` |
 | `cizgi/` | Kodla çizilen 2D çizgi kısa filmler (özgün karakterler, ağız senkronu, karakter başına ses, efekt, müzik): her dosya bir bölüm (`burak_ve_kaan.py`, `kahvehane_bocekleri.py`); 3D `animasyon/` render edilemeyen ortamlarda hızlı yol |
 | `remotion/` | Remotion (React) render motoru: `src/Reels.tsx` `composition/remotion.json`'ı HyperFrames şablonlarıyla aynı hareketlerle çizer (`render.engine: remotion` ya da `--engine remotion`) |

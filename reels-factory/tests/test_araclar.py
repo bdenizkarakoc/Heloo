@@ -57,3 +57,34 @@ def test_cli_lists_tools():
     assert r.returncode == 0, r.stderr
     for name in araclar.TOOLS:
         assert name in r.stdout
+
+
+def test_standalone_app_serves_only_local_requests():
+    """Ayrı uygulama (app/araclar_app.py): sayfa + durum verir; başka siteden gelen isteği reddeder."""
+    import json
+    import threading
+    import urllib.error
+    import urllib.request
+    from http.server import ThreadingHTTPServer
+    sys.path.insert(0, str(ROOT / "app"))
+    import araclar_app
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), araclar_app.Handler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{srv.server_address[1]}"
+    try:
+        assert b"<title>Ara" in urllib.request.urlopen(base + "/", timeout=5).read()
+        rows = json.loads(urllib.request.urlopen(base + "/api/araclar", timeout=20).read())
+        assert [r["name"] for r in rows] == list(araclar.TOOLS)
+
+        def post(headers):
+            req = urllib.request.Request(base + "/api/araclar/kur", data=b'{"name": "yok"}', headers=headers)
+            try:
+                return urllib.request.urlopen(req, timeout=5).status
+            except urllib.error.HTTPError as exc:
+                return exc.code
+        assert post({"Content-Type": "application/json"}) == 200                      # bilinmeyen araç: yalnızca mesaj döner
+        assert post({"Content-Type": "application/json", "Origin": "https://kotu.example"}) == 400
+        assert post({"Content-Type": "application/json", "Host": "kotu.example"}) == 400
+        assert post({"Content-Type": "text/plain"}) == 400
+    finally:
+        srv.shutdown()
