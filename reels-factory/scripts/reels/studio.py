@@ -532,6 +532,55 @@ def heuristic_style(metrics: dict) -> dict:
     return s
 
 
+def _readable(hex_color: str) -> str:
+    """Vurgu rengi koyu zeminde okunacak kadar açık olsun (koyuysa beyaza doğru açılır)."""
+    r, g, b = (int(hex_color[i:i + 2], 16) for i in (1, 3, 5))
+    lum = 0.299 * r + 0.587 * g + 0.114 * b
+    if lum < 150:
+        k = (150 - lum) / max(1.0, 255 - lum)
+        r, g, b = (int(c + (255 - c) * k) for c in (r, g, b))
+    return f"#{r:02X}{g:02X}{b:02X}"
+
+
+def auto_design(color: dict, info: dict) -> dict:
+    """Videonun kendi görünümünden tasarım seçer (Claude gerekmez): vurgu rengi videodaki baskın canlı renkten,
+    renk düzeltme eksik olana göre (soluksa canlandır, karanlıksa aç, düzse kontrast), hareketliyse sakin zoom,
+    durağansa hareket katan zoom + kelime kutulu altyazı. Dönen: {"style": {...}, "why": [...]}."""
+    st: dict = {"grade": {}, "captions": {}, "punch": {}, "fx": {}}
+    why = []
+    acc = color.get("accent_colors") or []
+    if acc:
+        c = _readable(acc[0]["hex"])
+        st["captions"]["highlight"] = c
+        st["title"] = {"bg": c}
+        st["progress"] = {"color": c}
+        why.append(f"vurgu rengi videodan ({c})")
+    sat, con, lum = color.get("saturation", 0.3), color.get("contrast", 0.22), color.get("brightness", 0.45)
+    if sat < 0.22:
+        st["grade"]["saturation"] = 1.28; why.append("soluk renkler canlandırıldı")
+    elif sat > 0.5:
+        st["grade"]["saturation"] = 1.0; why.append("renkler zaten canlı: doygunluk artırılmadı")
+    if con < 0.17:
+        st["grade"]["contrast"] = 1.14; why.append("düz görüntüye kontrast")
+    if lum < 0.3:
+        st["grade"].update(brightness=0.05, gamma=1.08, vignette=False); why.append("karanlık çekim aydınlatıldı")
+    elif lum > 0.7:
+        st["grade"]["brightness"] = -0.03
+    warm = color.get("warmth", 0.0)
+    if abs(warm) > 0.12:   # belirgin renk dökümü dengelenir
+        st["grade"]["warmth"] = round(max(-0.12, min(0.12, -warm * 0.4)), 2); why.append("renk dengesi düzeltildi")
+    if color.get("motion", 0.02) > 0.06:
+        st["punch"].update(mode="smooth", scale=1.06, bump=0.0); st["captions"]["anim"] = "bounce"
+        why.append("hareketli çekim: sakin zoom")
+    else:
+        st["punch"].update(mode="punch", scale=1.14, bump=0.05); st["captions"]["anim"] = "kutu"
+        st["fx"]["sharpen"] = 0.4
+        why.append("durağan çekim: kesimlerde zoom + kelime kutulu altyazı")
+    if info.get("width", 0) < info.get("height", 1):
+        st["frame"] = {"mode": "crop"}
+    return {"style": st, "why": why or ["varsayılan görünüm"]}
+
+
 def download_url(url: str) -> Path:
     """Bağlantıdaki videoyu (Instagram/TikTok/YouTube vb.) yalnızca stil incelemesi için indirir (yt-dlp)."""
     try:
@@ -897,6 +946,15 @@ def run_edit(pid: str) -> dict:
                 proj["notes"].append(f"Stil referanstan öğrenildi ({ra.get('analysis_by')}): {ra.get('summary')}")
             except Exception as exc:  # noqa: BLE001 — referans indirilemezse montaj yine yapılır
                 proj["notes"].append(f"Referans incelenemedi, kayıtlı stil kullanıldı: {str(exc)[:200]}")
+        if o.get("auto_design"):   # "videoya göre tasarla": renk, tempo ve hareket videonun kendisinden
+            set_stage(proj, "videonun görünümü inceleniyor (otomatik tasarım)")
+            try:
+                frames = sample_frames(src, work / "auto_frames", min(info["duration"], 60), fps=0.5)
+                ad = auto_design(color_metrics(frames), info)
+                style = full_style(merge_style(style, ad["style"]))
+                proj["notes"].append("Otomatik tasarım: " + "; ".join(ad["why"]))
+            except Exception as exc:  # noqa: BLE001 — inceleme başarısızsa kayıtlı stille devam
+                L.warning("otomatik tasarım yapılamadı: %s", exc)
         if o.get("style_overrides"):  # sihirbaz cevapları (tarz, renk, tempo, altyazı, müzik)
             style = full_style(merge_style(style, o["style_overrides"]))
         if o.get("sfx"):
@@ -950,6 +1008,8 @@ def run_edit(pid: str) -> dict:
                 if not new:
                     break
                 style = new
+                if o.get("style_overrides"):   # kullanıcının açıkça seçtikleri iyileştirme turundan da öncelikli
+                    style = full_style(merge_style(style, o["style_overrides"]))
                 if o.get("sfx"):   # iyileştirilen stil sihirbazın geçiş sesi isteğini taşımaz
                     style["sfx"] = {**style.get("sfx", {}), **o["sfx"], "enabled": True}
                 set_stage(proj, f"klip 1 iyileştirilmiş stille yeniden üretiliyor (tur {rnd})")

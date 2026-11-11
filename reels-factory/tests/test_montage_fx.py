@@ -74,3 +74,33 @@ def test_brief_new_options():
     assert k["bitis"] == "Takip et!"
     for name, t in brief.TARZ.items():
         full_style(t)
+
+
+def test_montaj_page_clicks_to_options():
+    o = brief.build({"tarz": "film", "ses": "guclu", "bosluk": 0.25, "dolgu": True, "filtre": ["gren", "serit"],
+                     "vurgu_renk": "#ff00aa", "yazi_boyut": "buyuk", "yazi_konum": "alt", "muzik_seviye": -12,
+                     "ilerleme": False, "oran": "original", "uzunluk": "tam", "otomatik": True})
+    so = o["style_overrides"]
+    assert o["enhance"] == "güçlü" and o["aspect"] == "original" and o["mode"] == "full" and o["auto_design"] is True
+    assert so["pacing"]["max_pause"] == 0.25 and so["pacing"]["fillers"] is True
+    assert so["fx"]["grain"] == 9 and so["fx"]["letterbox"] == 0.08            # efektler birlikte seçilir
+    assert so["captions"]["highlight"] == "#FF00AA" and so["captions"]["size"] == 96 and so["captions"]["y"] == 0.7
+    assert so["music"]["gain_db"] == -12 and so["progress"]["enabled"] is False
+    assert brief.build({"ses": "kapali"})["enhance"] is False
+    assert "captions" not in brief.build({"vurgu_renk": "kirmizi"}).get("style_overrides", {})   # geçersiz renk yok sayılır
+    full_style(so)
+
+
+def test_auto_design_from_video_look():
+    from reels.studio import auto_design
+    dull = auto_design({"saturation": 0.12, "contrast": 0.1, "brightness": 0.2, "warmth": 0.0, "motion": 0.01,
+                        "accent_colors": [{"hex": "#102060", "share": 0.4}]}, {"width": 1920, "height": 1080})
+    st = dull["style"]
+    assert st["grade"]["saturation"] > 1.2 and st["grade"]["contrast"] > 1.1 and st["grade"]["brightness"] > 0
+    assert st["captions"]["anim"] == "kutu" and st["punch"]["mode"] == "punch"
+    r, g, b = (int(st["captions"]["highlight"][i:i + 2], 16) for i in (1, 3, 5))
+    assert 0.299 * r + 0.587 * g + 0.114 * b >= 145                             # koyu vurgu rengi okunur hâle gelir
+    busy = auto_design({"saturation": 0.6, "contrast": 0.25, "brightness": 0.5, "motion": 0.1, "accent_colors": []},
+                       {"width": 1080, "height": 1920})["style"]
+    assert busy["punch"]["mode"] == "smooth" and busy["frame"]["mode"] == "crop" and busy["grade"]["saturation"] == 1.0
+    full_style(st), full_style(busy)

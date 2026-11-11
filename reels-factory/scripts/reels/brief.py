@@ -4,6 +4,9 @@ Girdi (hepsi isteğe bağlı; boş/“fark etmez” alanlar dokunulmaz):
   reference : {"url": "..."} veya {"file": "<studio/uploads içindeki ad>"} — “şuna benzet” (stil referanstan öğrenilir)
   tarz, sure, altyazi, muzik, efekt, renk, tempo, zoom, filtre : hazır seçenek anahtarları (aşağıdaki tablolar)
   bitis     : bitiş kartı yazısı (ör. "Takip et!")
+  Montaj sayfası (/montaj) düğmeleri: ses (kapali/hafif/orta/guclu), bosluk (sn; bundan uzun duraksama/nefes kesilir),
+  dolgu (ııı/eee kes), filtre listesi, vurgu_renk / yazi_renk (#RRGGBB), yazi_boyut (kucuk/orta/buyuk),
+  yazi_konum (ust/orta/alt), muzik_seviye (dB), oran (9:16 / original), uzunluk (tam), otomatik (videoya göre tasarım)
   serbest   : kullanıcının kendi cümleleri — Claude varsa yorumlatılır, yoksa Türkçe anahtar kelimelerle eşlenir
 Çıktı: run_edit seçenekleri {"style_overrides", "reference", "mode", "max_sec", "music", "sfx", "brief_notes"}.
 Müzik türü stildeki music.mood ile internette (kütüphane → Openverse → üretilmiş) aranır; geçiş sesi Kesim
@@ -187,10 +190,14 @@ def build(answers: dict) -> dict:
     over: dict = {}
     for key, table in (("tarz", TARZ), ("renk", RENK), ("tempo", TEMPO), ("altyazi", ALTYAZI), ("zoom", ZOOM),
                        ("filtre", FILTRE)):
-        if a.get(key) in table:
-            over = _merge(over, table[a[key]])
-            notes.append(f"{key}: {a[key]}")
-    opts: dict = {}
+        vals = a.get(key)
+        vals = [v.strip() for v in vals.split(",")] if isinstance(vals, str) else list(vals or [])
+        for v in vals if key == "filtre" else vals[:1]:   # görüntü efektleri birlikte seçilebilir
+            if v in table:
+                over = _merge(over, table[v])
+                notes.append(f"{key}: {v}")
+    over, opts_ui = _ui(a, over, notes)
+    opts: dict = dict(opts_ui)
     if "muzik" in a:
         q = a.get("music_query") or MUZIK.get(a["muzik"], a["muzik"] if a["muzik"] not in MUZIK else None)
         if a["muzik"] == "yok":
@@ -231,6 +238,61 @@ def build(answers: dict) -> dict:
         opts["style_overrides"] = over
     opts["brief_notes"] = notes
     return opts
+
+
+SES = {"kapali": False, "hafif": "hafif", "orta": "orta", "guclu": "güçlü"}
+YAZI_BOYUT = {"kucuk": 62, "orta": 78, "buyuk": 96}
+YAZI_KONUM = {"ust": 0.24, "orta": 0.5, "alt": 0.7}
+
+
+def _hex(v) -> str | None:
+    v = str(v or "").strip()
+    return v.upper() if re.fullmatch(r"#[0-9a-fA-F]{6}", v) else None
+
+
+def _ui(a: dict, over: dict, notes: list) -> tuple[dict, dict]:
+    """Montaj sayfasındaki tıklanan ayarlar (ses, boşluk/nefes, renkler, boyut, konum...) → stil + seçenekler."""
+    opts: dict = {}
+    if a.get("ses") in SES:
+        opts["enhance"] = SES[a["ses"]]
+        notes.append("ses düzeltme: " + ("kapalı" if a["ses"] == "kapali" else str(SES[a["ses"]])))
+    if a.get("bosluk") not in (None, ""):
+        try:
+            sec = max(0.15, min(3.0, float(a["bosluk"])))
+            over = _merge(over, {"pacing": {"max_pause": sec}})
+            notes.append(f"{sec:g} sn'den uzun boşluk/nefes kesilir")
+        except (TypeError, ValueError):
+            pass
+    if isinstance(a.get("dolgu"), bool):
+        over = _merge(over, {"pacing": {"fillers": a["dolgu"]}})
+    cap: dict = {}
+    if _hex(a.get("vurgu_renk")):
+        cap["highlight"] = _hex(a["vurgu_renk"])
+        over = _merge(over, {"title": {"bg": cap["highlight"]}, "progress": {"color": cap["highlight"]}})
+    if _hex(a.get("yazi_renk")):
+        cap["color"] = _hex(a["yazi_renk"])
+    if a.get("yazi_boyut") in YAZI_BOYUT:
+        cap["size"] = YAZI_BOYUT[a["yazi_boyut"]]
+    if a.get("yazi_konum") in YAZI_KONUM:
+        cap["y"] = YAZI_KONUM[a["yazi_konum"]]
+    if cap:
+        over = _merge(over, {"captions": cap})
+    if a.get("muzik_seviye") not in (None, ""):
+        try:
+            over = _merge(over, {"music": {"gain_db": max(-30.0, min(-8.0, float(a["muzik_seviye"])))}})
+        except (TypeError, ValueError):
+            pass
+    for key in ("ilerleme", "baslik_kutusu"):   # ilerleme çubuğu / baştaki başlık kutusu aç-kapa
+        if isinstance(a.get(key), bool):
+            over = _merge(over, {"progress" if key == "ilerleme" else "title": {"enabled": a[key]}})
+    if a.get("oran") in ("9:16", "original"):
+        opts["aspect"] = a["oran"]
+    if a.get("uzunluk") == "tam":
+        opts["mode"] = "full"
+    if a.get("otomatik") is True:
+        opts["auto_design"] = True
+        notes.append("tasarım videoya göre seçildi")
+    return over, opts
 
 
 QUESTIONS = [  # Kesim sihirbazının soruları (anahtar, soru, [(değer, etiket)])

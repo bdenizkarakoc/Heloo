@@ -71,6 +71,7 @@ python -m pytest tests -q                         # hızlı testler (her gönder
 | `scripts/reels/photos.py` | Fotoğraflarım: `Masaüstü\kesim\Fotoğraflarım` kutusu (asla silinmez/üzerine yazılmaz), önizleme, seçili fotoğraflardan müzikli montaj (Kesim) ya da anlatımlı video (Fabrika); sayfa `app/photos.html` (`/photos`) |
 | `kesim-app/fabrika/komut.js` | `/komut` menüsü + aşağı doğru büyüyen metin kutusu; Kesim'de ve Fabrika sayfalarında (`/komut.js`) aynı dosya. Fabrika komut listesi `app/komutlar.js`, Kesim'inki `fabrika/ui.js`; Claude Code komutları depo kökündeki `.claude/commands/` (/video, /kesim, /foto, /ref, /yayin, /animasyon) |
 | `app/kesim.html` | Sade Kesim penceresi (`/kesim`, `server.py --open --page kesim`) |
+| `app/montaj.html` | Montaj sayfası (`/montaj`): tıklayarak montaj — şablon galerisi (Otomatik = `studio.auto_design`, videonun renk/hareketinden tasarım), ses düzeltme, boşluk/nefes kısma, altyazı stili/renk/boyut/konum, zoom, efektler, müzik, başlık/bitiş kartı, oran; seçimler `brief._ui` ile stile çevrilir ve iyileştirme turundan önceliklidir |
 | `app/mcp_server.py` | MCP sunucusu (stdio): fabrikayı Claude Code/Desktop'a araç olarak açar; yayın yalnızca onay kuyruğuna |
 | `scripts/reels/mcp_setup.py` | `factory.py mcp`: MCP sunucularını (reels-fabrikasi, playwright, memory, filesystem, fetch, git, github, sentry, context7, premiere-pro, brave-search, postgres) Claude Code'a kaydeder; `scripts/install-premiere-mcp.ps1` Premiere Pro MCP'yi kurar |
 | `app/publish.html` | Yayın sayfası (`/publish`) |
@@ -122,4 +123,6 @@ python -m pytest tests -q                         # hızlı testler (her gönder
   sesini kopyalama isteğini reddet. Başkasının kaydından yalnızca konuşma tarzı (hız, perde, duraksama) öğrenilir
   (`voice.learn_from_media`, onaysız); tını yalnızca onaylı kayıtla kendi profiline eklenir.
 - Göndermeden önce `python -m pytest tests -q` çalıştır (sözdizimi + birim testleri); yeni bir kural/düzeltme eklerken `tests/` altına testini yaz.
+- Montajda jump cut'lardan sonra `studio_render.soften_cuts` çalışır (kesimde "çıt" sesi olmasın); internetten müzik
+  bulunamazsa `audio._music_procedural` havaya göre (tempo/davul/tını) yedek müzik üretir.
 - Kullanıcıya ait dosyaları (`assets/music`, `projects`, `output`) izinsiz silme veya üzerine yazma.

@@ -197,43 +197,99 @@ def _music_openverse(cfg: Config, queries: list[str], work: Path, used: set[str]
     return None
 
 
+MOODS = [  # (anahtar kelimeler, bpm, davul, akorlar (MIDI), tını)
+    (("sad", "piano", "emotional", "duygu"), 66, False, [[57, 60, 64], [53, 57, 60], [48, 52, 55], [55, 59, 62]], "piano"),
+    (("cinematic", "epic", "suspense", "tension", "news", "dream", "ambient"), 72, False,
+     [[50, 53, 57], [46, 50, 53], [53, 57, 60], [48, 52, 55]], "pad"),
+    (("lofi", "chill", "calm", "corporate", "acoustic"), 82, True, [[53, 57, 60, 64], [52, 55, 59, 62], [50, 53, 57, 60],
+                                                                   [48, 52, 55, 59]], "soft"),
+    (("energetic", "upbeat", "happy", "dance", "electronic", "hip", "funny", "quirky", "synthwave", "retro"), 118, True,
+     [[48, 52, 55], [55, 59, 62], [57, 60, 64], [53, 57, 60]], "bright"),
+]
+
+
+def _mood(queries: list[str]) -> tuple:
+    q = " ".join(queries or []).lower()
+    for m in MOODS:
+        if any(k in q for k in m[0]):
+            return m
+    return MOODS[2]
+
+
 def _music_procedural(cfg: Config, queries: list[str], work: Path, used: set[str], seconds: float) -> dict:
-    """Telifsiz, yumuşak ambiyans pad'i (konuşmanın altında kalacak şekilde sade)."""
+    """Telifsiz yedek müzik (internetten bulunamazsa): istenen havaya göre tempo, akor, bas, arpej ve hafif davul.
+    Konuşmanın altında kalacak sadelikte; her çağrıda aynı sonucu verir."""
+    _keys, bpm, drums, chords, tone = _mood(queries)
     rng = np.random.default_rng(7)
-    n = int((seconds + 4) * SR)
-    t = np.arange(n) / SR
+    beat = 60.0 / bpm
+    bar = 4 * beat
+    total = seconds + 4
+    n = int(total * SR)
     out = np.zeros((n, 2), dtype=np.float32)
-    # La minör: Am - F - C - G (i - VI - III - VII)
-    chords = [[57, 60, 64], [53, 57, 60], [48, 55, 60], [55, 59, 62]]
-    span = 6.0
 
     def hz(m):
         return 440.0 * 2 ** ((m - 69) / 12)
 
-    k = 0
-    start = 0.0
-    while start < seconds + 4:
-        notes = chords[k % len(chords)]
-        a, b = int(start * SR), min(n, int((start + span + 2.5) * SR))
-        tt = t[a:b] - start
-        env = np.minimum(1.0, tt / 1.6) * np.clip((span + 2.5 - tt) / 2.5, 0, 1)
-        for ch, det in ((0, -0.0018), (1, 0.0018)):
-            sig = np.zeros_like(tt)
-            for m in notes:
-                f = hz(m) * (1 + det)
-                for h, amp in ((1, 1.0), (2, 0.35), (3, 0.12)):
-                    sig += amp * np.sin(2 * np.pi * f * h * tt + rng.uniform(0, 6.28))
-            sig += 0.6 * np.sin(2 * np.pi * hz(notes[0] - 24) * tt)  # bas
-            out[a:b, ch] += (0.06 * env * sig).astype(np.float32)
-        start += span
-        k += 1
-    trem = 0.85 + 0.15 * np.sin(2 * np.pi * 0.11 * t)
-    out *= trem[:, None].astype(np.float32)
+    def add(sig, at, pan=0.0, gain=1.0):
+        a = int(at * SR)
+        if a >= n:
+            return
+        sig = sig[: n - a] * gain
+        out[a:a + len(sig), 0] += (sig * (1 - max(0.0, pan))).astype(np.float32)
+        out[a:a + len(sig), 1] += (sig * (1 + min(0.0, pan))).astype(np.float32)
+
+    def pluck(m, dur, bright):
+        tt = np.arange(int(dur * SR)) / SR
+        f = hz(m)
+        sig = sum(amp * np.sin(2 * np.pi * f * h * tt) * np.exp(-tt * (3.0 + 2.5 * h))
+                  for h, amp in ((1, 1.0), (2, 0.45 * bright), (3, 0.22 * bright), (4, 0.1 * bright)))
+        return sig * np.minimum(1.0, tt / 0.004)
+
+    def pad(notes, dur):
+        tt = np.arange(int(dur * SR)) / SR
+        env = np.minimum(1.0, tt / (dur * 0.3)) * np.clip((dur - tt) / (dur * 0.35), 0, 1)
+        sig = sum(np.sin(2 * np.pi * hz(m) * (1 + d) * tt + rng.uniform(0, 6.28)) + 0.3 * np.sin(4 * np.pi * hz(m) * tt)
+                  for m in notes for d in (-0.002, 0.002))
+        return sig * env / len(notes)
+
+    bright = {"piano": 0.7, "pad": 0.3, "soft": 0.5, "bright": 1.0}[tone]
+    kick_t = np.arange(int(0.22 * SR)) / SR
+    kick = np.sin(2 * np.pi * (45 * kick_t + (120 - 45) * 0.03 * (1 - np.exp(-kick_t / 0.03)))) * np.exp(-kick_t / 0.09)
+    hat = rng.standard_normal(int(0.05 * SR)) * np.exp(-np.arange(int(0.05 * SR)) / SR / 0.012)
+    hat = np.diff(hat, prepend=0.0)                      # yüksek geçiren: tiz "tss"
+    snare_t = np.arange(int(0.16 * SR)) / SR
+    snare = (rng.standard_normal(len(snare_t)) * 0.6 + np.sin(2 * np.pi * 190 * snare_t)) * np.exp(-snare_t / 0.05)
+    bars = int(total / bar) + 1
+    for bi in range(bars):
+        notes = chords[bi % len(chords)]
+        t0 = bi * bar
+        add(pad(notes, bar + beat), t0, gain=0.05 if tone != "pad" else 0.09)
+        add(pluck(notes[0] - 24, beat * 1.8, 0.4), t0, gain=0.16)                     # bas: 1. ve 3. vuruş
+        add(pluck(notes[0] - 24 if bi % 2 else notes[-1] - 24, beat * 1.8, 0.4), t0 + 2 * beat, gain=0.13)
+        if tone != "pad":                                                            # arpej (sekizlikler)
+            order = [0, 1, 2, 1, 0, 2, 1, 2] if tone != "piano" else [0, 2, 1, 2, 0, 2, 1, 2]
+            for i, o in enumerate(order):
+                if tone == "piano" and i % 2 and rng.random() < 0.3:
+                    continue
+                m = notes[o % len(notes)] + (12 if tone != "piano" or i % 4 == 2 else 0)
+                add(pluck(m, beat * 1.5, bright), t0 + i * beat / 2, pan=0.35 if i % 2 else -0.35,
+                    gain=0.085 * (1.0 if i % 4 == 0 else 0.75))
+        if drums and bi >= 1:                                                        # ilk ölçü davulsuz giriş
+            soft = tone == "soft"
+            for q in range(4):
+                if q in (0, 2) or not soft:
+                    add(kick, t0 + q * beat, gain=0.30 if q in (0, 2) else 0.22)
+                if q in (1, 3):
+                    add(snare, t0 + q * beat, gain=0.07 if soft else 0.10)
+                add(hat, t0 + q * beat + beat / 2, pan=0.2, gain=0.035 if soft else 0.05)
+    peak = float(np.abs(out).max()) or 1.0
+    out *= 0.7 / peak
     raw = write_wav(work / "music_proc_raw.wav", out, SR)
     dest = work / "music_procedural.wav"
     run(["ffmpeg", "-y", "-v", "error", "-i", raw, "-af",
-         "lowpass=f=2400,aecho=0.8:0.6:70|110:0.30|0.22", "-ar", str(SR), "-ac", "2", dest])
-    return {"path": dest, "provider": "procedural", "title": "Prosedürel ambiyans (Reels Factory)",
+         f"highpass=f=35,lowpass=f={5200 if tone in ('soft', 'pad', 'piano') else 9000},"
+         "aecho=0.8:0.5:55|95:0.22|0.14,alimiter=limit=0.8", "-ar", str(SR), "-ac", "2", dest])
+    return {"path": dest, "provider": "procedural", "title": f"Fabrika müziği ({tone}, {bpm} bpm)",
             "license": "owned", "credit": "", "source": "generated"}
 
 

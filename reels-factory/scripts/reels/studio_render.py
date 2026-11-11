@@ -453,6 +453,26 @@ def zoom_expr(plan: list[tuple[float, float, float]], pieces_out: list[tuple[flo
     return "min(1.5\\,1+" + "+".join(terms) + ")" if terms else ""
 
 
+def soften_cuts(wav: Path, pieces_out: list[tuple[float, float]], ms: float = 8.0) -> int:
+    """Jump cut'larda ses dalgası aniden koptuğu için "çıt" sesi çıkar; her kesim noktasının iki yanına birkaç
+    milisaniyelik kısılma/açılma uygular (yerinde yazar). Dönen: yumuşatılan kesim sayısı."""
+    import numpy as np
+    from .util import load_audio, write_wav
+    cuts = [a for a, _b in pieces_out[1:]]
+    if not cuts:
+        return 0
+    x = load_audio(wav, 48000, 2)
+    n = max(8, int(48000 * ms / 1000))
+    ramp = np.linspace(1.0, 0.0, n, dtype=np.float32)[:, None]
+    for c in cuts:
+        i = int(round(c * 48000))
+        if n < i < len(x) - n:
+            x[i - n:i] *= ramp
+            x[i:i + n] *= ramp[::-1]
+    write_wav(wav, x, 48000)
+    return len(cuts)
+
+
 def video_filter(style: dict, W: int, H: int, pieces_out: list[tuple[float, float]], total: float,
                  select: str, fps: int, hdr: bool = False, words: list[dict] | None = None) -> str:
     fr, g = style["frame"]["mode"], style["grade"]
@@ -559,6 +579,10 @@ def render_clip(src: Path, window: tuple[float, float], words: list[dict], title
         raw = work / "voice_raw.wav"
         run(["ffmpeg", "-y", "-v", "error", *seek, "-vn", "-af", f"aselect='{sel}',asetpts=N/SR/TB", "-ar", "48000",
              "-ac", "2", raw.name], cwd=work)
+        try:
+            soften_cuts(raw, out_pieces)   # kesim yerlerindeki "çıt" sesleri
+        except Exception as exc:  # noqa: BLE001 — yumuşatılamazsa ses olduğu gibi kalır
+            L.warning("kesim sesleri yumuşatılamadı: %s", exc)
         if enhance_voice:  # gürültü/uğultu/yankı azaltma + netlik + seviye dengeleme (audiofx)
             from .audiofx import enhance
             strength = enhance_voice if isinstance(enhance_voice, str) else "orta"

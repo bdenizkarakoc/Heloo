@@ -657,6 +657,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._file(ROOT / "app" / "gorsel.html")
         if path in ("/kur", "/kur.html"):  # Video Kur: görsel, senaryo, ses, altyazı, kurgu ayrı ayrı
             return self._file(ROOT / "app" / "kur.html")
+        if path in ("/montaj", "/montaj.html"):   # tıklayarak montaj (şablonlar, ses, altyazı, boşluk, efektler)
+            return self._file(ROOT / "app" / "montaj.html")
         if path in ("/photos", "/photos.html"):
             return self._file(ROOT / "app" / "photos.html")
         if path == "/komut.js":  # /komut menüsü + büyüyen metin kutusu (Kesim ile aynı dosya)
@@ -1219,7 +1221,7 @@ def main() -> int:
     ap.add_argument("--page", default="", help="açılacak sayfa (ör. kesim: sade montaj penceresi)")
     args = ap.parse_args()
     url = f"http://127.0.0.1:{args.port}/{args.page}"
-    as_app = args.page == "kesim"
+    as_app = args.page in ("kesim", "montaj")
     if os.environ.pop("RF_RESTART", ""):  # /api/restart: eski süreç kapanıp portu bırakana kadar bekle
         for _ in range(60):
             if not port_in_use(args.port):
