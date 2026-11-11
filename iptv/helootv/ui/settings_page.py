@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+import os
 import time
 
 from PySide6.QtCore import Qt, Signal
@@ -479,6 +480,19 @@ class SettingsPage(QScrollArea):
         self.catchup_mode.addItem("Sorarak aç (varsayılan: canlıda kal)", "ask")
         self.catchup_mode.addItem("Hiç açılmasın", "off")
         self.catchup_mode.addItem("Sormadan aç", "direct")
+        from ..recorder import default_folder
+        self.rec_folder = QLineEdit()
+        self.rec_folder.setPlaceholderText(str(default_folder()))
+        self.rec_folder.setToolTip("⏺ Kaydet ve zamanlanmış kayıtların yazıldığı klasör (boş: varsayılan)")
+        self.rec_folder.editingFinished.connect(self._changed)
+        rec_row = QHBoxLayout()
+        rec_row.addWidget(self.rec_folder, 1)
+        pick = QPushButton("Seç…")
+        pick.clicked.connect(self._pick_rec_folder)
+        opn = QPushButton("Klasörü aç")
+        opn.clicked.connect(self._open_rec_folder)
+        rec_row.addWidget(pick)
+        rec_row.addWidget(opn)
         note = QLabel("Çift tık her zaman tam ekran. Kenar alanları videonun sol ve sağ üçte biridir; ekranda "
                       "\"⏪ 5 sn\" / \"5 sn ⏩\" yazar.")
         note.setWordWrap(True)
@@ -491,6 +505,7 @@ class SettingsPage(QScrollArea):
         lay.addWidget(self.stay_live, r, 0, 1, 2); r += 1
         lay.addWidget(QLabel("Tekrar (geri izleme)"), r, 0); lay.addWidget(self.catchup_mode, r, 1); r += 1
         lay.addWidget(self.mv_hover, r, 0, 1, 2); r += 1
+        lay.addWidget(QLabel("Kayıt klasörü"), r, 0); lay.addLayout(rec_row, r, 1); r += 1
         note.setText(note.text() + " Kanal değiştirmek için: ⏮/⏭ düğmeleri, PgUp/PgDn, Ctrl+↑/↓, numara tuşları; "
                      "kanal her değiştiğinde ekranda sebebi yazar (I tuşu: son değişiklikler).")
         lay.addWidget(note, r, 0, 1, 2)
@@ -695,6 +710,7 @@ class SettingsPage(QScrollArea):
         self.click_action.setCurrentIndex(max(0, self.click_action.findData(ctl["click_action"])))
         self.seek_step.setValue(int(ctl["seek_step"]))
         self.mv_hover.setChecked(bool(ctl["mv_audio_hover"]))
+        self.rec_folder.setText(s["record"].get("folder", ""))
         self.arrow_keys.setCurrentIndex(max(0, self.arrow_keys.findData(ctl["arrow_keys"])))
         self.media_zap.setChecked(bool(ctl["media_keys_zap"]))
         self.stay_live.setChecked(bool(ctl["stay_live"]))
@@ -757,6 +773,7 @@ class SettingsPage(QScrollArea):
         v["sharpen"] = self.sharpen.currentData()
         pic["denoise"] = self.denoise.currentData()
         v["low_boost"] = self.low_boost.isChecked()
+        s["record"]["folder"] = self.rec_folder.text().strip()
         s["controls"].update(click_action=self.click_action.currentData(), seek_step=self.seek_step.value(),
                              mv_audio_hover=self.mv_hover.isChecked(), arrow_keys=self.arrow_keys.currentData(),
                              media_keys_zap=self.media_zap.isChecked(), stay_live=self.stay_live.isChecked(),
@@ -798,6 +815,26 @@ class SettingsPage(QScrollArea):
         ui["epg_shift_hours"] = self.epg_shift.value()
         ui["auto_refresh_hours"] = self.auto_refresh.value()
         self.settings_changed.emit()
+
+    def _pick_rec_folder(self) -> None:
+        from PySide6.QtWidgets import QFileDialog
+        from ..recorder import default_folder
+        d = QFileDialog.getExistingDirectory(self, "Kayıt klasörü", self.rec_folder.text() or str(default_folder()))
+        if d:
+            self.rec_folder.setText(d)
+            self._changed()
+
+    def _open_rec_folder(self) -> None:
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+        from ..recorder import default_folder
+        folder = self.rec_folder.text().strip() or str(default_folder())
+        try:
+            os.makedirs(folder, exist_ok=True)
+        except OSError as e:
+            QMessageBox.warning(self, "Kayıt klasörü", f"Klasör açılamadı:\n{e}")
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(folder))
 
     def ask_pin(self, title: str, label: str) -> str | None:
         from PySide6.QtWidgets import QInputDialog

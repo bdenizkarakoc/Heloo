@@ -56,6 +56,8 @@ python -m pytest tests -q              # testler (libmpv2/ffmpeg/7z varsa başs�
 - TV rehberi `ui/guide.py` (kendi çizen `GuideCanvas`, `store.epg_grid` toplu sorgu, en çok 400 kanal).
 - Ebeveyn kilidi `parental.py` (`ui.pin_hash`, PBKDF2); açılışta `hide_adult` zorla açılır, sıfırlamada PIN korunur.
 - Güncelleme `updater.py` (Qt'siz; `check` git fetch + rev-list, `apply` yalnız `--ff-only`, kirli/ileride ise durur).
+  Açılıştaki denetim `interactive=False` (şifre penceresi açmaz); güncelleme sonrası `--restart` ile açılır (tek örnek
+  denetimini atlar). Hata olayında `_loading_timer` durdurulur (hata iletisi boş videoyla örtülmesin).
 - TMDB `tmdb.py` (Qt'siz; `lookup` arama+ayrıntı+önbellek `cache/tmdb.json`, `merge` yalnız boşları doldurur);
   arayüzde `_DetailsBase._tmdb` (anahtar `settings.metadata.tmdb_key`).
 - Çoklu görüntü `ui/multiview.py` (hücre başına `MpvEngine`, `cell_settings` hafif; tık = `click` script-message;

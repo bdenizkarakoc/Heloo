@@ -449,3 +449,30 @@ def test_failing_channel_does_not_jump_to_other_channels(tmp_path):
     finally:
         eng.shutdown()
         httpd.shutdown()
+
+
+def test_error_message_is_not_replaced_by_blank_video(tmp_path, monkeypatch):
+    """Kanal açılamayınca "Yayın açılamadı" iletisi kalır; yedek zamanlayıcı 10 sn sonra boş video göstermez."""
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("HELOOTV_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from helootv.player.engine import PlayRequest
+    from helootv.ui.main_window import MainWindow
+    QApplication.instance() or QApplication([])
+    s = settings_mod.merged_defaults()
+    s["ui"]["resume_last_channel"] = False
+    s["ui"]["auto_refresh_hours"] = 0
+    win = MainWindow(Store(tmp_path / "t.db"), s, headless=True)
+    try:
+        win.current_req = PlayRequest(url="http://x/1.ts", title="beIN SPORTS 1", kind="live")
+        win._loading_timer.start()
+        win._on_engine_event("error", {"message": "HTTP 404"})
+        assert not win._loading_timer.isActive()
+        assert win.player.loading and win.player.placeholder.title.text() == "Yayın açılamadı"
+        win._loading_timer.start()
+        win.stop()
+        assert not win._loading_timer.isActive()
+    finally:
+        win.close()

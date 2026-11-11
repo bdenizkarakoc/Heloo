@@ -190,6 +190,12 @@ class Scheduler:
             self.jobs = [Job(**{k: v for k, v in r.items() if k in Job.__dataclass_fields__}) for r in rows]
         except (OSError, ValueError, TypeError):
             self.jobs = []
+        # uygulama kayıt sürerken kapandıysa iş "sürüyor" kalmasın: programı bitmediyse yeniden beklemeye alınır
+        # (due() kalan kısmı kaydeder), bittiyse yarım kaldı sayılır
+        now = time.time()
+        for j in self.jobs:
+            if j.state == "running":
+                j.state = "waiting" if now < j.stop else "failed"
 
     def save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)

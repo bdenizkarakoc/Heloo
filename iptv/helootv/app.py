@@ -28,6 +28,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--reset-settings", action="store_true", help="ayarları en iyi varsayılanlara döndür")
     ap.add_argument("--write-icon", metavar="YOL", help="uygulama simgesini .ico/.png olarak yaz ve çık")
     ap.add_argument("--screenshot", metavar="YOL", help="(test) pencereyi çizip PNG kaydet ve çık")
+    ap.add_argument("--restart", action="store_true", help=argparse.SUPPRESS)   # güncellemeden sonra yeniden açılış
     ap.add_argument("paths", nargs="*", help="açılacak video/fotoğraf dosyaları ya da bağlantılar (4K'ya yükseltilir)")
     args = ap.parse_args(argv)
 
@@ -59,7 +60,10 @@ def main(argv: list[str] | None = None) -> int:
     app.setApplicationName(APP_NAME)
     app.setOrganizationName("Heloo")
     app.setApplicationVersion(__version__)
-    if not args.screenshot and forward_to_running(args.paths):
+    if args.restart:
+        import time
+        time.sleep(1.5)       # güncellenen eski kopya kapansın (tek örnek sunucusu boşalsın)
+    elif not args.screenshot and forward_to_running(args.paths):
         return 0  # uygulama zaten açık: dosyalar ona gönderildi
     if os.name != "nt":
         import locale

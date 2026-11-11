@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (QApplication, QFileDialog, QInputDialog, QMenu, Q
 from .. import APP_NAME, __version__, catalog, epg, gpu, paths, upscale, weburl
 from ..player import options as opt
 from ..player.engine import EngineError, MpvEngine, PlayRequest, launch_external
+from ..recorder import default_folder as recorder_default_folder
 from ..settings import save_settings
 from ..store import Item, Store
 from . import theme
@@ -364,6 +365,7 @@ class MainWindow(QMainWindow):
         elif name == "error":
             msg = data.get("message") or "Yayın açılamadı."
             self._status(f"⚠ {msg}")
+            self._loading_timer.stop()       # yedek zamanlayıcı hata iletisinin yerine boş video göstermesin
             self.player.set_idle("Yayın açılamadı", msg)
             if req:
                 self.player.set_now_playing(req.title, "", False)
@@ -821,6 +823,7 @@ class MainWindow(QMainWindow):
         self._refresh_progress_views()
 
     def stop(self) -> None:
+        self._loading_timer.stop()
         if self.engine:
             self.engine.stop()
         self.current_req = None
@@ -1252,6 +1255,7 @@ class MainWindow(QMainWindow):
     # ================================================================== ayarlar / sistem
     def _on_settings_changed(self) -> None:
         self._save_timer.start()
+        self.recorder.folder = Path(self.settings["record"].get("folder") or recorder_default_folder())
         if hasattr(self, "_ls_shortcut"):
             self._ls_shortcut.setKey(QKeySequence(self.settings["lossless"].get("app_shortcut") or "Ctrl+Z"))
         if self.engine:
@@ -1684,7 +1688,7 @@ class MainWindow(QMainWindow):
             else:
                 log.info("güncelleme denetimi: %s", err)
 
-        run_task(updater.check, on_done=done, on_error=fail)
+        run_task(updater.check, interactive=manual, on_done=done, on_error=fail)
 
     def _offer_update(self, info: dict) -> None:
         from .. import updater
@@ -1708,7 +1712,9 @@ class MainWindow(QMainWindow):
     def _restart(self) -> None:
         from PySide6.QtCore import QProcess
         import sys
-        if QProcess.startDetached(sys.executable, ["-m", "helootv"], str(Path(__file__).resolve().parents[2]))[0]:
+        # --restart: yeni kopya, kapanmakta olan bu kopyaya "zaten açık" diye bağlanıp çıkmasın
+        if QProcess.startDetached(sys.executable, ["-m", "helootv", "--restart"],
+                                  str(Path(__file__).resolve().parents[2]))[0]:
             self.close()
             QApplication.quit()
         else:

@@ -84,3 +84,27 @@ def test_apply_refuses_to_overwrite_local_changes(tmp_path):
 def test_not_a_git_checkout(tmp_path):
     with pytest.raises(updater.UpdateError, match="git klonu değil"):
         updater.check(tmp_path)
+
+
+def test_silent_check_never_prompts_and_restart_flag(tmp_path, monkeypatch):
+    dev, user = _setup(tmp_path)
+    seen = {}
+    real = updater.subprocess.run
+
+    def spy(args, *a, **k):
+        if "fetch" in args:
+            seen.update(k.get("env") or {})
+        return real(args, *a, **k)
+
+    monkeypatch.setattr(updater.subprocess, "run", spy)
+    assert updater.check(user, interactive=False)["behind"] == 0
+    assert seen["GIT_TERMINAL_PROMPT"] == "0" and seen["GCM_INTERACTIVE"] == "Never"
+    # güncellemeden sonra yeniden açılış: --restart bayrağı tanınır (tek örnek denetimi atlanır)
+    import argparse
+    import inspect
+
+    from helootv import app
+    src = inspect.getsource(app.main)
+    assert '"--restart"' in src and "argparse.SUPPRESS" in src
+    assert src.index("if args.restart:") < src.index("forward_to_running(args.paths)")
+    assert argparse.SUPPRESS

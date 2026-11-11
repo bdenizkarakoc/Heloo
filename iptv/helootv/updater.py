@@ -4,6 +4,7 @@ değişikliği ya da ayrık geçmiş varsa hiçbir şeyi ezmez. requirements.txt
 Qt'ye bağımlı değildir."""
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -20,14 +21,18 @@ def repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
-def _git(repo: Path, *args: str, timeout: float = 60) -> str:
+def _git(repo: Path, *args: str, timeout: float = 60, interactive: bool = True) -> str:
     git = shutil.which("git")
     if not git:
         raise UpdateError("Git bulunamadı. Güncelleme için Git gerekir (PowerShell kurulum bloğu Git'i kurar).")
     flags = 0x08000000 if sys.platform.startswith("win") else 0
+    env = dict(os.environ, GIT_TERMINAL_PROMPT="0")
+    if not interactive:
+        # açılıştaki sessiz denetim şifre/oturum penceresi açmasın (gizli depo): sorulacaksa sessizce vazgeç
+        env.update(GCM_INTERACTIVE="Never", GIT_ASKPASS="echo", SSH_ASKPASS="echo")
     try:
         r = subprocess.run([git, *args], cwd=str(repo), capture_output=True, text=True, timeout=timeout,
-                           creationflags=flags, encoding="utf-8", errors="replace")
+                           creationflags=flags, encoding="utf-8", errors="replace", env=env)
     except subprocess.TimeoutExpired as e:
         raise UpdateError("GitHub'a ulaşılamadı (zaman aşımı). İnternet bağlantınızı denetleyin.") from e
     if r.returncode != 0:
@@ -36,7 +41,7 @@ def _git(repo: Path, *args: str, timeout: float = 60) -> str:
     return r.stdout.strip()
 
 
-def check(repo: Path | None = None) -> dict:
+def check(repo: Path | None = None, interactive: bool = True) -> dict:
     """{'branch', 'behind', 'ahead', 'changes': [başlık...], 'dirty': bool, 'current', 'latest'}"""
     repo = Path(repo or repo_root())
     if not (repo / ".git").exists():
@@ -44,7 +49,7 @@ def check(repo: Path | None = None) -> dict:
     branch = _git(repo, "rev-parse", "--abbrev-ref", "HEAD")
     if branch == "HEAD":
         raise UpdateError("Belirli bir dala bağlı değil (ayrık HEAD).")
-    _git(repo, "fetch", "--quiet", "origin", branch, timeout=90)
+    _git(repo, "fetch", "--quiet", "origin", branch, timeout=90, interactive=interactive)
     remote = f"origin/{branch}"
     behind = int(_git(repo, "rev-list", "--count", f"HEAD..{remote}") or 0)
     ahead = int(_git(repo, "rev-list", "--count", f"{remote}..HEAD") or 0)

@@ -38,7 +38,14 @@ def test_scheduler_due_missed_and_dedupe(tmp_path):
     assert recorder.Scheduler.record_duration(a, now + 560) == pytest.approx(3600 + 120 - 560)
     sch.mark(a, "running")
     again = recorder.Scheduler(tmp_path / "schedule.json")                     # diske yazıldı
-    assert [j.state for j in again.jobs if j.id == a.id] == ["running"]
+    # uygulama kayıt sürerken kapanmış: programı çoktan bitmiş iş "sürüyor" kalmaz
+    assert [j.state for j in again.jobs if j.id == a.id] == ["failed"]
+    live = sch.add("record", {"start": time.time() - 60, "stop": time.time() + 3600, "title": "Maç"}, "K",
+                   (1, "live", "9"), "http://x/9.ts")
+    sch.mark(live, "running")
+    again = recorder.Scheduler(tmp_path / "schedule.json")
+    # programı süren iş yeniden beklemeye alınır ve kalan kısmı kaydedilmek üzere hemen sırası gelir
+    assert [j.id for j in again.due()] == [live.id]
     assert sch.find("remind", (1, "live", "5"), prog["start"]).id == r.id
     sch.remove(r.id)
     assert sch.find("remind", (1, "live", "5"), prog["start"]) is None
