@@ -733,6 +733,14 @@ class Handler(BaseHTTPRequestHandler):
             return self._json([{"name": n, "ready": bool(c), "note": note} for n, c, note in mcp_setup.servers()])
         if path == "/api/doctor":
             return self._json(doctor.check(load_config(), network=True))
+        if path in ("/araclar", "/araclar.html"):  # açık kaynak video araçları: indir, kur, başlat
+            return self._file(ROOT / "app" / "araclar.html")
+        if path == "/api/araclar":
+            from reels import araclar
+            return self._json(araclar.status())
+        if path.startswith("/api/araclar/log/"):
+            from reels import araclar
+            return self._json({"log": araclar.log_tail(path.rsplit("/", 1)[-1])})
         return self.send_error(404)
 
     # --- PUT: büyük video yükleme (diske akıtılarak; bellek kullanmaz)
@@ -936,6 +944,11 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/mcp/setup":  # MCP sunucularını Claude Code'a kaydet
             from reels import mcp_setup
             return self._json(mcp_setup.register())
+        if path.startswith("/api/araclar/"):  # {name}: kur (arka planda), baslat, durdur
+            from reels import araclar
+            op, name = path.rsplit("/", 1)[-1], str(data.get("name", ""))
+            fn = {"kur": araclar.install_async, "baslat": araclar.start, "durdur": araclar.stop}.get(op)
+            return self._json(fn(name) if fn else {"ok": False, "message": "Bilinmeyen işlem"})
         if path == "/api/cloud/sync":
             FACTORY.cloud_wake.set()
             return self._json({"ok": True})

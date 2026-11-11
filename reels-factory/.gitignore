@@ -49,3 +49,6 @@ graphify-out/
 config/kesim.json
 output/kesim/
 kesim-app/fabrika/config.json
+
+# Araçlar: indirilen üçüncü taraf projeler (kendi lisanslarıyla; depoya eklenmez)
+araclar/

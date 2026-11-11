@@ -259,6 +259,41 @@ def cmd_mcp(args, cfg) -> int:
     return 0 if res["ok"] else 1
 
 
+def cmd_araclar(args, cfg) -> int:
+    from reels import araclar
+    names = list(araclar.TOOLS) if not args.adlar or "hepsi" in args.adlar else args.adlar
+    if args.islem == "kur":
+        ok = True
+        for n in names:
+            print(f"… {n} indiriliyor ve kuruluyor (araclar/logs/{n}.log)", flush=True)
+            r = araclar.install(n, latest=args.guncel)
+            print(f"{'✔' if r['ok'] else '✘'} {n:<18} {r['message']}")
+            ok = ok and r["ok"]
+        return 0 if ok else 1
+    if args.islem in ("baslat", "durdur"):
+        if not args.adlar:
+            print("Araç adı ver, ör. araclar baslat moneyprinterturbo")
+            return 1
+        r = (araclar.start if args.islem == "baslat" else araclar.stop)(args.adlar[0])
+        print(r["message"])
+        if args.islem == "baslat" and r["ok"]:
+            print("Durdurmak için Ctrl+C")
+            try:
+                araclar._PROCS[args.adlar[0]].wait()
+            except (KeyboardInterrupt, KeyError):
+                araclar.stop(args.adlar[0])
+        return 0 if r["ok"] else 1
+    for r in araclar.status():
+        mark = "▶" if r["running"] else "✔" if r["installed"] else "↓" if r["downloaded"] else "–"
+        print(f"{mark} {r['name']:<18} {r['lisans']:<11} {r['ne']}")
+        if r["missing"]:
+            print(f"    eksik: {', '.join(r['missing'])}")
+        if r["error"]:
+            print(f"    hata: {r['error']}")
+    print("✔ kurulu · ▶ çalışıyor · ↓ indirildi · – yok    Kur: araclar kur hepsi | <ad>    Başlat: araclar baslat <ad>")
+    return 0
+
+
 def cmd_anim_ses(args, cfg) -> int:
     """Animasyon (animasyon/ — çizgi 3D kısa film) için Türkçe seslendirme: fabrikanın ses zinciriyle (Sesim/edge-tts)
     cümle cümle okur, şablonun beklediği <klasör>/voice.wav (48 kHz) ve words.json [{w, s, e}] dosyalarını yazar."""
@@ -414,6 +449,10 @@ def main() -> int:
     p.add_argument("--list", action="store_true")
     p = sub.add_parser("mcp", help="MCP sunucularını Claude Code'a kaydet (reels-fabrikasi, playwright, github...)")
     p.add_argument("--list", action="store_true", help="yalnızca listele, kaydetme")
+    p = sub.add_parser("araclar", help="açık kaynak video araçlarını indir/kur/başlat (OpenMontage, MoneyPrinterTurbo, ViMax...)")
+    p.add_argument("islem", nargs="?", default="liste", choices=["liste", "kur", "baslat", "durdur"])
+    p.add_argument("adlar", nargs="*", help="araç adları ya da hepsi")
+    p.add_argument("--guncel", action="store_true", help="sabit sürüm yerine deponun en yeni hâlini al")
     p = sub.add_parser("anim-ses", help="animasyon kısa filmi için Türkçe voice.wav + words.json (kelime zamanları)")
     p.add_argument("metin", help="metin dosyası (# ile başlayan satırlar atlanır) ya da doğrudan metin")
     p.add_argument("klasor", help="çıktı klasörü, ör. animasyon/studio/shorts/<ad>/voice")
@@ -448,6 +487,7 @@ def main() -> int:
     handlers = {"doctor": cmd_doctor, "new": cmd_new, "validate": cmd_validate, "produce": cmd_produce,
                 "run": cmd_run, "status": cmd_status, "candidates": cmd_candidates, "selftest": cmd_selftest,
                 "hook": cmd_hook, "title": cmd_title, "chapters": cmd_chapters, "mcp": cmd_mcp, "kesim": cmd_kesim,
+                "araclar": cmd_araclar,
                 "foto": cmd_foto, "anim-ses": cmd_anim_ses,
                 "anim-karakter": cmd_anim_karakter, "gorsel": cmd_gorsel,
                 "anahtar": cmd_anahtar}
