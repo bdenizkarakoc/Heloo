@@ -2,7 +2,8 @@
 
 Girdi (hepsi isteğe bağlı; boş/“fark etmez” alanlar dokunulmaz):
   reference : {"url": "..."} veya {"file": "<studio/uploads içindeki ad>"} — “şuna benzet” (stil referanstan öğrenilir)
-  tarz, sure, altyazi, muzik, efekt, renk, tempo : hazır seçenek anahtarları (aşağıdaki tablolar)
+  tarz, sure, altyazi, muzik, efekt, renk, tempo, zoom, filtre : hazır seçenek anahtarları (aşağıdaki tablolar)
+  bitis     : bitiş kartı yazısı (ör. "Takip et!")
   serbest   : kullanıcının kendi cümleleri — Claude varsa yorumlatılır, yoksa Türkçe anahtar kelimelerle eşlenir
 Çıktı: run_edit seçenekleri {"style_overrides", "reference", "mode", "max_sec", "music", "sfx", "brief_notes"}.
 Müzik türü stildeki music.mood ile internette (kütüphane → Openverse → üretilmiş) aranır; geçiş sesi Kesim
@@ -40,6 +41,26 @@ TARZ = {
     "minimal": {"punch": {"enabled": False}, "flash": {"enabled": False}, "title": {"enabled": False},
                 "progress": {"enabled": False}, "grade": {"contrast": 1.02, "saturation": 1.0, "vignette": False},
                 "captions": {"uppercase": False, "weight": 600, "size": 60, "highlight": "#FFFFFF", "outline": 3}},
+    # --- hazır şablonlar (CapCut/Canva tarzı tek tık görünümler)
+    "viral": {"punch": {"enabled": True, "scale": 1.15, "bump": 0.06}, "flash": {"enabled": True},
+              "captions": {"anim": "kutu", "highlight": "#7C4DFF", "keyword": "#3DFF7A", "words": 3, "size": 82},
+              "fx": {"cut_flash": 0.18, "sharpen": 0.5}, "grade": {"contrast": 1.1, "saturation": 1.22},
+              "pacing": {"max_pause": 0.28}, "music": {"enabled": True, "mood": "energetic upbeat"}},
+    "podcast": {"punch": {"enabled": True, "scale": 1.08, "mode": "smooth", "bump": 0.0}, "flash": {"enabled": False},
+                "captions": {"anim": "tek", "size": 96, "highlight": "#FFD23F", "keyword": "#FFD23F"},
+                "grade": {"look": "teal", "contrast": 1.08}, "fx": {"sharpen": 0.4}, "progress": {"enabled": False}},
+    "film": {"punch": {"enabled": True, "scale": 1.08, "mode": "smooth", "bump": 0.0}, "flash": {"enabled": False},
+             "frame": {"mode": "crop"}, "grade": {"look": "film", "saturation": 0.95, "warmth": 0.05, "vignette": True},
+             "fx": {"letterbox": 0.08, "grain": 7, "fade_out": 0.8},
+             "captions": {"anim": "daktilo", "uppercase": False, "weight": 700, "size": 62, "highlight": "#FFFFFF"},
+             "progress": {"enabled": False}, "music": {"enabled": True, "mood": "cinematic"}},
+    "vhs": {"grade": {"saturation": 0.85, "warmth": 0.1, "contrast": 0.96, "vignette": True},
+            "fx": {"vhs": 4, "grain": 12}, "captions": {"anim": "pop", "highlight": "#FF4D6D"},
+            "music": {"enabled": True, "mood": "synthwave retro"}},
+    "ruya": {"punch": {"enabled": True, "scale": 1.07, "mode": "smooth", "bump": 0.0}, "flash": {"enabled": False},
+             "grade": {"look": "pastel", "warmth": 0.06}, "fx": {"glow": 0.28, "fade_out": 0.8},
+             "captions": {"anim": "bounce", "uppercase": False, "weight": 700, "highlight": "#FFC2D9"},
+             "music": {"enabled": True, "mood": "dreamy ambient"}},
     "haber": {"captions": {"box": True, "box_color": "#C62828", "uppercase": True, "highlight": "#FFFFFF"},
               "title": {"bg": "#C62828", "fg": "#FFFFFF"}, "progress": {"color": "#C62828"},
               "music": {"enabled": True, "mood": "news tension", "gain_db": -24}},
@@ -55,7 +76,19 @@ RENK = {
 TEMPO = {"hizli": {"pacing": {"max_pause": 0.22, "keep_gaps": 1.5}},
          "normal": {"pacing": {"max_pause": 0.45}},
          "sakin": {"pacing": {"max_pause": 0.9, "keep_gaps": 6.0}, "punch": {"enabled": False}}}
+ZOOM = {"ani": {"punch": {"enabled": True, "mode": "punch", "bump": 0.05}},
+        "yumusak": {"punch": {"enabled": True, "mode": "smooth", "bump": 0.0, "scale": 1.1}},
+        "yok": {"punch": {"enabled": False}}}
+FILTRE = {"yok": {"fx": {"grain": 0, "letterbox": 0.0, "glow": 0.0, "vhs": 0}},
+          "gren": {"fx": {"grain": 9}}, "serit": {"fx": {"letterbox": 0.08}}, "parilti": {"fx": {"glow": 0.28}},
+          "vhs": {"fx": {"vhs": 4, "grain": 10}}, "keskin": {"fx": {"sharpen": 0.8}},
+          "flas": {"fx": {"cut_flash": 0.2}},
+          "teal": {"grade": {"look": "teal"}}, "dramatik": {"grade": {"look": "dramatik"}}}
 ALTYAZI = {"yok": {"captions": {"enabled": False}},
+           "kutuvurgu": {"captions": {"enabled": True, "anim": "kutu", "box": False, "highlight": "#7C4DFF"}},
+           "tek": {"captions": {"enabled": True, "anim": "tek", "size": 96}},
+           "ziplayan": {"captions": {"enabled": True, "anim": "bounce"}},
+           "daktilo": {"captions": {"enabled": True, "anim": "daktilo"}},
            "vurgulu": {"captions": {"enabled": True, "uppercase": True, "weight": 900, "box": False}},
            "sade": {"captions": {"enabled": True, "uppercase": False, "weight": 600, "highlight": "#FFFFFF", "outline": 4}},
            "kutulu": {"captions": {"enabled": True, "box": True, "uppercase": False}}}
@@ -70,6 +103,16 @@ WORDS = [
     (r"vlog|günlük", ("tarz", "vlog")), (r"eğit|öğret|anlat|bilgi", ("tarz", "egitici")),
     (r"komik|eğlenceli|mizah|güldür", ("tarz", "komik")), (r"duygu|hüzün|dokunaklı|romantik", ("tarz", "duygusal")),
     (r"sade|minimal|temiz|yalın", ("tarz", "minimal")), (r"haber|son dakika", ("tarz", "haber")),
+    (r"viral|capcut|trend|tiktok tarz", ("tarz", "viral")), (r"podcast|röportaj|söyleşi", ("tarz", "podcast")),
+    (r"rüya|dreamy|pastel", ("tarz", "ruya")),
+    (r"kelime kutu|kutu vurgu|kutulu kelime", ("altyazi", "kutuvurgu")), (r"tek kelime", ("altyazi", "tek")),
+    (r"zıpla", ("altyazi", "ziplayan")), (r"daktilo", ("altyazi", "daktilo")),
+    (r"yavaş zoom|yumuşak zoom|yavaş yakınla", ("zoom", "yumusak")), (r"zoom olmasın|zoomsuz|zoom yok", ("zoom", "yok")),
+    (r"ani zoom|sert zoom", ("zoom", "ani")),
+    (r"\bvhs\b|kaset", ("filtre", "vhs")), (r"gren|film tanesi|kumlu", ("filtre", "gren")),
+    (r"sinema şerid|siyah şerit|letterbox", ("filtre", "serit")), (r"parıltı|glow|ışılt", ("filtre", "parilti")),
+    (r"keskin|net görüntü", ("filtre", "keskin")), (r"flaş|parlama", ("filtre", "flas")),
+    (r"takip et|abone ol|bitiş kart|bitiş yazı", ("bitis", "Takip et!")),
     (r"siyah.?beyaz", ("renk", "siyahbeyaz")), (r"sıcak renk|sıcak ton|turuncu", ("renk", "sicak")),
     (r"soğuk renk|soğuk ton|mavi ton", ("renk", "soguk")), (r"canlı renk|doygun", ("renk", "canli")),
     (r"retro|eski film|nostalj", ("renk", "retro")), (r"doğal renk|filtresiz", ("renk", "dogal")),
@@ -120,6 +163,8 @@ def interpret_free_text(text: str) -> dict:
             f"«{text}»\n\nBunu şu seçeneklere eşle (emin olmadığın alanı hiç yazma):\n"
             f"tarz: {list(TARZ)}\nrenk: {list(RENK)}\ntempo: {list(TEMPO)}\naltyazi: {list(ALTYAZI)}\n"
             f"muzik: {list(MUZIK)}\nefekt: {list(EFEKT)}\nsure: {list(SURE)}\n"
+            f"zoom: {list(ZOOM)}\nfiltre (görüntü efekti): {list(FILTRE)}\n"
+            "bitis: videonun sonunda çıkacak kısa yazı (ör. \"Takip et!\"; yalnızca istendiyse)\n"
             "Ayrıca istersen music_query (İngilizce müzik arama sözcükleri), sfx_query (İngilizce ses efekti arama "
             "sözcükleri) ve title (videonun başına kısa Türkçe başlık; yalnızca kullanıcı açıkça istediyse) ekle.\n"
             'Biçim: {"tarz": "...", "renk": "...", "music_query": "...", ...}')
@@ -140,7 +185,8 @@ def build(answers: dict) -> dict:
     for k, v in free.items():   # açıkça seçilen düğme serbest metinden önce gelir
         a.setdefault(k, v)
     over: dict = {}
-    for key, table in (("tarz", TARZ), ("renk", RENK), ("tempo", TEMPO), ("altyazi", ALTYAZI)):
+    for key, table in (("tarz", TARZ), ("renk", RENK), ("tempo", TEMPO), ("altyazi", ALTYAZI), ("zoom", ZOOM),
+                       ("filtre", FILTRE)):
         if a.get(key) in table:
             over = _merge(over, table[a[key]])
             notes.append(f"{key}: {a[key]}")
@@ -169,6 +215,9 @@ def build(answers: dict) -> dict:
         notes.append(f"süre: en çok {SURE[a['sure']]} sn")
     if a.get("title"):
         opts["title"] = str(a["title"])[:60]
+    if a.get("bitis") and str(a["bitis"]).lower() not in ("yok", "hayır"):
+        over = _merge(over, {"outro": {"enabled": True, "text": str(a["bitis"])[:40]}})
+        notes.append(f"bitiş kartı: {str(a['bitis'])[:40]}")
     ref = a.get("reference") or {}
     if isinstance(ref, dict) and (ref.get("url") or ref.get("file")):
         opts["reference"] = {k: str(ref[k]) for k in ("url", "file") if ref.get(k)}
@@ -187,9 +236,13 @@ def build(answers: dict) -> dict:
 QUESTIONS = [  # Kesim sihirbazının soruları (anahtar, soru, [(değer, etiket)])
     ("tarz", "Nasıl bir tarz?", [("enerjik", "Enerjik"), ("sinematik", "Sinematik"), ("vlog", "Vlog"),
                                  ("egitici", "Eğitici"), ("komik", "Komik"), ("duygusal", "Duygusal"),
-                                 ("minimal", "Sade / minimal"), ("haber", "Haber")]),
+                                 ("minimal", "Sade / minimal"), ("haber", "Haber"),
+                                 ("viral", "Viral (CapCut tarzı)"), ("podcast", "Podcast"), ("film", "Film"),
+                                 ("vhs", "Retro VHS"), ("ruya", "Rüya / pastel")]),
     ("sure", "Ne kadar uzun?", [("15", "15 sn"), ("30", "30 sn"), ("60", "60 sn"), ("90", "90 sn")]),
-    ("altyazi", "Altyazı", [("vurgulu", "Kalın + vurgulu"), ("sade", "Sade"), ("kutulu", "Kutulu"), ("yok", "Olmasın")]),
+    ("altyazi", "Altyazı", [("vurgulu", "Kalın + vurgulu"), ("kutuvurgu", "Kelime kutusu"), ("tek", "Tek kelime"),
+                            ("ziplayan", "Zıplayan"), ("daktilo", "Daktilo"), ("sade", "Sade"), ("kutulu", "Kutulu"),
+                            ("yok", "Olmasın")]),
     ("muzik", "Müzik (internetten ücretsiz aranır)", [("neseli", "Neşeli"), ("lofi", "Lo-fi"), ("epik", "Epik"),
                                                       ("duygusal", "Duygusal"), ("elektronik", "Elektronik"),
                                                       ("hiphop", "Hip hop"), ("akustik", "Akustik"),
@@ -199,6 +252,10 @@ QUESTIONS = [  # Kesim sihirbazının soruları (anahtar, soru, [(değer, etiket
     ("renk", "Renk", [("canli", "Canlı"), ("sicak", "Sıcak"), ("soguk", "Soğuk"), ("siyahbeyaz", "Siyah-beyaz"),
                       ("retro", "Retro"), ("dogal", "Doğal")]),
     ("tempo", "Kesim temposu", [("hizli", "Hızlı"), ("normal", "Normal"), ("sakin", "Sakin")]),
+    ("zoom", "Yakınlaşma", [("ani", "Ani zoom"), ("yumusak", "Yavaş yakınlaşma"), ("yok", "Olmasın")]),
+    ("filtre", "Görüntü efekti", [("gren", "Film greni"), ("serit", "Sinema şeridi"), ("parilti", "Parıltı"),
+                                  ("vhs", "VHS"), ("keskin", "Keskin"), ("flas", "Kesimde flaş"),
+                                  ("teal", "Turkuaz-turuncu"), ("dramatik", "Dramatik"), ("yok", "Olmasın")]),
 ]
 
 

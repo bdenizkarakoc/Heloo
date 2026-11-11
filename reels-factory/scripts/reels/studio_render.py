@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import copy
 import math
+import re
 import shutil
 from pathlib import Path
 
@@ -26,21 +27,38 @@ FONT_FAMILY = "RF Studio"
 
 DEFAULT_STYLE: dict = {
     "name": "Fabrika", "description": "Kalın büyük harf altyazı, sarı kelime vurgusu, kesimlerde zoom, canlı renk.",
-    "pacing": {"max_pause": 0.45, "pad": 0.10, "keep_gaps": 4.0},
+    "pacing": {"max_pause": 0.45, "pad": 0.10, "keep_gaps": 4.0, "fillers": True},   # fillers: "ııı", "eee" kesilir
     "frame": {"mode": "blur"},
     "grade": {"contrast": 1.06, "saturation": 1.15, "brightness": 0.0, "gamma": 1.0, "warmth": 0.0,
-              "vignette": True},
-    "punch": {"enabled": True, "scale": 1.12, "interrupt": 2.8, "emphasis": 1.08},  # kesim yoksa 2,8 sn'de bir zoom değişir
+              "vignette": True, "look": ""},   # look: "" | teal | film | dramatik | pastel
+    # mode: "punch" ani zoom | "smooth" parça boyunca yavaş yakınlaşma; bump: her kesimde 0,2 sn'lik zoom darbesi
+    "punch": {"enabled": True, "scale": 1.12, "interrupt": 2.8, "emphasis": 1.08, "mode": "punch", "bump": 0.04},
     "captions": {"enabled": True, "weight": 900, "size": 78, "uppercase": True, "color": "#FFFFFF",
                  "highlight": "#FFD23F", "outline": 7, "outline_color": "#000000", "shadow": 2, "box": False,
-                 "box_color": "#000000", "words": 3, "y": 0.64, "pop": True},
+                 "box_color": "#000000", "words": 3, "y": 0.64, "pop": True,
+                 # anim: pop | bounce (her kelime zıplar) | kutu (konuşulan kelime renkli kutuda) | tek (tek kelime) | daktilo
+                 "anim": "pop", "keyword": ""},   # keyword: sayı/vurgu kelimelerinin kalıcı rengi ("" = kapalı)
     "title": {"enabled": True, "seconds": 3.0, "size": 70, "weight": 900, "uppercase": True,
               "fg": "#111111", "bg": "#FFD23F", "y": 0.17},
     "progress": {"enabled": True, "color": "#FFD23F", "height": 10, "position": "bottom"},
     "flash": {"enabled": True},
+    # kesim/film efektleri: cut_flash kesimde beyaz parlama (0-0.3), grain film greni (0-30), letterbox sinema şeridi
+    # (ekran oranı 0-0.15), glow parıltı (0-0.5), vhs renk kayması (px 0-8), sharpen keskinlik (0-1.5), fade_out sn
+    "fx": {"cut_flash": 0.0, "grain": 0, "letterbox": 0.0, "glow": 0.0, "vhs": 0, "sharpen": 0.0, "fade_out": 0.35},
+    "outro": {"enabled": False, "text": "Takip et!", "seconds": 1.8},   # bitiş kartı
     "music": {"enabled": False, "gain_db": -18, "mood": "upbeat"},
     "sfx": {"enabled": False, "query": "whoosh", "gain_db": -9, "min_gap": 2.5},   # kesimlerde geçiş sesi (kütüphane)
 }
+
+
+LOOKS = {   # hazır renk görünümleri (grade.look)
+    "": "",
+    "teal": "colorbalance=rs=-0.06:bs=0.08:rh=0.07:bh=-0.07",              # turkuaz gölge, turuncu ten
+    "film": "curves=all='0/0.06 0.5/0.5 1/0.94'",                          # soluk film: siyahlar kalkık
+    "dramatik": "curves=all='0/0 0.25/0.17 0.75/0.83 1/1'",                # sert kontrast eğrisi
+    "pastel": "curves=all='0/0.10 1/0.95',eq=saturation=0.85",
+}
+CAPTION_ANIMS = ("pop", "bounce", "kutu", "tek", "daktilo")
 
 
 def merge(base: dict, over: dict) -> dict:
@@ -63,9 +81,25 @@ def full_style(style: dict) -> dict:
     g["brightness"], g["gamma"] = clamp(g["brightness"], -0.2, 0.2), clamp(g["gamma"], 0.7, 1.4)
     g["warmth"] = clamp(g["warmth"], -0.3, 0.3)
     s["punch"]["scale"] = clamp(s["punch"]["scale"], 1.0, 1.4)
+    s["punch"]["bump"] = clamp(s["punch"].get("bump") or 0, 0.0, 0.12)
+    if s["punch"].get("mode") not in ("punch", "smooth"):
+        s["punch"]["mode"] = "punch"
+    if g.get("look") not in LOOKS:
+        g["look"] = ""
+    f = s["fx"]
+    f["cut_flash"], f["grain"] = clamp(f.get("cut_flash") or 0, 0.0, 0.3), int(clamp(f.get("grain") or 0, 0, 30))
+    f["letterbox"], f["glow"] = clamp(f.get("letterbox") or 0, 0.0, 0.15), clamp(f.get("glow") or 0, 0.0, 0.5)
+    f["vhs"], f["sharpen"] = int(clamp(f.get("vhs") or 0, 0, 8)), clamp(f.get("sharpen") or 0, 0.0, 1.5)
+    f["fade_out"] = clamp(f.get("fade_out") or 0, 0.0, 1.5)
+    s["outro"]["seconds"] = clamp(s["outro"].get("seconds") or 1.8, 0.8, 4.0)
+    s["outro"]["text"] = str(s["outro"].get("text") or "")[:40]
     c = s["captions"]
     c["size"], c["words"] = clamp(c["size"], 36, 140), int(clamp(c["words"], 1, 6))
     c["y"], c["weight"] = clamp(c["y"], 0.2, 0.85), int(clamp(c["weight"], 400, 900))
+    if c.get("anim") not in CAPTION_ANIMS:
+        c["anim"] = "pop"
+    if c["anim"] == "tek":
+        c["words"] = 1
     s["title"]["y"] = clamp(s["title"]["y"], 0.08, 0.5)
     s["pacing"]["max_pause"] = clamp(s["pacing"]["max_pause"], 0.15, 3.0)
     if s["progress"]["position"] not in ("top", "bottom"):
@@ -106,6 +140,22 @@ def font_file(weight: int) -> Path:
 # Kesim planı
 # ----------------------------------------------------------------------------
 
+FILLER = re.compile(r"^(ı+h?|e{2,}h?|a{2,}h?|[ıe]+m+|h+m+|ö{2,}|ı+ğ+)$")
+
+
+def drop_fillers(words: list[dict]) -> list[dict]:
+    """Dolgu seslerini ("ııı", "eee", "hmm") çıkarır; önceki kelime `cut_after` ile işaretlenir ki o aralık kesilsin."""
+    out: list[dict] = []
+    for w in words:
+        core = str(w.get("word", "")).strip(" .,!?;:…\"'-").lower()
+        if FILLER.match(core):
+            if out:
+                out[-1] = {**out[-1], "cut_after": True}
+            continue
+        out.append(w)
+    return out
+
+
 def plan_pieces(words: list[dict], start: float, end: float, style: dict) -> list[tuple[float, float]]:
     """Konuşmadaki duraksamaları (max_pause'tan uzun) keser; ama keep_gaps saniyeden uzun konuşmasız bölümleri
     KORUR — bunlar bilinçli görüntülerdir (fotoğraf, ara görüntü, müzikli sahne), "boşluk" değil."""
@@ -119,7 +169,7 @@ def plan_pieces(words: list[dict], start: float, end: float, style: dict) -> lis
     cur = [start if lead >= keep else max(start, ws[0]["start"] - pad), None]
     for a, b in zip(ws, ws[1:]):
         gap = b["start"] - a["end"]
-        if mp < gap < keep:
+        if mp < gap < keep or (a.get("cut_after") and 0.2 <= gap < keep):
             cur[1] = min(end, a["end"] + pad)
             pieces.append(cur)
             cur = [max(start, b["start"] - pad), None]
@@ -174,6 +224,32 @@ def _esc(text: str) -> str:
     return text.replace("\\", "").replace("{", "(").replace("}", ")")
 
 
+_EM: dict[int, float] = {}
+
+
+def ass_em(weight: int) -> float:
+    """libass'ta Fontsize satır yüksekliğidir (usWinAscent+usWinDescent); harf ölçümü için em oranını verir."""
+    weight = int(round(weight / 100) * 100)
+    if weight not in _EM:
+        from fontTools.ttLib import TTFont
+        f = TTFont(str(font_file(weight)))
+        os2, upm = f["OS/2"], f["head"].unitsPerEm
+        tall = (os2.usWinAscent + os2.usWinDescent) or (f["hhea"].ascent - f["hhea"].descent)
+        _EM[weight] = upm / tall
+    return _EM[weight]
+
+
+def word_boxes(texts: list[str], weight: int, size: float, W: int) -> list[tuple[float, float]]:
+    """Ortalanmış tek satırda her kelimenin (sol, sağ) x konumu — konuşulan kelimenin arkasına kutu çizmek için."""
+    font = ImageFont.truetype(str(font_file(weight)), max(8, int(round(size * ass_em(weight)))))
+    x0 = W / 2 - font.getlength(" ".join(texts)) / 2
+    out = []
+    for i, t in enumerate(texts):
+        left = x0 + font.getlength(" ".join(texts[:i]) + (" " if i else ""))
+        out.append((left, left + font.getlength(t)))
+    return out
+
+
 def caption_groups(words: list[dict], style: dict, W: int, k: float) -> list[list[dict]]:
     c = style["captions"]
     font = ImageFont.truetype(str(font_file(c["weight"])), int(c["size"] * k))
@@ -226,10 +302,21 @@ def build_ass(words: list[dict], title: str | None, style: dict, W: int, H: int,
         anim = "{\\fad(120,200)\\fscx70\\fscy70\\t(0,160,\\fscx100\\fscy100)}"
         lines.append(f"Dialogue: 1,{_ts(0)},{_ts(dur)},Title,,0,0,0,,{anim}{{\\pos({W // 2},{int(H * t['y'])})}}"
                      f"{_esc(txt)}")
+    o = style.get("outro") or {}
+    if o.get("enabled") and o.get("text") and total > 3:   # bitiş kartı: son saniyelerde ortada büyüyerek girer
+        txt = tr_upper(o["text"]) if t["uppercase"] else o["text"]
+        st = max(0.0, total - float(o["seconds"]))
+        anim = "{\\fad(120,0)\\fscx60\\fscy60\\t(0,180,\\fscx108\\fscy108)\\t(180,300,\\fscx100\\fscy100)}"
+        lines.append(f"Dialogue: 2,{_ts(st)},{_ts(total)},Title,,0,0,0,,{anim}{{\\pos({W // 2},{int(H * 0.46)})}}"
+                     f"{_esc(txt)}")
     if c["enabled"] and words:
         groups = caption_groups(words, style, W, k)
         hl = _ass_color(c["highlight"])
         base = _ass_color(c["color"])
+        kw = _ass_color(c["keyword"]) if c.get("keyword") else ""
+        anim_mode = c.get("anim", "pop")
+        size = int(c["size"] * k)
+        em = size * ass_em(c["weight"])
         y = int(H * c["y"])
         for gi, g in enumerate(groups):
             g_end = g[-1]["end"] + 0.15
@@ -242,12 +329,30 @@ def build_ass(words: list[dict], title: str | None, style: dict, W: int, H: int,
                 if e - s < 0.02:
                     continue
                 parts = []
-                for wj, x in enumerate(g):
-                    word = tr_upper(x["word"]) if c["uppercase"] else x["word"]
-                    color = hl if wj == wi else base
-                    parts.append(f"{{\\c{color}}}{_esc(word)}")
-                pop = "{\\fscx88\\fscy88\\t(0,90,\\fscx100\\fscy100)}" if c["pop"] and wi == 0 else ""
-                lines.append(f"Dialogue: 0,{_ts(s)},{_ts(e)},Cap,,0,0,0,,{pop}{{\\pos({W // 2},{y})}}"
+                texts = [_esc(tr_upper(x["word"]) if c["uppercase"] else x["word"]) for x in g]
+                for wj, word in enumerate(texts):
+                    active = wj == wi
+                    color = hl if active and anim_mode != "kutu" else base
+                    if kw and not active and is_emphasis(g[wj]["word"]):
+                        color = kw          # sayılar ve vurgu kelimeleri hep renkli kalır
+                    tag = f"\\c{color}"
+                    if anim_mode == "daktilo":   # henüz söylenmemiş kelimeler görünmez (yer tutar)
+                        tag += "\\alpha&HFF&" if wj > wi else "\\alpha&H00&"
+                    if anim_mode in ("bounce", "tek"):   # konuşulan kelime zıplayarak gelir
+                        tag += "\\fscx118\\fscy118\\t(0,110,\\fscx100\\fscy100)" if active else "\\fscx100\\fscy100"
+                    parts.append(f"{{{tag}}}{word}")
+                if anim_mode == "kutu":   # konuşulan kelimenin arkasında yuvarlak köşeli renkli kutu
+                    x1, x2 = word_boxes(texts, c["weight"], size, W)[wi]
+                    r = em * 0.16
+                    bx1, bx2 = x1 - em * 0.10, x2 + em * 0.10
+                    by1, by2 = y - em * 0.62, y + em * 0.52
+                    lines.append(
+                        f"Dialogue: 0,{_ts(s)},{_ts(e)},Cap,,0,0,0,,{{\\an7\\pos(0,0)\\bord{r:.1f}\\shad0\\1c{hl}\\3c{hl}"
+                        f"\\fscx100\\fscy100\\p1}}m {bx1:.0f} {by1:.0f} l {bx2:.0f} {by1:.0f} {bx2:.0f} {by2:.0f} "
+                        f"{bx1:.0f} {by2:.0f}{{\\p0}}")
+                pop = "{\\fscx88\\fscy88\\t(0,90,\\fscx100\\fscy100)}" if c["pop"] and wi == 0 \
+                    and anim_mode in ("pop", "daktilo") else ""
+                lines.append(f"Dialogue: 1,{_ts(s)},{_ts(e)},Cap,,0,0,0,,{pop}{{\\pos({W // 2},{y})}}"
                              + " ".join(parts))
     return "\n".join(lines) + "\n", srt
 
@@ -276,16 +381,20 @@ def target_size(src_w: int, src_h: int, aspect: str) -> tuple[int, int]:
 EMPH_STOP = {"gerçekten", "aslında", "yani", "şimdi", "bunu", "şunu", "onların", "bizim", "sizin"}
 
 
+def is_emphasis(word: str) -> bool:
+    """Vurgu kelimesi: sayı, ünlemli ya da uzun (≥8 harf) kelime."""
+    t = str(word); core = t.strip(".,!?;:…\"'").lower()
+    if core in EMPH_STOP:
+        return False
+    return any(ch.isdigit() for ch in t) or t.endswith("!") or len(core) >= 8
+
+
 def emphasis_times(words: list[dict], min_gap: float = 2.5) -> list[float]:
     """Vurgu anları: sayılar, ünlemli ve uzun (≥8 harf) kelimeler; aralarında en az min_gap sn."""
     out: list[float] = []
     for w in words:
-        t = str(w.get("word", "")); core = t.strip(".,!?;:…\"'").lower()
-        if core in EMPH_STOP:
-            continue
-        if any(ch.isdigit() for ch in t) or t.endswith("!") or len(core) >= 8:
-            if not out or w["start"] - out[-1] >= min_gap:
-                out.append(float(w["start"]))
+        if is_emphasis(w.get("word", "")) and (not out or w["start"] - out[-1] >= min_gap):
+            out.append(float(w["start"]))
     return out
 
 
@@ -318,6 +427,32 @@ def zoom_plan(pieces_out: list[tuple[float, float]], words: list[dict], style: d
     return [sg for sg in segs if sg[2] > 1.0001]
 
 
+def cut_times(pieces_out: list[tuple[float, float]], min_gap: float = 0.0, limit: int = 60) -> list[float]:
+    """Çıktı zaman çizelgesindeki kesim anları (ilk parçanın başı hariç), aralarında en az min_gap sn."""
+    out: list[float] = []
+    for a, _b in pieces_out[1:]:
+        if not out or a - out[-1] >= min_gap:
+            out.append(float(a))
+    return out[:limit]
+
+
+def zoom_expr(plan: list[tuple[float, float, float]], pieces_out: list[tuple[float, float]], style: dict) -> str:
+    """zoompan `z` ifadesi: plan parçaları (ani ya da parça boyunca yavaş yakınlaşma) + kesimlerde kısa zoom darbesi."""
+    p = style["punch"]
+    if not p.get("enabled"):
+        return ""
+    terms = []
+    for a, b, v in plan:
+        t = f"between(it\\,{a:.3f}\\,{b - 0.001:.3f})*{v - 1:.3f}"
+        if p.get("mode") == "smooth" and b - a > 0.6:   # CapCut "yavaş yakınlaş": parça boyunca 1.0 → v
+            t += f"*(it-{a:.3f})/{b - a:.3f}"
+        terms.append(t)
+    bump = float(p.get("bump") or 0)
+    if bump > 0:
+        terms += [f"between(it\\,{c:.3f}\\,{c + 0.2:.3f})*{bump:.3f}*(1-(it-{c:.3f})/0.2)" for c in cut_times(pieces_out)]
+    return "min(1.5\\,1+" + "+".join(terms) + ")" if terms else ""
+
+
 def video_filter(style: dict, W: int, H: int, pieces_out: list[tuple[float, float]], total: float,
                  select: str, fps: int, hdr: bool = False, words: list[dict] | None = None) -> str:
     fr, g = style["frame"]["mode"], style["grade"]
@@ -335,22 +470,46 @@ def video_filter(style: dict, W: int, H: int, pieces_out: list[tuple[float, floa
     else:
         graph = f"{chain[0]},scale={W}:{H}:force_original_aspect_ratio=decrease,pad={W}:{H}:(ow-iw)/2:(oh-ih)/2[f0]"
     post = []
-    plan = zoom_plan(pieces_out, words or [], style)
-    if plan:
-        zexpr = "1+" + "+".join(f"between(it\\,{a:.3f}\\,{b - 0.001:.3f})*{v - 1:.3f}" for a, b, v in plan)
+    fx = style.get("fx") or {}
+    zexpr = zoom_expr(zoom_plan(pieces_out, words or [], style), pieces_out, style)
+    if zexpr:
         post.append(f"zoompan=z='{zexpr}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:"
                     f"s={W}x{H}:fps={fps}")
+    bright = f"{g['brightness']:.3f}"
+    flashes = cut_times(pieces_out, 1.5) if fx.get("cut_flash", 0) > 0 else []
+    if flashes:   # kesimde kısa beyaz parlama (0,12 sn'de söner; en sık 1,5 sn'de bir)
+        bright = "'" + bright + "+" + "+".join(
+            f"between(t\\,{c:.3f}\\,{c + 0.12:.3f})*{fx['cut_flash']:.2f}*(1-(t-{c:.3f})/0.12)" for c in flashes) + "'"
     post.append(f"eq=contrast={g['contrast']:.3f}:saturation={g['saturation']:.3f}:"
-                f"brightness={g['brightness']:.3f}:gamma={g['gamma']:.3f}")
+                f"brightness={bright}:gamma={g['gamma']:.3f}" + (":eval=frame" if flashes else ""))
     if abs(g["warmth"]) > 0.005:
         w = g["warmth"]
         post.append(f"colorbalance=rm={w:.3f}:bm={-w:.3f}:rh={w / 2:.3f}:bh={-w / 2:.3f}")
+    if LOOKS.get(g.get("look") or ""):
+        post.append(LOOKS[g["look"]])
+    if fx.get("sharpen", 0) > 0:
+        post.append(f"unsharp=5:5:{fx['sharpen']:.2f}:5:5:0")
+    mid = ""
+    if fx.get("glow", 0) > 0:   # parıltı: bulanık kopya "screen" ile üstüne (RGB'de; YUV'de renk kayar)
+        graph += (f";[f0]{','.join(post)},format=gbrp,split[ga][gb];[gb]gblur=sigma=22[gc];"
+                  f"[ga][gc]blend=all_mode=screen:all_opacity={fx['glow']:.2f},format=yuv420p[fg]")
+        post, mid = [], "fg"
+    if fx.get("vhs", 0) > 0:
+        post.append(f"rgbashift=rh={-int(fx['vhs'])}:bh={int(fx['vhs'])},format=yuv420p")
+    if fx.get("grain", 0) > 0:
+        post.append(f"noise=alls={int(fx['grain'])}:allf=t")
     if g["vignette"]:
         post.append("vignette=PI/5")
+    if fx.get("letterbox", 0) > 0:
+        r = fx["letterbox"]
+        post.append(f"drawbox=x=0:y=0:w=iw:h=ih*{r:.3f}:color=black:t=fill,"
+                    f"drawbox=x=0:y=ih-ih*{r:.3f}:w=iw:h=ih*{r:.3f}:color=black:t=fill")
     post.append("ass=subs.ass:fontsdir=fonts")
     if style["flash"]["enabled"]:
         post.append("fade=in:st=0:d=0.25:color=white")
-    graph += f";[f0]{','.join(post)}[f1]"
+    if fx.get("fade_out", 0) > 0 and total > 4:
+        post.append(f"fade=out:st={total - fx['fade_out']:.3f}:d={fx['fade_out']:.3f}")
+    graph += f";[{mid or 'f0'}]{','.join(post)}[f1]"
     if style["progress"]["enabled"]:
         p = style["progress"]
         h = max(4, int(p["height"] * min(W, H) / 1080))
@@ -374,6 +533,8 @@ def render_clip(src: Path, window: tuple[float, float], words: list[dict], title
     W, H = target_size(pinfo["width"], pinfo["height"], aspect)
     fps = int(cfg.get_path("output.fps", 30))
     start, end = window
+    if style["pacing"].get("fillers"):
+        words = drop_fillers(words)
     pieces = plan_pieces(words, start, end, style)
     total = sum(b - a for a, b in pieces)
     out_pieces, off = [], 0.0

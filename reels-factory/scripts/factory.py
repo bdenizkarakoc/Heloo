@@ -201,7 +201,7 @@ def cmd_kesim(args, cfg) -> int:
     if args.ref:  # bağlantı (Instagram/TikTok/YouTube) ya da referans video dosyası
         answers["reference"] = {"file": str(Path(args.ref).expanduser().resolve())} if Path(args.ref).expanduser().is_file() \
             else {"url": args.ref}
-    for k in ("tarz", "sure", "altyazi", "muzik", "efekt", "renk", "tempo"):
+    for k in ("tarz", "sure", "altyazi", "muzik", "efekt", "renk", "tempo", "zoom", "filtre", "bitis"):
         if getattr(args, k):
             answers[k] = getattr(args, k)
     proj = kesim.montage([Path(f).expanduser().resolve() for f in args.files],
@@ -405,6 +405,7 @@ def main() -> int:
     from reels.brief import QUESTIONS
     for key, label, choices in QUESTIONS:
         p.add_argument(f"--{key}", choices=[v for v, _ in choices], help=label)
+    p.add_argument("--bitis", help='bitiş kartı yazısı, ör. "Takip et!"')
     p = sub.add_parser("foto", help="Fotoğraflarım kutusundaki fotoğraflardan video (montaj ya da --anlat)")
     p.add_argument("names", nargs="*", help="fotoğraf adları (Fotoğraflarım klasörüne göre); boşsa listeler")
     p.add_argument("--son", type=int, default=0, help="en yeni N fotoğrafı kullan")

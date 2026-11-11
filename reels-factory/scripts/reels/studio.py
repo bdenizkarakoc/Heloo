@@ -493,7 +493,14 @@ pacing.max_pause (sn; konuşma boşluğu bundan uzunsa kesilir: hızlı kurgu 0.
 frame.mode ("blur": yatay video bulanık arka planla dikey; "crop": ortadan kırp; "fit": siyah boşluk)
 grade.contrast (0.7-1.5), grade.saturation (0-2), grade.brightness (-0.2..0.2), grade.gamma (0.7-1.4),
 grade.warmth (-0.3 soğuk .. 0.3 sıcak), grade.vignette (bool)
-punch.enabled (kesimlerde ani zoom), punch.scale (1.0-1.4)
+punch.enabled (kesimlerde zoom), punch.scale (1.0-1.4), punch.mode ("punch" ani | "smooth" yavaş yakınlaşma),
+punch.bump (kesimde kısa zoom darbesi 0-0.12)
+grade.look ("" | "teal" | "film" | "dramatik" | "pastel")
+captions.anim ("pop" | "bounce" her kelime zıplar | "kutu" konuşulan kelime renkli kutuda | "tek" tek kelime | "daktilo"),
+captions.keyword (sayı/vurgu kelimelerinin kalıcı rengi; "" kapalı)
+fx.cut_flash (kesimde beyaz parlama 0-0.3), fx.grain (0-30), fx.letterbox (sinema şeridi 0-0.15), fx.glow (0-0.5),
+fx.vhs (0-8), fx.sharpen (0-1.5), fx.fade_out (sonda kararma sn)
+outro.enabled, outro.text (bitiş kartı yazısı), outro.seconds
 captions.enabled, captions.weight (400-900), captions.size (1080 genişlikte px, 40-130), captions.uppercase,
 captions.color, captions.highlight (konuşulan kelimenin rengi), captions.outline (px), captions.outline_color,
 captions.shadow, captions.box (yazı arkasında kutu), captions.box_color, captions.words (ekranda aynı anda 1-6 kelime),

@@ -251,7 +251,8 @@ def kesim_montaj(dosyalar: list[str], mod: str = "auto", istek: str = "", refera
     kullanılır. Sonuç Masaüstü\\kesim\\Hazır klasörüne konur. mod: auto / full (tamamı) / clips (en iyi anlar).
     İsteğe bağlı: istek = kullanıcının kendi cümleleri ("enerjik, lo-fi müzik, geçişlerde vınlama, 30 sn");
     referans = "şunun gibi yap" bağlantısı (Instagram/TikTok/YouTube) ya da referans video dosyası;
-    secenekler = {"tarz","sure","altyazi","muzik","efekt","renk","tempo"} (değerler: /api/kesim/brief).
+    secenekler = {"tarz","sure","altyazi","muzik","efekt","renk","tempo","zoom","filtre"} (değerler: /api/kesim/brief)
+    ve "bitis" (bitiş kartı yazısı, ör. "Takip et!").
     İş kuyruğa eklenir; durumu kesim_durum ile izle."""
     if mod in ("full", "clips", "auto"):
         _api("POST", "/api/kesim/settings", {"mode": mod})
