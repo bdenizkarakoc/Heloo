@@ -43,3 +43,19 @@ def test_character_card_keying():
     card = characters.fit_card(characters.key_out(im))
     a = card.getchannel("A")
     assert card.size == (600, 1000) and a.getpixel((5, 5)) == 0 and a.getbbox()[3] == characters.SOLE_Y
+
+
+def test_agent_media_small_image_kept_even_with_sidecar_provider(tmp_path):
+    """Ajanın koyduğu küçük arşiv fotoğrafı, yan .json'da provider (ör. commons) yazsa da atılmamalı."""
+    import json
+    from PIL import Image
+    from reels import visuals
+    from reels.config import load_config
+    cfg = load_config()
+    (tmp_path / "media").mkdir()
+    Image.new("RGB", (730, 459), (120, 110, 100)).save(tmp_path / "media" / "s6.jpg")
+    (tmp_path / "media" / "s6.json").write_text(json.dumps({"provider": "commons", "license": "Public domain"}))
+    scene = {"id": "s6", "layout": "photo", "narration": "x", "visual": {"kind": "photo", "providers": ["agent_media"]}}
+    meta = visuals._fetch(scene, tmp_path, cfg, ["agent_media"], {"sources": set(), "hashes": []},
+                          visuals.Budget(cfg, {}), 5)
+    assert meta and meta["provider"] == "commons"

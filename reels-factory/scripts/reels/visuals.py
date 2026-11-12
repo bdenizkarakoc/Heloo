@@ -770,7 +770,7 @@ def _fetch(scene: dict, job_dir: Path, cfg: Config, providers: list[str], used: 
             except (StageError, TransientError, OSError) as exc:
                 L.warning("%s: aday indirilemedi/işlenemedi (%s): %s", scene["id"], name, exc)
                 continue
-            if min(meta["w"], meta["h"]) < min_side and c["provider"] != "agent_media":
+            if min(meta["w"], meta["h"]) < min_side and name != "agent_media":  # yan .json'daki provider (ör. commons) değil, sağlayıcı adı
                 continue
             if name == "nasa_video":  # arşiv klipleri sıklıkla yazı/jenerik içerir: görsel denetim şart
                 vetted = scene["visual"].setdefault("_vetted", 0)
