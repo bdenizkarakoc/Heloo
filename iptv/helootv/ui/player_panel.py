@@ -73,6 +73,7 @@ class PlayerPanel(QWidget):
     seek_by = Signal(float)          # göreli saniye
     record_clicked = Signal()
     goto_clicked = Signal()
+    volume_step = Signal(int)        # mini oynatıcı: ses ±
     pip_clicked = Signal()
 
     def __init__(self, parent=None):
@@ -213,7 +214,47 @@ class PlayerPanel(QWidget):
         self.btn_fs = btn("⛶", "Tam ekran (F / çift tık)", self.fullscreen_clicked, where=top)
         bl.addLayout(row)
         lay.addWidget(self.bar)
+        # mini oynatıcı (resim içinde resim) denetim şeridi: yalnız o kipte görünür, Qt düğmeleri (her zaman çalışır)
+        self.pip_bar = QFrame()
+        self.pip_bar.setObjectName("PlayerBar")
+        pl = QHBoxLayout(self.pip_bar)
+        pl.setContentsMargins(6, 3, 6, 3)
+        pl.setSpacing(2)
+
+        def pbtn(text, tip, fn):
+            b = QPushButton(text)
+            b.setObjectName("Flat")
+            b.setToolTip(tip)
+            b.setCursor(Qt.PointingHandCursor)
+            b.setFocusPolicy(Qt.NoFocus)
+            b.clicked.connect(lambda _c=False: fn())
+            pl.addWidget(b)
+            return b
+
+        self.pip_back = pbtn("⏪ 10", "10 saniye geri", lambda: self.seek_by.emit(-10.0))
+        self.pip_pause = pbtn("⏯", "Duraklat / sürdür", self.pause_clicked.emit)
+        self.pip_fwd = pbtn("10 ⏩", "10 saniye ileri", lambda: self.seek_by.emit(10.0))
+        pl.addStretch(1)
+        self.pip_vol_down = pbtn("🔉", "Sesi kıs", lambda: self.volume_step.emit(-10))
+        self.pip_vol_label = QLabel("")
+        self.pip_vol_label.setObjectName("Muted")
+        pl.addWidget(self.pip_vol_label)
+        self.pip_vol_up = pbtn("🔊", "Sesi aç", lambda: self.volume_step.emit(10))
+        self.pip_expand = pbtn("⤢", "Normal pencereye dön (Esc)", self.pip_clicked.emit)
+        self.pip_bar.hide()
+        lay.addWidget(self.pip_bar)
+        # ilerleme çubuğunda gezinirken o noktanın dakikası (YouTube gibi)
+        self.seek.setMouseTracking(True)
+        self.seek.installEventFilter(self)
         self.set_idle()
+
+    def eventFilter(self, obj, event) -> bool:
+        from PySide6.QtCore import QEvent
+        if obj is self.seek and event.type() == QEvent.MouseMove and self._duration > 0:
+            from PySide6.QtWidgets import QToolTip
+            frac = min(1.0, max(0.0, event.position().x() / max(1, self.seek.width())))
+            QToolTip.showText(event.globalPosition().toPoint(), _clock(frac * self._duration), self.seek)
+        return super().eventFilter(obj, event)
 
     # ------------------------------------------------------------------ durum
     def show_video(self) -> None:
@@ -300,6 +341,8 @@ class PlayerPanel(QWidget):
         self.info_badge.setText("  ·  ".join(parts))
         self.info_badge.setToolTip("\n".join(parts))
         self.info_badge.setVisible(bool(parts))
+        if st.get("volume") is not None:
+            self.pip_vol_label.setText(f"%{int(st['volume'])}")
         if st.get("volume") is not None and not self.vol.isSliderDown():
             self.vol.blockSignals(True)
             self.vol.setValue(int(st["volume"]))

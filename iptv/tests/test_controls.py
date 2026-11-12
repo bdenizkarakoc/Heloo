@@ -408,8 +408,32 @@ def test_goto_arrow_seek_and_pip_controls(tmp_path, monkeypatch):
         win._on_key("click", [])
         pump(0.8)
         assert real_get("pause") is True
-        win._on_key("esc", [])
+        # mini oynatıcının kendi düğmeleri: 10 sn ileri/geri, durdur/sürdür, ses, büyüt
+        bar = win.player.pip_bar
+        assert not bar.isHidden() and win.player.bar.isHidden()
+        scr = win.screen().availableGeometry()
+        assert win.y() <= scr.top() + 60                       # ekranın üstünde
+        p4 = pos()
+        win.player.pip_fwd.click()
+        assert pump(3, lambda: abs(pos() - (p4 + 10)) < 1.5), (p4, pos())
+        win.player.pip_back.click()
+        assert pump(3, lambda: abs(pos() - p4) < 1.5)
+        was = real_get("pause")
+        win.player.pip_pause.click()
+        assert real_get("pause") is (not was)
+        v0 = float(real_get("volume"))
+        win.player.pip_vol_down.click()
+        assert float(real_get("volume")) == v0 - 10 and win.player.pip_vol_label.text() == f"%{int(v0 - 10)}"
+        win.player.pip_vol_up.click()
+        assert float(real_get("volume")) == v0
+        win.player.pip_expand.click()                        # ⤢: normal pencereye dön
         assert not win._pip and not win._pip_top_timer.isActive()
+        assert bar.isHidden() and not win.player.bar.isHidden()
+        # tek tık ANINDA uygulanır (bekleme yok)
+        mouse["x"] = 256
+        was = real_get("pause")
+        win._on_key("click", [])
+        assert real_get("pause") is (not was)
     finally:
         win.close()
 

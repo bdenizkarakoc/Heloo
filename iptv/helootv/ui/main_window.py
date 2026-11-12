@@ -99,8 +99,8 @@ class MainWindow(QMainWindow):
         self._pip_top_timer = QTimer(self, interval=2000, timeout=lambda: self._pip and self._set_topmost(True, quiet=True))
         self._fs_bar_seen = 0.0
         # tek tıklama, çift tıklama süresi kadar bekletilir (çift tık = tam ekran; ikisi birden olmasın)
-        self._click_timer = QTimer(self, singleShot=True, interval=max(200, QApplication.doubleClickInterval()),
-                                   timeout=self._do_video_click)
+        self._dbl_window = max(0.25, QApplication.doubleClickInterval() / 1000.0) + 0.15
+        self._recent_clicks: list[tuple] = []
         self._click_at: tuple = (None, None)
         # yedek: "oynatılıyor" olayı gelmese de (yalnız ses, eski mpv) 10 sn sonra video gösterilir
         self._loading_timer = QTimer(self, singleShot=True, interval=10000,
@@ -255,9 +255,10 @@ class MainWindow(QMainWindow):
         pl.next_clicked.connect(lambda: self._on_key("ch_next", []))
         pl.record_clicked.connect(self.toggle_record)
         pl.goto_clicked.connect(self.goto_time)
+        pl.volume_step.connect(self._volume_step)
         pl.pip_clicked.connect(lambda: self._set_pip(not self._pip))
         pl.seek_to.connect(lambda sec: self.engine and self.engine.seek_abs(sec))
-        pl.seek_by.connect(lambda d: self.engine and self.engine.seek(d))
+        pl.seek_by.connect(self._seek_by)
         pl.menus["audio"].aboutToShow.connect(self._fill_audio_menu)
         pl.menus["sub"].aboutToShow.connect(self._fill_sub_menu)
         pl.menus["picture"].aboutToShow.connect(self._fill_picture_menu)
@@ -970,9 +971,9 @@ class MainWindow(QMainWindow):
             self.toggle_lossless()
         elif action == "click":
             self._on_video_click()
-        elif action == "fullscreen" and self._click_timer.isActive():
-            # çift tık: bekleyen tek tıklama (duraklat/sar) iptal, yalnız tam ekran
-            self._click_timer.stop()
+        elif action == "fullscreen" and self._recent_clicks:
+            # çift tık: az önceki tek tıklamaların etkisini (duraklat/sar) geri al, yalnız tam ekran
+            self._undo_recent_clicks()
             self._on_key("fullscreen" if not self._pip else "esc", [])
         elif action == "esc" and self._pip:
             self._set_pip(False)
@@ -1006,16 +1007,32 @@ class MainWindow(QMainWindow):
 
     # ------------------------------------------------------------------ videoya tıklama (YouTube gibi)
     def _on_video_click(self) -> None:
-        if self._click_timer.isActive():          # ikinci tıklama: çift tık olayı gelecek
-            self._click_timer.stop()
-            return
+        """Tek tık YouTube gibi ANINDA uygulanır (eskiden çift tık süresi kadar bekliyordu). Çift tık gelirse
+        (tam ekran) az önceki tıklamaların etkisi geri alınır: `_undo_recent_clicks`."""
         if not self.engine or not self.current_req:
             return
         pos = self.engine._get("mouse-pos") or {}
         osd = self.engine._get("osd-dimensions") or {}
         self._click_at = (pos.get("x") if isinstance(pos, dict) else None,
                           osd.get("w") if isinstance(osd, dict) else None)
-        self._click_timer.start()
+        done = self._do_video_click()
+        now = time.monotonic()
+        self._recent_clicks = [c for c in self._recent_clicks if now - c[0] < self._dbl_window] + (
+            [(now, *done)] if done else [])
+
+    def _undo_recent_clicks(self) -> None:
+        """Çift tık = tam ekran: o çift tıkın tek tek tıklamaları videoyu durdurmuş/sarmış olmasın."""
+        now = time.monotonic()
+        recent = [c for c in self._recent_clicks if now - c[0] < self._dbl_window]
+        self._recent_clicks = []
+        eng = self.engine
+        if not eng or not recent:
+            return
+        if sum(1 for c in recent if c[1] == "pause") % 2 == 1:
+            eng.toggle_pause()
+        back = sum(c[2] for c in recent if c[1] == "seek")
+        if back:
+            eng.seek(-back)
 
     def _toggle_pause(self) -> None:
         """Duraklat / sürdür. Canlı yayında "hep canlı" açıksa sürdürünce canlı kenara dönülür (geriden, tekrar gibi
@@ -1060,16 +1077,18 @@ class MainWindow(QMainWindow):
         eng.seek_abs(sec)
         eng.flash(fmt_clock_secs(sec))
 
-    def _do_video_click(self) -> None:
+    def _do_video_click(self) -> tuple | None:
+        """Tıklamayı uygular; geri alınabilmesi için ne yapıldığını döndürür: ("pause", 0) | ("seek", sn) | None."""
         eng, req = self.engine, self.current_req
         if not eng or not req:
-            return
+            return None
         ctl = self.settings["controls"]
         what = opt.click_zone(self._click_at[0], self._click_at[1], req.kind, ctl.get("click_action", "zones"))
         step = int(ctl.get("seek_step", 5))
         if what == "pause":
             self._toggle_pause()
-        elif what in ("back", "forward") and req.kind == "live" and ctl.get("stay_live", True):
+            return ("pause", 0)
+        if what in ("back", "forward") and req.kind == "live" and ctl.get("stay_live", True):
             eng.show_text("Canlı yayında: hep canlı (geri sarma kapalı — Ayarlar → Oynatma kontrolleri)", 1500)
         elif what in ("back", "forward"):
             eng.seek(step if what == "forward" else -step)
@@ -1077,6 +1096,8 @@ class MainWindow(QMainWindow):
                 eng.flash(f"{step} sn ⏩", "right")
             else:
                 eng.flash(f"⏪ {step} sn", "left")
+            return ("seek", step if what == "forward" else -step)
+        return None
 
     def zap(self, delta: int, reason: str = "") -> None:
         items = self.live_page.model.items
@@ -1841,6 +1862,31 @@ class MainWindow(QMainWindow):
         g.raise_()
 
     # ------------------------------------------------------------------ resim içinde resim (mini oynatıcı)
+    def _seek_by(self, delta: float) -> None:
+        """Çubuktaki / mini oynatıcıdaki sarma düğmeleri. Canlı yayında "hep canlı" açıksa sarılmaz."""
+        eng, req = self.engine, self.current_req
+        if not eng or not req:
+            return
+        if req.kind == "live" and self.settings["controls"].get("stay_live", True):
+            eng.show_text("Canlı yayında: hep canlı (sarma kapalı — Ayarlar → Oynatma kontrolleri)", 1500)
+            return
+        eng.seek(delta)
+        n = int(abs(delta))
+        label = f"{n // 60} dk" if n >= 60 and n % 60 == 0 else f"{n} sn"
+        if delta > 0:
+            eng.flash(f"{label} ⏩", "right")
+        else:
+            eng.flash(f"⏪ {label}", "left")
+
+    def _volume_step(self, delta: int) -> None:
+        if not self.engine:
+            return
+        self.engine.add_volume(delta)
+        vol = self.engine._get("volume")
+        if isinstance(vol, (int, float)):
+            self.engine.show_text(f"🔊 Ses %{vol:.0f}", 800)
+            self.player.pip_vol_label.setText(f"%{int(vol)}")
+
     def _set_pip(self, on: bool) -> None:
         if on == self._pip:
             return
@@ -1853,23 +1899,25 @@ class MainWindow(QMainWindow):
                 w.hide()
             self.statusBar().hide()
             self.right.show()
+            self.player.pip_bar.show()
             self.showNormal()
             # gizlenen parçalar en küçük boyuttan düşsün diye yerleşim önce güncellenir
             self.centralWidget().layout().activate() if self.centralWidget().layout() else None
             self.layout().activate()
             scr = self.screen().availableGeometry() if self.screen() else None
-            w, h = 512, 288
-            self.setMinimumSize(320, 180)
+            w, h = 512, 288 + self.player.pip_bar.sizeHint().height()
+            self.setMinimumSize(320, 200)
             self.resize(w, h)
             if scr is not None:
-                self.move(scr.right() - w - 24, scr.bottom() - h - 48)
+                self.move(scr.right() - w - 24, scr.top() + 24)       # ekranın sağ üst köşesi
             self._set_topmost(True)
             self._pip_top_timer.start()
             if self.engine:
-                self.engine.show_text("Mini oynatıcı — çift tık ya da Esc: geri dön", 2500)
+                self.engine.show_text("Mini oynatıcı — ⤢ ya da Esc: geri dön", 2500)
         else:
             self._pip_top_timer.stop()
             self._set_topmost(False)
+            self.player.pip_bar.hide()
             self.setMinimumSize(0, 0)
             self.topbar.show()
             self.statusBar().show()

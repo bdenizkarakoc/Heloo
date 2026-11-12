@@ -76,7 +76,9 @@ python -m pytest tests -q              # testler (libmpv2/ffmpeg/7z varsa başs�
 - Film/dizi sunucusu HTTP Range desteklemiyorsa (`engine.linear`, `_check_linear`): VOD önbelleği diskte
   (`cache-on-disk`), sınır 6GiB'a çıkar; `seek`/`seek_abs` hedefi `cached_range()` içine sıkıştırır ve `seek-clamped`
   yayar (mpv uzak atlamayı sessizce reddederdi). YouTube tuşları: J/L ±10 sn (canlıda j=altyazı, l=canlı), K, Home.
-- Videoya tık: `MainWindow._on_video_click` (çift tık süresi kadar bekler) → `opt.click_zone` (`settings.controls`).
+- Videoya tık: `MainWindow._on_video_click` ANINDA uygular → `opt.click_zone` (`settings.controls`); çift tıkta (tam
+  ekran) `_undo_recent_clicks` etkisini geri alır. Mini oynatıcıda `PlayerPanel.pip_bar` (Qt düğmeleri: ±10 sn,
+  durdur, ses, büyüt), pencere ekranın sağ üstünde. Çubuk/mini düğmeleri `_seek_by` (canlıda "hep canlı"ya uyar).
 - HLS kalite önbelleği (`_pin_cache`) yalnız yönlendirmesiz adreslerde (`urljoin(req.url, info.uri) == variant`):
   oturum adresi önbelleğe alınırsa eski kanal görünür. Kanal geçişinde `PlayerPanel.show_loading` → "playing" olayıyla video.
 - Veritabanı: `store.py` (iş parçacığı başına bağlantı, WAL). EPG ayrı dosyada (`*-epg.db`); uzun EPG içe aktarımı
