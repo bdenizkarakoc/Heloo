@@ -36,7 +36,9 @@ def main(argv: list[str] | None = None) -> int:
                 f.write("\nAÇILIŞ HATASI\n" + text)
         except Exception:
             pass
-        if os.name == "nt":
+        if os.environ.get("HELOOTV_NO_DIALOG"):      # testler / otomasyon: pencere açıp bekleme
+            pass
+        elif os.name == "nt":
             try:
                 import ctypes
                 ctypes.windll.user32.MessageBoxW(

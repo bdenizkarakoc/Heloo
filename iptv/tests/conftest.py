@@ -11,6 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+os.environ.setdefault("HELOOTV_NO_DIALOG", "1")     # testlerde hata penceresi açılıp beklemesin
 
 DATA = Path(__file__).resolve().parent / "data"
 

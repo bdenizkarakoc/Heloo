@@ -260,6 +260,7 @@ def test_stuck_old_instance_does_not_block_startup(monkeypatch):
 
 def test_startup_error_is_reported_not_silent(monkeypatch, tmp_path):
     monkeypatch.setenv("HELOOTV_HOME", str(tmp_path))
+    monkeypatch.setenv("HELOOTV_NO_DIALOG", "1")     # Windows'ta hata penceresi testi sonsuza kadar bekletmesin
     from helootv import app as appmod
 
     def boom(argv=None):
