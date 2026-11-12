@@ -306,3 +306,97 @@ def test_fullscreen_bar_settings_close_and_flash(tmp_path, monkeypatch):
         eng.shutdown()
     finally:
         win.close()
+
+
+def test_parse_goto():
+    assert opt.parse_goto("45") == 45 * 60
+    assert opt.parse_goto("12:30") == 12 * 60 + 30
+    assert opt.parse_goto("1:05:00") == 3900
+    assert opt.parse_goto(" 1.05.00 ") == 3900
+    for bad in ("", "abc", "1:2:3:4", "-5", "1:xx"):
+        assert opt.parse_goto(bad) is None
+
+
+@pytest.mark.skipif(not (_mpv_ok() and shutil.which("ffmpeg")), reason="libmpv/ffmpeg yok")
+def test_goto_arrow_seek_and_pip_controls(tmp_path, monkeypatch):
+    monkeypatch.setenv("HELOOTV_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    vid = tmp_path / "film.mkv"
+    subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=25:d=240",
+                    "-c:v", "libx264", "-preset", "ultrafast", "-g", "25", str(vid)], check=True)
+    from PySide6.QtWidgets import QApplication
+
+    from helootv.player.engine import MpvEngine
+    from helootv.store import Store
+    from helootv.ui.main_window import MainWindow
+    app = QApplication.instance() or QApplication([])
+    s = settings_mod.merged_defaults()
+    s["ui"]["resume_last_channel"] = False
+    s["ui"]["auto_refresh_hours"] = 0
+    win = MainWindow(Store(tmp_path / "t.db"), s, headless=True)
+    win.show()
+    eng = MpvEngine(s, headless=True, on_event=lambda n, d: win.bridge.event.emit(n, d), extra_options={"ao": "null"})
+    eng.start()
+    win.engine = eng
+    real_get = eng._get
+
+    def pump(sec, until=None):
+        end = time.time() + sec
+        while time.time() < end:
+            app.processEvents()
+            if until and until():
+                return True
+            time.sleep(0.02)
+        return bool(until and until())
+
+    def pos():
+        return float(real_get("time-pos") or 0)
+    try:
+        win.play_file(str(vid))
+        assert pump(10, lambda: pos() > 0.3)
+        eng._set("pause", "yes")
+        # istenen dakikaya git: "2" = 2. dakika, "1:30" = 1 dk 30 sn; süreyi aşan değer sona yakın yere gider
+        win.goto_time("2")
+        assert pump(5, lambda: abs(pos() - 120) < 1.5), pos()
+        win.goto_time("1:30")
+        assert pump(5, lambda: abs(pos() - 90) < 1.5), pos()
+        win.goto_time("bozuk")
+        pump(0.3)
+        assert abs(pos() - 90) < 1.5
+        win.goto_time("30")
+        assert pump(5, lambda: pos() > 200), pos()
+        win.goto_time("1:00")
+        assert pump(5, lambda: abs(pos() - 60) < 1.5)
+        # → / ← ok tuşları: ayardaki süre (5 sn)
+        p0 = pos()
+        win._on_key("right", [])
+        assert pump(3, lambda: abs(pos() - (p0 + 5)) < 1.5), (p0, pos())
+        p1 = pos()
+        win._on_key("left", [])
+        assert pump(3, lambda: abs(pos() - (p1 - 5)) < 1.5), (p1, pos())
+        # ↑ / ↓: ses
+        vol = float(real_get("volume"))
+        win._on_key("up", [])
+        assert float(real_get("volume")) == vol + 5
+        # küçük ekranda (mini oynatıcı) da aynı: sağa tık 5 sn ileri, ortaya tık durdur/sürdür, hep üstte zamanlayıcısı
+        win._set_pip(True)
+        app.processEvents()
+        assert win._pip and win._pip_top_timer.isActive()
+        mouse = {"x": 480}
+        eng._get = lambda name: ({"x": mouse["x"], "y": 100, "hover": True} if name == "mouse-pos" else
+                                 {"w": 512, "h": 288} if name == "osd-dimensions" else real_get(name))
+        p2 = pos()
+        win._on_key("click", [])
+        pump(0.8)
+        assert pump(3, lambda: abs(pos() - (p2 + 5)) < 1.5), (p2, pos())
+        mouse["x"] = 256
+        win._on_key("click", [])
+        pump(0.8)
+        assert real_get("pause") is False                    # ortaya tık: sürdür
+        win._on_key("click", [])
+        pump(0.8)
+        assert real_get("pause") is True
+        win._on_key("esc", [])
+        assert not win._pip and not win._pip_top_timer.isActive()
+    finally:
+        win.close()

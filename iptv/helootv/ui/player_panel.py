@@ -72,6 +72,7 @@ class PlayerPanel(QWidget):
     seek_to = Signal(float)          # mutlak saniye
     seek_by = Signal(float)          # göreli saniye
     record_clicked = Signal()
+    goto_clicked = Signal()
     pip_clicked = Signal()
 
     def __init__(self, parent=None):
@@ -137,6 +138,12 @@ class PlayerPanel(QWidget):
         seek_row.addWidget(self.pos_label)
         seek_row.addWidget(self.seek, 1)
         seek_row.addWidget(self.dur_label)
+        self.btn_goto = QPushButton("⏱ Git")
+        self.btn_goto.setObjectName("Flat")
+        self.btn_goto.setCursor(Qt.PointingHandCursor)
+        self.btn_goto.setToolTip("İstediğiniz dakikaya gidin (G ya da Ctrl+J): 45 = 45. dakika, 1:05:00 = 1 saat 5 dakika")
+        self.btn_goto.clicked.connect(self.goto_clicked.emit)
+        seek_row.addWidget(self.btn_goto)
         self.seek_box = QWidget()
         self.seek_box.setLayout(seek_row)
         seek_row.setContentsMargins(0, 0, 0, 0)

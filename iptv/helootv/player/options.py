@@ -491,3 +491,16 @@ def click_zone(x: float | None, width: float | None, kind: str | None, action: s
     if f > 2 / 3:
         return "forward"
     return "pause"
+
+
+def parse_goto(text: str) -> float | None:
+    """"Dakikaya git" girdisi → saniye. "45" = 45. dakika; "12:30" = 12 dk 30 sn; "1:05:00" = 1 sa 5 dk. Geçersizse None."""
+    parts = [p.strip() for p in (text or "").replace(".", ":").replace(",", ":").split(":")]
+    if not parts or len(parts) > 3 or any(not p.isdigit() for p in parts):
+        return None
+    nums = [int(p) for p in parts]
+    if len(nums) == 1:
+        return nums[0] * 60.0
+    if len(nums) == 2:
+        return nums[0] * 60.0 + nums[1]
+    return nums[0] * 3600.0 + nums[1] * 60.0 + nums[2]

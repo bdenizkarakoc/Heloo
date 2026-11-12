@@ -78,6 +78,8 @@ f             script-message helootv fullscreen
 F11           script-message helootv fullscreen
 MBTN_LEFT_DBL script-message helootv fullscreen
 MBTN_LEFT     script-message helootv click
+g             script-message helootv goto
+ctrl+j        script-message helootv goto
 t             script-message helootv theater
 i             script-message helootv info
 e             script-message helootv epg

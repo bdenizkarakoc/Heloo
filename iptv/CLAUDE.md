@@ -71,6 +71,8 @@ python -m pytest tests -q              # testler (libmpv2/ffmpeg/7z varsa başs�
   sınırsız büyür, CI makinesi kapanır).
 - Tam ekranda alt çubuk `_fs_bar_tick` (imleç yoklaması: altta görünür, 2,5 sn sonra gizlenir). Tık geri bildirimi
   `engine.flash` (osd-overlay, büyük simge). Ayarlar sayfasında sabit `close_btn` (kaydırmadan bağımsız) → `_close_settings`.
+- Dakikaya git: `MainWindow.goto_time` + `opt.parse_goto` (G, Ctrl+J, "⏱ Git"). ←/→ `controls.seek_step` kadar sarar.
+  Mini oynatıcıda `_pip_top_timer` 2 sn'de bir TOPMOST'u yeniler (SWP_NOACTIVATE: odağı çalmaz).
 - Videoya tık: `MainWindow._on_video_click` (çift tık süresi kadar bekler) → `opt.click_zone` (`settings.controls`).
 - HLS kalite önbelleği (`_pin_cache`) yalnız yönlendirmesiz adreslerde (`urljoin(req.url, info.uri) == variant`):
   oturum adresi önbelleğe alınırsa eski kanal görünür. Kanal geçişinde `PlayerPanel.show_loading` → "playing" olayıyla video.

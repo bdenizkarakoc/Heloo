@@ -95,6 +95,8 @@ class MainWindow(QMainWindow):
         self._digit_timer = QTimer(self, singleShot=True, interval=1600, timeout=self._commit_digits)
         self._tick_timer = QTimer(self, interval=500, timeout=self._tick)
         self._fs_bar_timer = QTimer(self, interval=200, timeout=self._fs_bar_tick)
+        # mini oynatıcı hep en önde kalsın: başka pencere (oyun) öne geçerse 2 sn'de bir yeniden en üste alınır
+        self._pip_top_timer = QTimer(self, interval=2000, timeout=lambda: self._pip and self._set_topmost(True, quiet=True))
         self._fs_bar_seen = 0.0
         # tek tıklama, çift tıklama süresi kadar bekletilir (çift tık = tam ekran; ikisi birden olmasın)
         self._click_timer = QTimer(self, singleShot=True, interval=max(200, QApplication.doubleClickInterval()),
@@ -252,6 +254,7 @@ class MainWindow(QMainWindow):
         pl.prev_clicked.connect(lambda: self._on_key("ch_prev", []))
         pl.next_clicked.connect(lambda: self._on_key("ch_next", []))
         pl.record_clicked.connect(self.toggle_record)
+        pl.goto_clicked.connect(self.goto_time)
         pl.pip_clicked.connect(lambda: self._set_pip(not self._pip))
         pl.seek_to.connect(lambda sec: self.engine and self.engine.seek_abs(sec))
         pl.seek_by.connect(lambda d: self.engine and self.engine.seek(d))
@@ -274,6 +277,7 @@ class MainWindow(QMainWindow):
 
             ("Ctrl+R", self.toggle_record),
             ("F2", self.open_guide),
+            ("Ctrl+J", self.goto_time),
             ("F4", self.open_multiview),
             ("Ctrl+M", lambda: self._set_pip(not self._pip)),
         ]
@@ -916,7 +920,14 @@ class MainWindow(QMainWindow):
         elif action in ("left", "right") and eng and live and ctl.get("stay_live", True):
             eng.show_text("Canlı yayında: hep canlı (geri sarma kapalı — Ayarlar → Oynatma kontrolleri)", 1500)
         elif action in ("left", "right") and eng:
-            eng.seek(-10 if action == "left" else 10)
+            step = int(ctl.get("seek_step", 5))            # ← / → : ayardaki süre kadar (varsayılan 5 sn)
+            eng.seek(-step if action == "left" else step)
+            if action == "right":
+                eng.flash(f"{step} sn ⏩", "right")
+            else:
+                eng.flash(f"⏪ {step} sn", "left")
+        elif action == "goto":
+            self.goto_time()
         elif action == "digit" and args:
             if live or not req:
                 self._digits = (self._digits + args[0])[-4:]
@@ -1001,6 +1012,28 @@ class MainWindow(QMainWindow):
             self.play_live(self.current_item, "tekrardan canlıya dönüş")
         elif self.engine:
             self.engine.go_live()
+
+    def goto_time(self, text: str | None = None) -> None:
+        """Film/dizi/videoda istenen dakikaya git (canlı yayında yok)."""
+        eng, req = self.engine, self.current_req
+        if not eng or not req or req.kind in ("live", "image"):
+            self._status("Dakikaya gitme film, dizi ve videolarda çalışır.")
+            return
+        dur = float(eng.status().get("duration") or 0)
+        if text is None:
+            text, ok = QInputDialog.getText(
+                self, "Dakikaya git", "Kaçıncı dakikaya gidilsin?\n45 = 45. dakika · 12:30 = 12 dk 30 sn · 1:05:00 = 1 saat 5 dk"
+                + (f"\n(Toplam süre: {fmt_clock_secs(dur)})" if dur else ""))
+            if not ok:
+                return
+        sec = opt.parse_goto(text)
+        if sec is None:
+            self._status("⚠ Anlaşılmadı. Örnek: 45  ya da  12:30  ya da  1:05:00")
+            return
+        if dur and sec > dur - 2:
+            sec = max(0.0, dur - 5)
+        eng.seek_abs(sec)
+        eng.flash(fmt_clock_secs(sec))
 
     def _do_video_click(self) -> None:
         eng, req = self.engine, self.current_req
@@ -1801,9 +1834,11 @@ class MainWindow(QMainWindow):
             if scr is not None:
                 self.move(scr.right() - w - 24, scr.bottom() - h - 48)
             self._set_topmost(True)
+            self._pip_top_timer.start()
             if self.engine:
                 self.engine.show_text("Mini oynatıcı — çift tık ya da Esc: geri dön", 2500)
         else:
+            self._pip_top_timer.stop()
             self._set_topmost(False)
             self.setMinimumSize(0, 0)
             self.topbar.show()
@@ -1815,18 +1850,21 @@ class MainWindow(QMainWindow):
             self._theater = self._pre_pip.get("theater", False)
             self._update_layout()
 
-    def _set_topmost(self, on: bool) -> None:
+    def _set_topmost(self, on: bool, quiet: bool = False) -> None:
         """Her zaman üstte. Windows'ta pencere yeniden oluşturulmadan (SetWindowPos) — mpv'nin gömülü penceresi
         bozulmasın; diğer sistemlerde Qt bayrağı."""
         if os.name == "nt":
             try:
                 import ctypes
                 HWND_TOPMOST, HWND_NOTOPMOST, SWP_NOMOVE, SWP_NOSIZE = -1, -2, 0x0002, 0x0001
+                SWP_NOACTIVATE = 0x0010       # odağı çalma (oyun oynarken klavye oyunda kalsın)
                 ctypes.windll.user32.SetWindowPos(int(self.winId()), HWND_TOPMOST if on else HWND_NOTOPMOST,
-                                                  0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE)
+                                                  0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE)
                 return
             except Exception:
                 pass
+        if quiet:
+            return                            # diğer sistemlerde bayrak bir kez yeter (yeniden vermek pencereyi yeniler)
         self.setWindowFlag(Qt.WindowStaysOnTopHint, on)
         self.show()
 
