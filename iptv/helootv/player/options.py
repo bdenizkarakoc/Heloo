@@ -12,7 +12,7 @@ from __future__ import annotations
 import sys
 from urllib.parse import urlsplit
 
-from .. import shaders
+from .. import paths, shaders
 
 TARGET_BOXES = {"2160": (3840, 2160), "1440": (2560, 1440)}
 MAX_VSR_SCALE = 6.0      # 360p → 2160p
@@ -250,6 +250,10 @@ def play_options(settings: dict, kind: str, url: str, headers: dict | None = Non
         o.update({
             "demuxer-max-bytes": "400MiB",
             "demuxer-max-back-bytes": "150MiB",
+            # önbellek diskte: "ortadan başlat"ı (Range) desteklemeyen sunucularda film inmeye devam eder ve inen
+            # kısmın her yerine atlanabilir (motor böyle sunucuda sınırı büyütür); RAM dolmaz
+            "cache-on-disk": "yes",
+            ("demuxer-cache-dir", "cache-dir"): str(paths.cache_dir() / "mpv"),
             "cache-pause": "yes",
             "cache-pause-wait": "1",
             "cache-pause-initial": "no",

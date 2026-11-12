@@ -78,6 +78,11 @@ f             script-message helootv fullscreen
 F11           script-message helootv fullscreen
 MBTN_LEFT_DBL script-message helootv fullscreen
 MBTN_LEFT     script-message helootv click
+J             script-message helootv back10
+L             script-message helootv fwd10
+k             script-message helootv pause
+K             script-message helootv pause
+HOME          script-message helootv home
 g             script-message helootv goto
 ctrl+j        script-message helootv goto
 t             script-message helootv theater
@@ -98,7 +103,7 @@ WHEEL_DOWN    add volume -2
 m             cycle mute
 a             cycle audio
 v             cycle sub-visibility
-j             cycle sub
+j             script-message helootv j
 """
 INPUT_CONF += "".join(f"{d}  script-message helootv digit {d}\nKP{d}  script-message helootv digit {d}\n"
                       for d in range(10))
@@ -177,6 +182,7 @@ class MpvEngine:
         self.reloads = 0
         self._drop_mark: tuple[float, int] | None = None
         self.lighten = 0             # 0 tam iyileştirme | 1 gürültü azaltma kapalı | 2 + VSR/yapay zekâ kapalı
+        self.linear = False          # film sunucusu ortadan başlatmayı desteklemiyor (yalnız inen kısma atlanır)
         self._vp: dict | None = None
         self._screen: tuple[int, int] | None = None
         self._plan: dict = {}
@@ -496,6 +502,7 @@ class MpvEngine:
         elif eid == E.FILE_LOADED:
             self._loaded_at = time.monotonic()
             self._keep_only_current()
+            self._check_linear()
             self._emit("file-loaded", {})
         elif eid == E.PLAYBACK_RESTART:
             self._emit("playing", {})
@@ -509,6 +516,22 @@ class MpvEngine:
                 self._handle_end(d.reason)
         elif eid == E.SHUTDOWN:
             self._emit("shutdown", {})
+
+    def _check_linear(self) -> None:
+        """Film/dizi sunucusu ortadan başlatmayı (HTTP Range) desteklemiyor mu? Öyleyse disk önbelleği büyütülür: film
+        arka planda inmeye devam eder, inen kısmın her yerine atlanabilir."""
+        req = self.request
+        self.linear = False
+        if req is None or req.kind not in ("movie", "episode", "url", "catchup"):
+            return
+        if not str(req.url).lower().startswith(("http://", "https://")):
+            return
+        if self._get("seekable") is False:
+            self.linear = True
+            self._set("demuxer-max-bytes", "6GiB")
+            self._set("demuxer-max-back-bytes", "2GiB")
+            log.warning("sunucu ortadan başlatmayı desteklemiyor (Range yok): disk önbelleği büyütüldü: %s", req.url)
+            self._emit("linear", {})
 
     def _keep_only_current(self) -> None:
         """Sağlayıcının kanal adresi birden çok öğeli bir oynatma listesiyse (yedek/başka kanallar) mpv şu anki öğe biterse
@@ -622,7 +645,26 @@ class MpvEngine:
     def seek(self, seconds: float) -> None:
         if self.request and self.request.kind == "live":
             self._user_paused = True  # canlıda geri sarınca zaman kaydırma kipine geç
+        if self.linear:
+            pos = self._get("time-pos")
+            if isinstance(pos, (int, float)):
+                self.seek_abs(pos + seconds, exact=True)
+                return
         self.command("seek", f"{seconds:.1f}", "relative+exact")
+
+    def cached_range(self) -> tuple[float, float] | None:
+        """İndirilmiş (atlanabilir) aralık, sn. Sunucu ortadan başlatmayı desteklemiyorsa yalnız buraya atlanabilir."""
+        st = self._get("demuxer-cache-state")
+        ranges = (st or {}).get("seekable-ranges") if isinstance(st, dict) else None
+        pos = self._get("time-pos")
+        if ranges:
+            cur = next((r for r in ranges if isinstance(pos, (int, float)) and r["start"] - 1 <= pos <= r["end"] + 1),
+                       ranges[-1])
+            return float(cur["start"]), float(cur["end"])
+        end = self._get("demuxer-cache-time")
+        if isinstance(end, (int, float)) and isinstance(pos, (int, float)):
+            return float(pos), float(end)
+        return None
 
     def go_live(self) -> None:
         """Zaman kaydırmadan çık: tamponun sonuna (canlı kenara) git."""
@@ -683,8 +725,20 @@ class MpvEngine:
     def set_track(self, kind: str, track_id) -> None:
         self._set({"audio": "aid", "sub": "sid", "video": "vid"}[kind], "no" if track_id is None else str(track_id))
 
-    def seek_abs(self, seconds: float) -> None:
-        self.command("seek", f"{max(0.0, seconds):.2f}", "absolute+keyframes")
+    def seek_abs(self, seconds: float, exact: bool = False) -> float:
+        """Mutlak konuma git; gidilen konumu döndürür. Sunucu ortadan başlatmayı desteklemiyorsa (linear) hedef,
+        indirilmiş aralığa sıkıştırılır (yoksa mpv atlamayı sessizce reddederdi) ve `seek-clamped` olayı yayılır."""
+        target = max(0.0, float(seconds))
+        if self.linear:
+            rng = self.cached_range()
+            if rng:
+                lo, hi = rng[0], max(rng[0], rng[1] - 1.5)
+                clamped = min(max(target, lo), hi)
+                if abs(clamped - target) > 1.0:
+                    self._emit("seek-clamped", {"wanted": target, "got": clamped, "start": lo, "end": rng[1]})
+                target = clamped
+        self.command("seek", f"{target:.2f}", "absolute+exact" if exact else "absolute+keyframes")
+        return target
 
     def sub_add(self, path: str, title: str = "", lang: str = "") -> None:
         args = ["sub-add", path, "select"]
@@ -765,6 +819,8 @@ class MpvEngine:
             "boost": self._boost,
             "buffer_extra": self._extra,
             "underruns": self.underruns,
+            "linear": self.linear,
+            "cache_end": (self.cached_range() or (0, 0))[1] if self.linear else None,
             "reloads": self.reloads,
             "lighten": self.lighten,
             "vsr": plan,

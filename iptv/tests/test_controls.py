@@ -374,6 +374,18 @@ def test_goto_arrow_seek_and_pip_controls(tmp_path, monkeypatch):
         p1 = pos()
         win._on_key("left", [])
         assert pump(3, lambda: abs(pos() - (p1 - 5)) < 1.5), (p1, pos())
+        # YouTube tuşları: L 10 sn ileri, J 10 sn geri, K durdur/sürdür, Home baştan
+        p3 = pos()
+        win._on_key("fwd10", [])
+        assert pump(3, lambda: abs(pos() - (p3 + 10)) < 1.5), (p3, pos())
+        win._on_key("j", [])
+        assert pump(3, lambda: abs(pos() - p3) < 1.5)
+        win._on_key("live", [])                              # filmde küçük "l" de 10 sn ileri
+        assert pump(3, lambda: abs(pos() - (p3 + 10)) < 1.5)
+        win._on_key("home", [])
+        assert pump(3, lambda: pos() < 1.5)
+        win.goto_time("1:00")
+        assert pump(5, lambda: abs(pos() - 60) < 1.5)
         # ↑ / ↓: ses
         vol = float(real_get("volume"))
         win._on_key("up", [])
@@ -400,3 +412,69 @@ def test_goto_arrow_seek_and_pip_controls(tmp_path, monkeypatch):
         assert not win._pip and not win._pip_top_timer.isActive()
     finally:
         win.close()
+
+
+@pytest.mark.skipif(not (_mpv_ok() and shutil.which("ffmpeg")), reason="libmpv/ffmpeg yok")
+def test_seek_on_server_without_range_support(tmp_path, monkeypatch):
+    """Birçok IPTV sunucusu film adresinde "ortadan başlat"ı (HTTP Range) desteklemez; mpv uzak atlamayı sessizce
+    reddederdi ("ileri geri yapamıyorum"). Artık: yakın sarma çalışır, uzak hedef inen en ileri noktaya gider ve
+    bildirilir; film arka planda inmeye devam eder."""
+    monkeypatch.setenv("HELOOTV_HOME", str(tmp_path / "home"))
+    import functools
+    import http.server
+    import threading
+
+    from helootv.player.engine import MpvEngine, PlayRequest
+    www = tmp_path / "www"
+    www.mkdir()
+    subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=25:d=600", "-c:v",
+                    "libx264", "-preset", "ultrafast", "-g", "50", "-b:v", "800k", str(www / "film.mkv")], check=True)
+
+    class NoRange(http.server.SimpleHTTPRequestHandler):       # Range'i yok sayar, yavaş gönderir
+        def log_message(self, *a):
+            pass
+
+        def copyfile(self, src, dst):
+            while True:
+                b = src.read(64 * 1024)
+                if not b:
+                    break
+                dst.write(b)
+                time.sleep(0.03)
+
+    httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(NoRange, directory=str(www)))
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    events = []
+    eng = MpvEngine(settings_mod.merged_defaults(), headless=True, on_event=lambda n, d: events.append((n, d)),
+                    extra_options={"ao": "null"})
+    eng.start()
+
+    def pos():
+        return float(eng._get("time-pos") or 0)
+
+    def wait(cond, sec=10):
+        end = time.time() + sec
+        while time.time() < end:
+            if cond():
+                return True
+            time.sleep(0.1)
+        return cond()
+    try:
+        eng.play(PlayRequest(url=f"http://127.0.0.1:{httpd.server_address[1]}/film.mkv", title="Film", kind="movie"))
+        assert wait(lambda: pos() > 2)
+        assert eng.linear and any(n == "linear" for n, _ in events)
+        eng._set("pause", "yes")
+        p0 = pos()
+        eng.seek(5)                                            # yakın sarma (inen kısım içinde)
+        assert wait(lambda: abs(pos() - (p0 + 5)) < 1.5), (p0, pos())
+        got = eng.seek_abs(540)                                # 9. dakika: henüz inmedi
+        rng = eng.cached_range()
+        assert got < 540 and wait(lambda: abs(pos() - got) < 3), (got, pos())
+        assert got > p0 + 5 and rng and got <= rng[1]          # inen en ileri noktaya gitti
+        clamp = [d for n, d in events if n == "seek-clamped"]
+        assert clamp and clamp[-1]["wanted"] == 540
+        back = eng.seek_abs(3)                                 # geri: inen kısmın içinde, olduğu gibi
+        assert abs(back - 3) < 0.01 and wait(lambda: abs(pos() - 3) < 2.5)
+    finally:
+        eng.shutdown()
+        httpd.shutdown()

@@ -345,6 +345,16 @@ class MainWindow(QMainWindow):
                 self.player.show_loading(req.title, req.subtitle)
                 self._loading_timer.start()
             self._status(f"Açılıyor: {data.get('title', '')}…")
+        elif name == "linear":
+            self._status("Bu sunucu ileri atlamayı desteklemiyor: film arka planda indiriliyor, inen kısmın her yerine "
+                         "atlayabilirsiniz.")
+        elif name == "seek-clamped":
+            got, end = data.get("got", 0), data.get("end", 0)
+            msg = (f"Henüz inmedi — inen son nokta: {fmt_clock_secs(end)}" if data.get("wanted", 0) > got
+                   else f"En baştaki inen nokta: {fmt_clock_secs(got)}")
+            self._status(f"{msg} (sunucu ileri atlamayı desteklemiyor; film indikçe ilerisine atlanabilir)")
+            if self.engine:
+                self.engine.show_text(msg, 2500)
         elif name == "playing":
             # yeni yayının ilk karesi geldi: video artık gösterilebilir
             self._loading_timer.stop()
@@ -928,6 +938,21 @@ class MainWindow(QMainWindow):
                 eng.flash(f"⏪ {step} sn", "left")
         elif action == "goto":
             self.goto_time()
+        elif action in ("back10", "fwd10", "j") or (action == "live" and not live):
+            # YouTube tuşları: J 10 sn geri, L 10 sn ileri (canlıda J = altyazı değiştir, L = canlıya dön)
+            if action == "j" and (live or not req):
+                if eng:
+                    eng.cycle("sub")
+            elif eng and req and req.kind != "image":
+                fwd = action in ("fwd10", "live")
+                eng.seek(10 if fwd else -10)
+                if fwd:
+                    eng.flash("10 sn ⏩", "right")
+                else:
+                    eng.flash("⏪ 10 sn", "left")
+        elif action == "home" and eng and req and not live:
+            eng.seek_abs(0)
+            eng.flash("⏮ Baştan")
         elif action == "digit" and args:
             if live or not req:
                 self._digits = (self._digits + args[0])[-4:]
@@ -1203,6 +1228,11 @@ class MainWindow(QMainWindow):
         pos = self.mapFromGlobal(self._cursor_pos())
         zone = (bar.height() + 24) if not bar.isHidden() else 90
         near = 0 <= pos.x() <= self.width() and pos.y() >= self.height() - zone
+        # YouTube gibi: fare oynayınca da çubuk görünür (yalnız alta götürünce değil)
+        last = getattr(self, "_fs_last_pos", None)
+        moved = last is not None and (abs(pos.x() - last.x()) + abs(pos.y() - last.y())) > 3
+        self._fs_last_pos = pos
+        near = near or moved
         now = time.monotonic()
         if near or QApplication.activePopupWidget() is not None and not bar.isHidden():
             self._fs_bar_seen = now

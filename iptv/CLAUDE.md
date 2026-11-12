@@ -73,6 +73,9 @@ python -m pytest tests -q              # testler (libmpv2/ffmpeg/7z varsa başs�
   `engine.flash` (osd-overlay, büyük simge). Ayarlar sayfasında sabit `close_btn` (kaydırmadan bağımsız) → `_close_settings`.
 - Dakikaya git: `MainWindow.goto_time` + `opt.parse_goto` (G, Ctrl+J, "⏱ Git"). ←/→ `controls.seek_step` kadar sarar.
   Mini oynatıcıda `_pip_top_timer` 2 sn'de bir TOPMOST'u yeniler (SWP_NOACTIVATE: odağı çalmaz).
+- Film/dizi sunucusu HTTP Range desteklemiyorsa (`engine.linear`, `_check_linear`): VOD önbelleği diskte
+  (`cache-on-disk`), sınır 6GiB'a çıkar; `seek`/`seek_abs` hedefi `cached_range()` içine sıkıştırır ve `seek-clamped`
+  yayar (mpv uzak atlamayı sessizce reddederdi). YouTube tuşları: J/L ±10 sn (canlıda j=altyazı, l=canlı), K, Home.
 - Videoya tık: `MainWindow._on_video_click` (çift tık süresi kadar bekler) → `opt.click_zone` (`settings.controls`).
 - HLS kalite önbelleği (`_pin_cache`) yalnız yönlendirmesiz adreslerde (`urljoin(req.url, info.uri) == variant`):
   oturum adresi önbelleğe alınırsa eski kanal görünür. Kanal geçişinde `PlayerPanel.show_loading` → "playing" olayıyla video.
