@@ -9,7 +9,7 @@ import re
 import time
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QObject, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QObject, QRect, Qt, QTimer, Signal
 from PySide6.QtGui import QGuiApplication, QKeySequence, QShortcut
 from PySide6.QtWidgets import (QApplication, QFileDialog, QInputDialog, QMenu, QButtonGroup, QFrame, QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMessageBox,
                                QPushButton, QSplitter, QStackedWidget, QVBoxLayout, QWidget)
@@ -96,7 +96,7 @@ class MainWindow(QMainWindow):
         self._tick_timer = QTimer(self, interval=500, timeout=self._tick)
         self._fs_bar_timer = QTimer(self, interval=200, timeout=self._fs_bar_tick)
         # mini oynatıcı hep en önde kalsın: başka pencere (oyun) öne geçerse 2 sn'de bir yeniden en üste alınır
-        self._pip_top_timer = QTimer(self, interval=2000, timeout=lambda: self._pip and self._set_topmost(True, quiet=True))
+        self._pip_top_timer = QTimer(self, interval=1000, timeout=self._pip_keep_on_top)
         self._fs_bar_seen = 0.0
         # tek tıklama, çift tıklama süresi kadar bekletilir (çift tık = tam ekran; ikisi birden olmasın)
         self._dbl_window = max(0.25, QApplication.doubleClickInterval() / 1000.0) + 0.15
@@ -2019,14 +2019,20 @@ class MainWindow(QMainWindow):
             scr = self.screen().availableGeometry() if self.screen() else None
             w, h = 512, 288 + self.player.pip_bar.sizeHint().height()
             self.setMinimumSize(320, 200)
-            self.resize(w, h)
-            if scr is not None:
-                self.move(scr.right() - w - 24, scr.top() + 24)       # ekranın sağ üst köşesi
+            saved = self._saved_pip_rect()
+            if saved is not None:
+                self.setGeometry(saved)                               # kullanıcının bıraktığı yer / ekran / boyut
+            else:
+                self.resize(w, h)
+                if scr is not None:
+                    self.move(scr.right() - w - 24, scr.top() + 24)   # ilk kez: ekranın sağ üst köşesi
+            self._pip_ready = True
             self._set_topmost(True)
             self._pip_top_timer.start()
             if self.engine:
                 self.engine.show_text("Mini oynatıcı — ⤢ ya da Esc: geri dön", 2500)
         else:
+            self._pip_ready = False
             self._pip_top_timer.stop()
             self._set_topmost(False)
             self.player.pip_bar.hide()
@@ -2039,6 +2045,59 @@ class MainWindow(QMainWindow):
                 self.showMaximized()
             self._theater = self._pre_pip.get("theater", False)
             self._update_layout()
+
+    def _saved_pip_rect(self):
+        """Kayıtlı mini oynatıcı yeri; o ekran artık yoksa (monitör çıkarıldı) None → varsayılan köşe."""
+        r = (self.settings.get("ui") or {}).get("pip_rect")
+        try:
+            x, y, w, h = (int(v) for v in r)
+        except (TypeError, ValueError):
+            return None
+        if w < 160 or h < 90:
+            return None
+        rect = QRect(x, y, w, h)
+        for scr in QApplication.screens():
+            inter = scr.availableGeometry().intersected(rect)
+            if inter.width() >= 80 and inter.height() >= 60:      # en azından tutulabilecek kadarı görünür
+                return rect
+        return None
+
+    def _remember_pip_rect(self) -> None:
+        if not (self._pip and getattr(self, "_pip_ready", False)) or self.isMinimized():
+            return
+        g = self.geometry()
+        rect = [g.x(), g.y(), g.width(), g.height()]
+        ui = self.settings.setdefault("ui", {})
+        if ui.get("pip_rect") != rect:
+            ui["pip_rect"] = rect
+            self._save_timer.start()
+
+    def moveEvent(self, event) -> None:
+        super().moveEvent(event)
+        self._remember_pip_rect()
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._remember_pip_rect()
+
+    def _pip_keep_on_top(self) -> None:
+        """Mini oynatıcı oyuna geçince de görünür kalsın: küçültüldüyse odağı çalmadan geri açılır, TOPMOST yenilenir.
+        (Özel tam ekran — exclusive fullscreen — oyunların üstüne hiçbir pencere çıkamaz; kenarlıksız pencere kipi gerekir.)"""
+        if not self._pip:
+            return
+        if self.isMinimized():
+            restored = False
+            if os.name == "nt":
+                try:
+                    import ctypes
+                    ctypes.windll.user32.ShowWindow(int(self.winId()), 4)     # SW_SHOWNOACTIVATE
+                    restored = True
+                except Exception:
+                    pass
+            if not restored:
+                self.setWindowState(self.windowState() & ~Qt.WindowMinimized)
+                self.showNormal()
+        self._set_topmost(True, quiet=True)
 
     def _set_topmost(self, on: bool, quiet: bool = False) -> None:
         """Her zaman üstte. Windows'ta pencere yeniden oluşturulmadan (SetWindowPos) — mpv'nin gömülü penceresi

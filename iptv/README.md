@@ -129,8 +129,10 @@ TiviMate / IPTVnator / OTT Navigator'daki özelliklerin karşılıkları:
 - **📅 TV Rehberi (F2)**: TiviMate'teki gibi kanallar × saatler ızgarası (şimdiden 3 saat önce … 24 saat sonra,
   kırmızı "şimdi" çizgisi; kanal sütunu ve saat şeridi kaydırmada yerinde kalır). Çift tık: şu anki program → kanalı aç,
   geçmiş (⟲, arşivli kanal) → geri izle, gelecek → hatırlat. Sağ tık: kaydet / hatırlat / geri izle.
-- **⧉ Resim içinde resim (Ctrl+M)**: yalnız video, her zaman üstte, ekranın sağ altında küçük pencere; başka bir işle
-  uğraşırken izlemek için. Esc ya da çift tık: geri döner.
+- **⧉ Resim içinde resim (Ctrl+M)**: yalnız video, her zaman üstte küçük pencere; başka bir işle ya da oyun oynarken
+  izlemek için. Sürükleyip istediğiniz ekrana/yere koyun, kenarından büyütün: bir dahaki sefere hep orada açılır.
+  Oyun öne geçse ya da pencereyi küçültse de saniyede bir odağı çalmadan yeniden öne gelir (oyun "kenarlıksız
+  pencere" kipinde olmalı; "özel tam ekran" oyunların üstüne Windows hiçbir pencere çizdirmez). Esc ya da çift tık: geri döner.
 - **🔒 Ebeveyn kilidi**: Ayarlar → Ağ ve arayüz → "Ebeveyn kilidi (PIN)". PIN belirlenince yetişkin içerik yalnız PIN
   ile görünür ve uygulama her açılışta yeniden kilitlenir; "Varsayılanlara dön" kilidi kaldırmaz. PIN'in kendisi
   saklanmaz (tuzlu PBKDF2 özeti).

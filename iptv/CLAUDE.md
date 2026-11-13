@@ -72,13 +72,15 @@ python -m pytest tests -q              # testler (libmpv2/ffmpeg/7z varsa başs�
 - Tam ekranda alt çubuk `_fs_bar_tick` (imleç yoklaması: altta görünür, 2,5 sn sonra gizlenir). Tık geri bildirimi
   `engine.flash` (osd-overlay, büyük simge). Ayarlar sayfasında sabit `close_btn` (kaydırmadan bağımsız) → `_close_settings`.
 - Dakikaya git: `MainWindow.goto_time` + `opt.parse_goto` (G, Ctrl+J, "⏱ Git"). ←/→ `controls.seek_step` kadar sarar.
-  Mini oynatıcıda `_pip_top_timer` 2 sn'de bir TOPMOST'u yeniler (SWP_NOACTIVATE: odağı çalmaz).
+  Mini oynatıcıda `_pip_top_timer` 1 sn'de bir `_pip_keep_on_top`: küçültüldüyse SW_SHOWNOACTIVATE ile geri açar,
+  TOPMOST'u yeniler (SWP_NOACTIVATE: odağı çalmaz). Yeri/boyutu `ui.pip_rect` (moveEvent/resizeEvent, `_pip_ready`);
+  `_saved_pip_rect` kayıtlı yer hiçbir ekranda görünmüyorsa sağ üst köşeye düşer.
 - Film/dizi sunucusu HTTP Range desteklemiyorsa (`engine.linear`, `_check_linear`): VOD önbelleği diskte
   (`cache-on-disk`), sınır 6GiB'a çıkar; `seek`/`seek_abs` hedefi `cached_range()` içine sıkıştırır ve `seek-clamped`
   yayar (mpv uzak atlamayı sessizce reddederdi). YouTube tuşları: J/L ±10 sn (canlıda j=altyazı, l=canlı), K, Home.
 - Videoya tık: `MainWindow._on_video_click` ANINDA uygular → `opt.click_zone` (`settings.controls`); çift tıkta (tam
   ekran) `_undo_recent_clicks` etkisini geri alır. Mini oynatıcıda `PlayerPanel.pip_bar` (Qt düğmeleri: ±10 sn,
-  durdur, ses, büyüt), pencere ekranın sağ üstünde. Çubuk/mini düğmeleri `_seek_by` (canlıda "hep canlı"ya uyar).
+  durdur, ses, büyüt), pencere bırakıldığı yerde (ilk kez sağ üst). Çubuk/mini düğmeleri `_seek_by` (canlıda "hep canlı"ya uyar).
 - Video girdisi iki bağımsız yoldan: mpv bağlamaları (`click`/`dblclick` script-message) + Windows'ta fare yoklaması
   (`_mouse_poll`: GetAsyncKeyState + imleç, `_point_is_ours`); `_video_click/_video_dblclick` aynı tıklamayı bir kez
   işler. Film/dizide → ← Boşluk J K L uygulama düzeyi `eventFilter` ile odaktan bağımsız videoya gider (yazı kutusu hariç).

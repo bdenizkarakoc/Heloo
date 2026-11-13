@@ -99,6 +99,7 @@ DEFAULTS: dict[str, Any] = {
         "epg_shift_hours": 0.0,
         "auto_refresh_hours": 12,
         "last_channel": None,     # [source_id, item_id]
+        "pip_rect": None,         # mini oynatıcının son yeri [x, y, w, h] (hangi ekranda bırakıldıysa)
         "last_tab": "live",
         "update_check": True,     # açılışta günde bir kez yeni sürümü denetle
         "last_update_check": 0.0,

@@ -611,3 +611,55 @@ def test_mouse_poll_and_keys_work_without_mpv_input(tmp_path, monkeypatch):
         assert not win._keys_to_player(QKeyEvent(QEvent.KeyPress, Qt.Key_L, Qt.ControlModifier))
     finally:
         win.close()
+
+
+def test_pip_remembers_place_and_stays_visible(tmp_path, monkeypatch):
+    """Mini oynatıcı bırakıldığı yerde (ekran/boyut) yeniden açılır; küçültülse de kendiliğinden geri gelir."""
+    monkeypatch.setenv("HELOOTV_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from helootv.store import Store
+    from helootv.ui.main_window import MainWindow
+    app = QApplication.instance() or QApplication([])
+    s = settings_mod.merged_defaults()
+    assert s["ui"]["pip_rect"] is None
+    s["ui"]["resume_last_channel"] = False
+    s["ui"]["auto_refresh_hours"] = 0
+    win = MainWindow(Store(tmp_path / "t.db"), s, headless=True)
+    win.show()
+    try:
+        scr = win.screen().availableGeometry()
+        win._set_pip(True)
+        app.processEvents()
+        assert win._pip_top_timer.interval() <= 1000
+        # kullanıcı sol alta sürükleyip büyütür
+        win.setGeometry(scr.left() + 30, scr.bottom() - 330, 400, 300)
+        app.processEvents()
+        want = [win.geometry().x(), win.geometry().y(), win.geometry().width(), win.geometry().height()]
+        assert s["ui"]["pip_rect"] == want
+        win._set_pip(False)
+        app.processEvents()
+        assert s["ui"]["pip_rect"] == want                    # normal pencereye dönmek yeri bozmaz
+        win._set_pip(True)
+        app.processEvents()
+        g = win.geometry()
+        assert [g.x(), g.y(), g.width(), g.height()] == want
+        # küçültüldü (oyun öne geçti): zamanlayıcı geri açar, yer korunur
+        win.showMinimized()
+        app.processEvents()
+        win._pip_keep_on_top()
+        app.processEvents()
+        assert not win.isMinimized()
+        assert s["ui"]["pip_rect"] == want
+        win._set_pip(False)
+        # artık olmayan bir ekrandaki yer (monitör çıkarıldı) → varsayılan sağ üst köşe
+        s["ui"]["pip_rect"] = [scr.right() + 5000, 0, 400, 300]
+        win._set_pip(True)
+        app.processEvents()
+        assert scr.contains(win.geometry().center())
+        assert win.y() <= scr.top() + 60
+        s["ui"]["pip_rect"] = ["bozuk"]
+        assert win._saved_pip_rect() is None
+    finally:
+        win.close()
