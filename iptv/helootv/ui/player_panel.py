@@ -75,6 +75,7 @@ class PlayerPanel(QWidget):
     goto_clicked = Signal()
     volume_step = Signal(int)        # mini oynatıcı: ses ±
     pip_clicked = Signal()
+    pip_pin_toggled = Signal(bool)   # 📌 mini oynatıcıyı sabitle
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -240,6 +241,8 @@ class PlayerPanel(QWidget):
         self.pip_vol_label.setObjectName("Muted")
         pl.addWidget(self.pip_vol_label)
         self.pip_vol_up = pbtn("🔊", "Sesi aç", lambda: self.volume_step.emit(10))
+        self.pip_pin = pbtn("📌", "Sabitle: hep burada kalsın", lambda: self.pip_pin_toggled.emit(self.pip_pin.isChecked()))
+        self.pip_pin.setCheckable(True)
         self.pip_expand = pbtn("⤢", "Normal pencereye dön (Esc)", self.pip_clicked.emit)
         self.pip_bar.hide()
         lay.addWidget(self.pip_bar)

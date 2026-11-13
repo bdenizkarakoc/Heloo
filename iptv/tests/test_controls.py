@@ -719,3 +719,70 @@ def test_pip_buttons_show_on_hover(tmp_path, monkeypatch):
         assert not win._pip_bar_timer.isActive() and bar.isHidden()
     finally:
         win.close()
+
+
+def test_pip_pin_locks_place_and_comes_back(tmp_path, monkeypatch):
+    """📌 Sabitle: yer kilitli, Esc/çift tık kapatmaz; sabitliyken kapatılırsa açılışta aynı içerikle mini oynatıcı."""
+    monkeypatch.setenv("HELOOTV_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from helootv import catalog
+    from helootv.player.engine import PlayRequest
+    from helootv.store import Store
+    from helootv.ui.main_window import MainWindow
+    app = QApplication.instance() or QApplication([])
+    m3u = tmp_path / "l.m3u"
+    m3u.write_text('#EXTM3U\n#EXTINF:-1 group-title="Dizi",Kanal Bir\nhttp://p/live/u/p/1.ts\n', encoding="utf-8")
+    store = Store(tmp_path / "t.db")
+    s = settings_mod.merged_defaults()
+    s["ui"]["resume_last_channel"] = False
+    s["ui"]["auto_refresh_hours"] = 0
+    sid = store.add_source(name="Test", kind="m3u", url=str(m3u))
+    catalog.refresh_source(store, store.get_source(sid), s)
+    item = store.items("live")[0]
+
+    class FakeEngine:
+        def show_text(self, *a, **k):
+            pass
+
+        def status(self):
+            return {}
+
+    win = MainWindow(store, s, headless=True)
+    win.show()
+    try:
+        win.engine = FakeEngine()
+        win._set_pip(True)
+        app.processEvents()
+        win.set_pip_pinned(True)
+        assert s["ui"]["pip_pinned"] and win.player.pip_pin.isChecked()
+        place, size = win.pos(), win.size()
+        win.move(place.x() + 40, place.y() + 40)                  # sürüklendi → yerine döner
+        for _ in range(5):
+            app.processEvents()
+        assert win.pos() == place
+        assert win.minimumSize() == size == win.maximumSize()      # boyut da kilitli
+        win._on_key("esc", [])
+        win._video_dblclick("mpv")
+        assert win._pip                                              # Esc / çift tık kapatmaz
+        # sabitliyken kapanış: canlı kanal kaydedilir
+        win.current_item = item
+        win.current_req = PlayRequest(url="http://p/live/u/p/1.ts", title=item.name, kind="live", key=item.key)
+        assert win._pip_restore_state() == {"kind": "live", "key": list(item.key)}
+        s["ui"]["pip_restore"] = win._pip_restore_state()
+        win.player.pip_expand.click()                                # ⤢ yine de çıkar
+        assert not win._pip and win.maximumSize().width() > 10000
+        played = []
+        monkeypatch.setattr(win, "play_live", lambda it, reason="": played.append(it.key))
+        assert win._restore_pinned_pip()
+        assert played == [item.key] and win._pip and win._pip_lock is not None
+        assert s["ui"]["pip_restore"] is None                        # bir kez
+        win.set_pip_pinned(False)
+        assert win._pip_lock is None and not win.player.pip_pin.isChecked()
+        assert win._pip_restore_state() is None                      # sabit değilse açılışta geri gelmez
+        win._on_key("esc", [])
+        assert not win._pip
+    finally:
+        win.engine = None
+        win.close()

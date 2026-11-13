@@ -75,6 +75,9 @@ python -m pytest tests -q              # testler (libmpv2/ffmpeg/7z varsa başs�
   Mini oynatıcıda `_pip_top_timer` 1 sn'de bir `_pip_keep_on_top`: küçültüldüyse SW_SHOWNOACTIVATE ile geri açar,
   TOPMOST'u yeniler (SWP_NOACTIVATE: odağı çalmaz). Yeri/boyutu `ui.pip_rect` (moveEvent/resizeEvent, `_pip_ready`);
   `_saved_pip_rect` kayıtlı yer hiçbir ekranda görünmüyorsa sağ üst köşeye düşer.
+  📌 Sabitle (`pip_pin`, `set_pip_pinned`, `ui.pip_pinned`): `_lock_pip` yer (moveEvent geri taşır) + boyut kilidi,
+  Esc/çift tık kapatmaz (`_pip_pinned_msg`; ⤢/Ctrl+M kapatır); sabitliyken kapanışta `ui.pip_restore` →
+  açılışta `_restore_pinned_pip` (canlı/film/bölüm, kaldığı saniye) mini oynatıcıda.
 - Film/dizi sunucusu HTTP Range desteklemiyorsa (`engine.linear`, `_check_linear`): VOD önbelleği diskte
   (`cache-on-disk`), sınır 6GiB'a çıkar; `seek`/`seek_abs` hedefi `cached_range()` içine sıkıştırır ve `seek-clamped`
   yayar (mpv uzak atlamayı sessizce reddederdi). YouTube tuşları: J/L ±10 sn (canlıda j=altyazı, l=canlı), K, Home.

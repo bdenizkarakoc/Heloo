@@ -97,6 +97,7 @@ class MainWindow(QMainWindow):
         self._fs_bar_timer = QTimer(self, interval=200, timeout=self._fs_bar_tick)
         self._pip_bar_timer = QTimer(self, interval=150, timeout=self._pip_bar_tick)
         self._pip_bar_seen = 0.0
+        self._pip_lock = None
         # mini oynatıcı hep en önde kalsın: başka pencere (oyun) öne geçerse 2 sn'de bir yeniden en üste alınır
         self._pip_top_timer = QTimer(self, interval=1000, timeout=self._pip_keep_on_top)
         self._fs_bar_seen = 0.0
@@ -268,6 +269,7 @@ class MainWindow(QMainWindow):
         pl.goto_clicked.connect(self.goto_time)
         pl.volume_step.connect(self._volume_step)
         pl.pip_clicked.connect(lambda: self._set_pip(not self._pip))
+        pl.pip_pin_toggled.connect(self.set_pip_pinned)
         pl.seek_to.connect(lambda sec: self.engine and self.engine.seek_abs(sec))
         pl.seek_by.connect(self._seek_by)
         pl.menus["audio"].aboutToShow.connect(self._fill_audio_menu)
@@ -889,6 +891,8 @@ class MainWindow(QMainWindow):
         return 0.0
 
     def _resume_last_channel(self) -> None:
+        if self._restore_pinned_pip():
+            return
         last = self.settings["ui"].get("last_channel")
         if not (self.settings["ui"]["resume_last_channel"] and self.engine and isinstance(last, list) and len(last) == 2):
             return
@@ -984,10 +988,9 @@ class MainWindow(QMainWindow):
             self._video_click("mpv")
         elif action == "dblclick":
             self._video_dblclick("mpv")
-        elif action == "esc" and self._pip:
-            self._set_pip(False)
-        elif action == "fullscreen" and self._pip:
-            self._set_pip(False)
+        elif action in ("esc", "fullscreen") and self._pip:
+            if not self._pip_pinned_msg():
+                self._set_pip(False)
         elif action == "esc":
             if self._fs:
                 self._set_fullscreen(False)
@@ -1035,7 +1038,8 @@ class MainWindow(QMainWindow):
             return
         self._undo_recent_clicks()     # çift tıkın tek tek tıklamaları videoyu durdurmuş/sarmış olmasın
         if self._pip:
-            self._set_pip(False)
+            if not self._pip_pinned_msg():
+                self._set_pip(False)
         else:
             self._set_fullscreen(not self._fs)
 
@@ -2044,6 +2048,9 @@ class MainWindow(QMainWindow):
                 if scr is not None:
                     self.move(scr.right() - w - 24, scr.top() + 24)   # ilk kez: ekranın sağ üst köşesi
             self._pip_ready = True
+            self.player.pip_pin.setChecked(self._pinned())
+            if self._pinned():
+                self._lock_pip(True)
             self._pip_bar_seen = time.monotonic() + 1.0      # açılışta düğmeler 2,5 sn görünsün, sonra fareyle
             self._pip_bar_timer.start()
             self._set_topmost(True)
@@ -2052,6 +2059,7 @@ class MainWindow(QMainWindow):
                 self.engine.show_text("Mini oynatıcı — ⤢ ya da Esc: geri dön", 2500)
         else:
             self._pip_ready = False
+            self._lock_pip(False)
             self._pip_bar_timer.stop()
             self._pip_top_timer.stop()
             self._set_topmost(False)
@@ -2094,7 +2102,94 @@ class MainWindow(QMainWindow):
 
     def moveEvent(self, event) -> None:
         super().moveEvent(event)
+        lock = getattr(self, "_pip_lock", None)
+        if lock is not None and self._pip and not self.isMinimized() and self.pos() != lock:
+            QTimer.singleShot(0, lambda: self._pip_lock is not None and self.pos() != self._pip_lock
+                              and self.move(self._pip_lock))           # sabitli: sürüklense de yerine döner
+            return
         self._remember_pip_rect()
+
+    # ------------------------------------------------------------ 📌 sabitle
+    def _pinned(self) -> bool:
+        return bool(self.settings["ui"].get("pip_pinned"))
+
+    def set_pip_pinned(self, on: bool) -> None:
+        """📌 Sabitle: mini oynatıcı yerinde kilitlenir (taşınmaz/boyutlanmaz), Esc ve çift tık kapatmaz, uygulama
+        başka işe geçilse de hep üstte; sabitliyken kapatılırsa bir sonraki açılışta aynı yerde aynı içerikle açılır."""
+        on = bool(on)
+        self.settings["ui"]["pip_pinned"] = on
+        self._save_timer.start()
+        self.player.pip_pin.setChecked(on)
+        self.player.pip_pin.setToolTip("Sabit — çözmek için tıklayın" if on else "Sabitle: hep burada kalsın")
+        if self._pip:
+            self._lock_pip(on)
+        if self.engine:
+            self.engine.show_text("📌 Sabitlendi: hep burada kalır" if on else "Sabitleme kaldırıldı", 1800)
+
+    def _lock_pip(self, on: bool) -> None:
+        if on:
+            self._remember_pip_rect()
+            self._pip_lock = self.pos()
+            self.setFixedSize(self.size())
+        else:
+            self._pip_lock = None
+            self.setMaximumSize(16777215, 16777215)
+            self.setMinimumSize(320, 200) if self._pip else self.setMinimumSize(0, 0)
+
+    def _pip_pinned_msg(self) -> bool:
+        """Sabitliyken Esc/çift tık mini oynatıcıyı kapatmaz (yalnız ⤢ ya da Ctrl+M)."""
+        if not self._pinned():
+            return False
+        if self.engine:
+            self.engine.show_text("📌 Sabit — çıkmak için ⤢ ya da 📌 ile çözün", 1800)
+        return True
+
+    def _pip_restore_state(self):
+        """Sabitli mini oynatıcıda kapanırken açık olan içerik (açılışta aynı yerde sürsün)."""
+        req = self.current_req
+        if not (self._pip and self._pinned() and req is not None and req.kind in ("live", "catchup", "movie", "episode")):
+            return None
+        pos = 0.0
+        if self.engine and req.kind in ("movie", "episode"):
+            pos = float(self.engine.status().get("pos") or 0)
+        if req.kind in ("live", "catchup"):
+            if self.current_item is None:
+                return None
+            return {"kind": "live", "key": list(self.current_item.key)}
+        meta = {k: v for k, v in (req.meta or {}).items() if k in ("series_id", "season", "episode", "ext", "ep_title", "url")}
+        return {"kind": req.kind, "key": list(req.key), "pos": pos, "meta": meta}
+
+    def _restore_pinned_pip(self) -> bool:
+        st = self.settings["ui"].get("pip_restore")
+        self.settings["ui"]["pip_restore"] = None
+        if not (isinstance(st, dict) and self._pinned() and self.engine):
+            return False
+        try:
+            src, _kind, iid = st["key"]
+            if st["kind"] == "live":
+                item = self.store.item(int(src), "live", str(iid))
+                if not item:
+                    return False
+                self.play_live(item, "açılışta sabit mini oynatıcı")
+            elif st["kind"] == "movie":
+                item = self.store.item(int(src), "movie", str(iid))
+                if not item:
+                    return False
+                self.play_movie(item, start=st.get("pos") or 0)
+            elif st["kind"] == "episode":
+                m = st.get("meta") or {}
+                series = self.store.item(int(src), "series", str(m.get("series_id")))
+                if not series:
+                    return False
+                ep = {"id": iid, "season": m.get("season"), "episode": m.get("episode"), "ext": m.get("ext", ""),
+                      "url": m.get("url", ""), "title": m.get("ep_title", "")}
+                self.play_episode(series, ep, [ep], start=st.get("pos") or 0)
+            else:
+                return False
+        except (KeyError, TypeError, ValueError):
+            return False
+        self._set_pip(True)
+        return True
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
@@ -2297,6 +2392,7 @@ class MainWindow(QMainWindow):
                 event.ignore()
                 return
             self.recorder.stop_all()
+        self.settings["ui"]["pip_restore"] = self._pip_restore_state()
         self._save_settings()
         app = QApplication.instance()
         if app is not None:
