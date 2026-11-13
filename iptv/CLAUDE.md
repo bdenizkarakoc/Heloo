@@ -80,7 +80,8 @@ python -m pytest tests -q              # testler (libmpv2/ffmpeg/7z varsa başs�
   yayar (mpv uzak atlamayı sessizce reddederdi). YouTube tuşları: J/L ±10 sn (canlıda j=altyazı, l=canlı), K, Home.
 - Videoya tık: `MainWindow._on_video_click` ANINDA uygular → `opt.click_zone` (`settings.controls`); çift tıkta (tam
   ekran) `_undo_recent_clicks` etkisini geri alır. Mini oynatıcıda `PlayerPanel.pip_bar` (Qt düğmeleri: ±10 sn,
-  durdur, ses, büyüt), pencere bırakıldığı yerde (ilk kez sağ üst). Çubuk/mini düğmeleri `_seek_by` (canlıda "hep canlı"ya uyar).
+  durdur, ses, büyüt; yalnız fare üstündeyken `_pip_bar_tick`, 1,5 sn sonra gizlenir), pencere bırakıldığı yerde
+  (ilk kez sağ üst). `_update_layout` tam ekranda ve mini oynatıcıda hiçbir şey göstermez. Çubuk/mini düğmeleri `_seek_by` (canlıda "hep canlı"ya uyar).
 - Video girdisi iki bağımsız yoldan: mpv bağlamaları (`click`/`dblclick` script-message) + Windows'ta fare yoklaması
   (`_mouse_poll`: GetAsyncKeyState + imleç, `_point_is_ours`); `_video_click/_video_dblclick` aynı tıklamayı bir kez
   işler. Film/dizide → ← Boşluk J K L uygulama düzeyi `eventFilter` ile odaktan bağımsız videoya gider (yazı kutusu hariç).

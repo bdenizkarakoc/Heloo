@@ -95,6 +95,8 @@ class MainWindow(QMainWindow):
         self._digit_timer = QTimer(self, singleShot=True, interval=1600, timeout=self._commit_digits)
         self._tick_timer = QTimer(self, interval=500, timeout=self._tick)
         self._fs_bar_timer = QTimer(self, interval=200, timeout=self._fs_bar_tick)
+        self._pip_bar_timer = QTimer(self, interval=150, timeout=self._pip_bar_tick)
+        self._pip_bar_seen = 0.0
         # mini oynatıcı hep en önde kalsın: başka pencere (oyun) öne geçerse 2 sn'de bir yeniden en üste alınır
         self._pip_top_timer = QTimer(self, interval=1000, timeout=self._pip_keep_on_top)
         self._fs_bar_seen = 0.0
@@ -1305,7 +1307,7 @@ class MainWindow(QMainWindow):
         self._update_layout()
 
     def _update_layout(self) -> None:
-        if self._fs:
+        if self._fs or self._pip:              # tam ekran / mini oynatıcı: yalnız video (kanal değişse de listeler açılmaz)
             return
         key = self._tab_key()
         playing = self.current_req is not None
@@ -1374,6 +1376,21 @@ class MainWindow(QMainWindow):
         elif not bar.isHidden() and now - self._fs_bar_seen > 2.5:
             bar.hide()
             self.player.host.setFocus()
+
+    def _pip_bar_tick(self) -> None:
+        """Mini oynatıcıda düğmeler (±10 sn, durdur, ses, büyüt) yalnız fare pencerenin üstündeyken görünür; fare
+        ayrılınca 1,5 sn sonra gizlenir ve yalnız video kalır. Pencere boyutu değişmez (yer kaydı bozulmaz)."""
+        if not self._pip:
+            return
+        bar = self.player.pip_bar
+        inside = self.frameGeometry().contains(self._cursor_pos())
+        now = time.monotonic()
+        if inside or (QApplication.activePopupWidget() is not None and not bar.isHidden()):
+            self._pip_bar_seen = now
+            if bar.isHidden():
+                bar.show()
+        elif not bar.isHidden() and now - self._pip_bar_seen > 1.5:
+            bar.hide()
 
     def _focus_search(self) -> None:
         if self._fs:
@@ -2027,12 +2044,15 @@ class MainWindow(QMainWindow):
                 if scr is not None:
                     self.move(scr.right() - w - 24, scr.top() + 24)   # ilk kez: ekranın sağ üst köşesi
             self._pip_ready = True
+            self._pip_bar_seen = time.monotonic() + 1.0      # açılışta düğmeler 2,5 sn görünsün, sonra fareyle
+            self._pip_bar_timer.start()
             self._set_topmost(True)
             self._pip_top_timer.start()
             if self.engine:
                 self.engine.show_text("Mini oynatıcı — ⤢ ya da Esc: geri dön", 2500)
         else:
             self._pip_ready = False
+            self._pip_bar_timer.stop()
             self._pip_top_timer.stop()
             self._set_topmost(False)
             self.player.pip_bar.hide()

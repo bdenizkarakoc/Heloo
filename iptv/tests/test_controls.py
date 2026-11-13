@@ -394,6 +394,7 @@ def test_goto_arrow_seek_and_pip_controls(tmp_path, monkeypatch):
         win._set_pip(True)
         app.processEvents()
         assert win._pip and win._pip_top_timer.isActive()
+        win._cursor_pos = lambda: win.frameGeometry().center()   # fare küçük ekranın üstünde: düğmeler görünür
         mouse = {"x": 480}
         eng._get = lambda name: ({"x": mouse["x"], "y": 100, "hover": True} if name == "mouse-pos" else
                                  {"w": 512, "h": 288} if name == "osd-dimensions" else real_get(name))
@@ -661,5 +662,60 @@ def test_pip_remembers_place_and_stays_visible(tmp_path, monkeypatch):
         assert win.y() <= scr.top() + 60
         s["ui"]["pip_rect"] = ["bozuk"]
         assert win._saved_pip_rect() is None
+    finally:
+        win.close()
+
+
+def test_pip_buttons_show_on_hover(tmp_path, monkeypatch):
+    """Mini oynatıcıda düğmeler yalnız fare üstündeyken; ayrılınca gizlenir, pencere boyutu değişmez."""
+    monkeypatch.setenv("HELOOTV_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtCore import QPoint
+    from PySide6.QtWidgets import QApplication
+
+    from helootv.store import Store
+    from helootv.ui import main_window as mw
+    app = QApplication.instance() or QApplication([])
+    s = settings_mod.merged_defaults()
+    s["ui"]["resume_last_channel"] = False
+    s["ui"]["auto_refresh_hours"] = 0
+    win = mw.MainWindow(Store(tmp_path / "t.db"), s, headless=True)
+    win.show()
+    clock = {"t": 1000.0}
+    monkeypatch.setattr(mw.time, "monotonic", lambda: clock["t"])
+    cursor = {"p": QPoint(-5000, -5000)}
+    win._cursor_pos = lambda: cursor["p"]
+    try:
+        win._set_pip(True)
+        app.processEvents()
+        bar = win.player.pip_bar
+        assert win._pip_bar_timer.isActive() and not bar.isHidden()     # açılışta kısa süre görünür
+        win._update_layout()                                              # kanal değişimi: listeler açılmasın
+        app.processEvents()
+        assert win.pages.isHidden() and win.epg_panel.isHidden() and win.topbar.isHidden()
+        size = win.size()
+        clock["t"] += 1.0
+        win._pip_bar_tick()
+        assert not bar.isHidden()
+        clock["t"] += 2.0
+        win._pip_bar_tick()
+        assert bar.isHidden()                                             # fare dışarıda: yalnız video
+        app.processEvents()
+        assert win.size() == size
+        cursor["p"] = win.frameGeometry().center()                       # fare üstüne geldi
+        win._pip_bar_tick()
+        assert not bar.isHidden()
+        clock["t"] += 10
+        win._pip_bar_tick()
+        assert not bar.isHidden()                                         # üstünde kaldıkça gizlenmez
+        cursor["p"] = QPoint(-5000, -5000)
+        clock["t"] += 1.0
+        win._pip_bar_tick()
+        assert not bar.isHidden()
+        clock["t"] += 1.0
+        win._pip_bar_tick()
+        assert bar.isHidden()
+        win._set_pip(False)
+        assert not win._pip_bar_timer.isActive() and bar.isHidden()
     finally:
         win.close()
