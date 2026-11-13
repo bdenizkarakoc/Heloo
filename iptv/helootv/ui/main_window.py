@@ -2090,8 +2090,10 @@ class MainWindow(QMainWindow):
             if os.name == "nt":
                 try:
                     import ctypes
-                    ctypes.windll.user32.ShowWindow(int(self.winId()), 4)     # SW_SHOWNOACTIVATE
-                    restored = True
+                    u32, hwnd = ctypes.windll.user32, int(self.winId())
+                    if u32.IsWindow(hwnd):
+                        u32.ShowWindow(hwnd, 4)                               # SW_SHOWNOACTIVATE
+                        restored = not u32.IsIconic(hwnd)
                 except Exception:
                     pass
             if not restored:
