@@ -76,7 +76,7 @@ ESC           script-message helootv esc
 BS            script-message helootv last
 f             script-message helootv fullscreen
 F11           script-message helootv fullscreen
-MBTN_LEFT_DBL script-message helootv fullscreen
+MBTN_LEFT_DBL script-message helootv dblclick
 MBTN_LEFT     script-message helootv click
 J             script-message helootv back10
 L             script-message helootv fwd10

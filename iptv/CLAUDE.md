@@ -79,6 +79,9 @@ python -m pytest tests -q              # testler (libmpv2/ffmpeg/7z varsa başs�
 - Videoya tık: `MainWindow._on_video_click` ANINDA uygular → `opt.click_zone` (`settings.controls`); çift tıkta (tam
   ekran) `_undo_recent_clicks` etkisini geri alır. Mini oynatıcıda `PlayerPanel.pip_bar` (Qt düğmeleri: ±10 sn,
   durdur, ses, büyüt), pencere ekranın sağ üstünde. Çubuk/mini düğmeleri `_seek_by` (canlıda "hep canlı"ya uyar).
+- Video girdisi iki bağımsız yoldan: mpv bağlamaları (`click`/`dblclick` script-message) + Windows'ta fare yoklaması
+  (`_mouse_poll`: GetAsyncKeyState + imleç, `_point_is_ours`); `_video_click/_video_dblclick` aynı tıklamayı bir kez
+  işler. Film/dizide → ← Boşluk J K L uygulama düzeyi `eventFilter` ile odaktan bağımsız videoya gider (yazı kutusu hariç).
 - HLS kalite önbelleği (`_pin_cache`) yalnız yönlendirmesiz adreslerde (`urljoin(req.url, info.uri) == variant`):
   oturum adresi önbelleğe alınırsa eski kanal görünür. Kanal geçişinde `PlayerPanel.show_loading` → "playing" olayıyla video.
 - Veritabanı: `store.py` (iş parçacığı başına bağlantı, WAL). EPG ayrı dosyada (`*-epg.db`); uzun EPG içe aktarımı

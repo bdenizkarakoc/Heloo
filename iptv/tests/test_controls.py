@@ -100,7 +100,7 @@ def test_click_pause_and_side_seek(tmp_path, monkeypatch):
         mouse["x"] = 600
         win._on_key("click", [])
         win._on_key("click", [])
-        win._on_key("fullscreen", [])
+        win._on_key("dblclick", [])
         pump(0.8)
         assert win._fs and real_get("pause") == paused and abs(pos() - p3) < 0.5
         win._set_fullscreen(False)
@@ -502,3 +502,112 @@ def test_seek_on_server_without_range_support(tmp_path, monkeypatch):
     finally:
         eng.shutdown()
         httpd.shutdown()
+
+
+@pytest.mark.skipif(not (_mpv_ok() and shutil.which("ffmpeg")), reason="libmpv/ffmpeg yok")
+def test_mouse_poll_and_keys_work_without_mpv_input(tmp_path, monkeypatch):
+    """mpv'nin gömülü penceresi tıklamayı/tuşu iletmese de: fare durumu yoklanarak videoya tıklama (sağ: ileri,
+    sol: geri, orta: durdur, çift tık: tam ekran) ve odak Qt'deyken → ← Boşluk J K L tuşları çalışır."""
+    monkeypatch.setenv("HELOOTV_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    vid = tmp_path / "film.mkv"
+    subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=25:d=240",
+                    "-c:v", "libx264", "-preset", "ultrafast", "-g", "25", str(vid)], check=True)
+    from PySide6.QtCore import QEvent, QPoint, Qt
+    from PySide6.QtGui import QKeyEvent
+    from PySide6.QtWidgets import QApplication
+
+    from helootv.player.engine import MpvEngine
+    from helootv.store import Store
+    from helootv.ui.main_window import MainWindow
+    app = QApplication.instance() or QApplication([])
+    s = settings_mod.merged_defaults()
+    s["ui"]["resume_last_channel"] = False
+    s["ui"]["auto_refresh_hours"] = 0
+    win = MainWindow(Store(tmp_path / "t.db"), s, headless=True)
+    win.resize(1280, 720)
+    win.show()
+    eng = MpvEngine(s, headless=True, on_event=lambda n, d: win.bridge.event.emit(n, d), extra_options={"ao": "null"})
+    eng.start()
+    win.engine = eng
+    get = eng._get
+
+    def pump(sec, until=None):
+        end = time.time() + sec
+        while time.time() < end:
+            app.processEvents()
+            if until and until():
+                return True
+            time.sleep(0.02)
+        return bool(until and until())
+
+    def pos():
+        return float(get("time-pos") or 0)
+
+    clock = [50.0]
+
+    def click(frac, gap=1.0):
+        """Video alanının yatayda `frac` oranındaki noktasına bas-bırak (fare yoklaması)."""
+        host = win.player.host
+        g = host.mapToGlobal(QPoint(int(host.width() * frac), host.height() // 2))
+        clock[0] += gap
+        win._mouse_poll(True, g, clock[0])
+        win._mouse_poll(False, g, clock[0] + 0.08)
+    try:
+        win.play_file(str(vid))
+        assert pump(10, lambda: pos() > 0.3 and not win.player.loading)
+        eng.seek_abs(60)
+        assert pump(5, lambda: abs(pos() - 60) < 1.5)
+        eng._set("pause", "yes")
+        p0 = pos()
+        click(0.9)                                         # sağ: 5 sn ileri
+        assert pump(3, lambda: abs(pos() - (p0 + 5)) < 1.5), (p0, pos())
+        click(0.1)                                         # sol: 5 sn geri
+        assert pump(3, lambda: abs(pos() - p0) < 1.5)
+        click(0.5)                                         # orta: sürdür
+        assert get("pause") is False
+        click(0.5)
+        assert get("pause") is True
+        # sürükleme tıklama sayılmaz; video dışı (alt çubuk) tıklaması sayılmaz
+        host = win.player.host
+        a = host.mapToGlobal(QPoint(50, 50))
+        win._mouse_poll(True, a, 100.0)
+        win._mouse_poll(False, a + QPoint(200, 0), 100.1)
+        b = win.player.bar.mapToGlobal(QPoint(20, 20))
+        win._mouse_poll(True, b, 101.0)
+        win._mouse_poll(False, b, 101.05)
+        assert get("pause") is True and abs(pos() - p0) < 1.5
+        # çift tık: tam ekran, video durumu değişmez
+        monkeypatch.setattr(win, "showFullScreen", lambda: None)
+        clock[0] = 200.0
+        click(0.5, gap=0)
+        click(0.5, gap=0.15)
+        assert win._fs and get("pause") is True
+        win._set_fullscreen(False)
+        # aynı tıklama mpv'den de gelirse bir kez işlenir
+        clock[0] = 300.0
+        click(0.5)
+        state = get("pause")
+        win._on_key("click", [])
+        assert get("pause") is state
+        # klavye: odak listedeyken de → ← Boşluk J K L videoya gider
+        focus = [win.live_page.view]                       # başsız ortamda odak bilgisi gelmez: elle ver
+        monkeypatch.setattr(QApplication, "focusWidget", staticmethod(lambda: focus[0]))
+        monkeypatch.setattr(QApplication, "activeWindow", staticmethod(lambda: win))
+        eng._set("pause", "yes")
+
+        def key(k):
+            return win._keys_to_player(QKeyEvent(QEvent.KeyPress, k, Qt.NoModifier))
+        p1 = pos()
+        assert key(Qt.Key_Right) and pump(3, lambda: abs(pos() - (p1 + 5)) < 1.5)
+        assert key(Qt.Key_Left) and pump(3, lambda: abs(pos() - p1) < 1.5)
+        assert key(Qt.Key_L) and pump(3, lambda: abs(pos() - (p1 + 10)) < 1.5)
+        assert key(Qt.Key_J) and pump(3, lambda: abs(pos() - p1) < 1.5)
+        assert key(Qt.Key_Space) and get("pause") is False
+        assert key(Qt.Key_K) and get("pause") is True
+        assert not key(Qt.Key_Up)                          # liste odaktayken ↑↓ listeye kalır
+        focus[0] = win.search                              # yazı kutusunda tuşlar yazıya gider
+        assert not key(Qt.Key_Space) and not key(Qt.Key_L)
+        assert not win._keys_to_player(QKeyEvent(QEvent.KeyPress, Qt.Key_L, Qt.ControlModifier))
+    finally:
+        win.close()

@@ -261,7 +261,7 @@ class MultiViewWindow(QDialog):
             if action == "click":
                 self.set_active(index)
                 self.chosen = index
-            elif action == "fullscreen":
+            elif action in ("fullscreen", "dblclick"):
                 self.set_active(index)
                 self.set_solo(None if self.solo == index else index)
             elif action == "esc" and self.solo is not None:

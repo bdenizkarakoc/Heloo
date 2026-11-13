@@ -9,7 +9,7 @@ import re
 import time
 from pathlib import Path
 
-from PySide6.QtCore import QObject, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QObject, Qt, QTimer, Signal
 from PySide6.QtGui import QGuiApplication, QKeySequence, QShortcut
 from PySide6.QtWidgets import (QApplication, QFileDialog, QInputDialog, QMenu, QButtonGroup, QFrame, QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMessageBox,
                                QPushButton, QSplitter, QStackedWidget, QVBoxLayout, QWidget)
@@ -101,6 +101,15 @@ class MainWindow(QMainWindow):
         # tek tıklama, çift tıklama süresi kadar bekletilir (çift tık = tam ekran; ikisi birden olmasın)
         self._dbl_window = max(0.25, QApplication.doubleClickInterval() / 1000.0) + 0.15
         self._recent_clicks: list[tuple] = []
+        self._click_seen: dict[str, float] = {}
+        self._dbl_seen: dict[str, float] = {}
+        self._mp_down = False
+        self._mp_press: tuple | None = None
+        self._mp_last_click = 0.0
+        QApplication.instance().installEventFilter(self)
+        if os.name == "nt" and not self.headless:
+            self._mouse_timer = QTimer(self, interval=20, timeout=self._mouse_poll_tick)
+            self._mouse_timer.start()
         self._click_at: tuple = (None, None)
         # yedek: "oynatılıyor" olayı gelmese de (yalnız ses, eski mpv) 10 sn sonra video gösterilir
         self._loading_timer = QTimer(self, singleShot=True, interval=10000,
@@ -970,11 +979,9 @@ class MainWindow(QMainWindow):
         elif action == "lossless":                 # video penceresi odaktayken Lossless Scaling kısayolu (Ctrl+Z)
             self.toggle_lossless()
         elif action == "click":
-            self._on_video_click()
-        elif action == "fullscreen" and self._recent_clicks:
-            # çift tık: az önceki tek tıklamaların etkisini (duraklat/sar) geri al, yalnız tam ekran
-            self._undo_recent_clicks()
-            self._on_key("fullscreen" if not self._pip else "esc", [])
+            self._video_click("mpv")
+        elif action == "dblclick":
+            self._video_dblclick("mpv")
         elif action == "esc" and self._pip:
             self._set_pip(False)
         elif action == "fullscreen" and self._pip:
@@ -1006,15 +1013,120 @@ class MainWindow(QMainWindow):
             self.stop()
 
     # ------------------------------------------------------------------ videoya tıklama (YouTube gibi)
-    def _on_video_click(self) -> None:
+    # Video tıklamaları iki bağımsız yoldan gelir: mpv'nin kendi penceresi ("mpv") ve Windows'ta fare durumunun
+    # doğrudan yoklanması ("poll": mpv'nin gömülü penceresi tıklamayı iletmese de çalışır). Aynı tıklama iki yoldan da
+    # gelirse bir kez işlenir.
+    def _other_source_recent(self, table: dict, source: str, window: float) -> bool:
+        now = time.monotonic()
+        dup = any(src != source and now - t < window for src, t in table.items())
+        if not dup:
+            table[source] = now
+        return dup
+
+    def _video_click(self, source: str, x: float | None = None, width: float | None = None) -> None:
+        if self._other_source_recent(self._click_seen, source, 0.35):
+            return
+        self._on_video_click(x, width)
+
+    def _video_dblclick(self, source: str) -> None:
+        if self._other_source_recent(self._dbl_seen, source, 0.6):
+            return
+        self._undo_recent_clicks()     # çift tıkın tek tek tıklamaları videoyu durdurmuş/sarmış olmasın
+        if self._pip:
+            self._set_pip(False)
+        else:
+            self._set_fullscreen(not self._fs)
+
+    def _point_is_ours(self) -> bool:
+        """İmlecin altındaki pencere Heloo TV'nin ana penceresi mi (üstünde başka pencere/iletişim kutusu yok mu)?"""
+        if os.name != "nt":
+            return True
+        try:
+            import ctypes
+            from ctypes import wintypes
+            pt = wintypes.POINT()
+            ctypes.windll.user32.GetCursorPos(ctypes.byref(pt))
+            hwnd = ctypes.windll.user32.WindowFromPoint(pt)
+            root = ctypes.windll.user32.GetAncestor(hwnd, 2)      # GA_ROOT
+            return int(root) == int(self.winId())
+        except Exception:
+            return True
+
+    def _mouse_poll_tick(self) -> None:
+        try:
+            import ctypes
+            down = bool(ctypes.windll.user32.GetAsyncKeyState(0x01) & 0x8000)     # VK_LBUTTON
+        except Exception:
+            return
+        self._mouse_poll(down, self._cursor_pos(), time.monotonic())
+
+    def _mouse_poll(self, down: bool, gpos, now: float) -> None:
+        """Sol tuşun bas-bırak geçişlerinden video alanındaki tıklamayı/çift tıklamayı çıkarır."""
+        host = self.player.host
+        was, self._mp_down = self._mp_down, down
+        if down == was:
+            return
+        ok = (self.current_req is not None and self.engine is not None and host.isVisible()
+              and not self.player.loading and QApplication.activePopupWidget() is None
+              and QApplication.activeModalWidget() is None)
+        local = host.mapFromGlobal(gpos)
+        inside = ok and host.rect().contains(local)
+        if down:
+            self._mp_press = (now, gpos.x(), gpos.y()) if inside and self._point_is_ours() else None
+            return
+        press, self._mp_press = self._mp_press, None
+        if not press or not inside:
+            return
+        if now - press[0] > 0.6 or abs(gpos.x() - press[1]) + abs(gpos.y() - press[2]) > 8:
+            return                                   # uzun basış ya da sürükleme: tıklama değil
+        if now - self._mp_last_click < QApplication.doubleClickInterval() / 1000.0:
+            self._mp_last_click = 0.0
+            self._video_dblclick("poll")
+        else:
+            self._mp_last_click = now
+            self._video_click("poll", float(local.x()), float(host.width()))
+
+    def eventFilter(self, obj, event) -> bool:
+        """Film/dizi oynarken → ← Boşluk J K L tuşları, odak nerede olursa olsun videoya gider (YouTube gibi);
+        yazı kutusuna yazarken karışmaz."""
+        if event.type() == QEvent.KeyPress and self._keys_to_player(event):
+            return True
+        return super().eventFilter(obj, event)
+
+    def _keys_to_player(self, event) -> bool:
+        req = self.current_req
+        if not req or not self.engine or req.kind in ("live", "image"):
+            return False
+        if event.modifiers() & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier):
+            return False
+        if QApplication.activeWindow() is not self or QApplication.activePopupWidget() is not None:
+            return False
+        from PySide6.QtWidgets import QAbstractItemView, QAbstractSpinBox, QComboBox, QKeySequenceEdit, QTextEdit
+        fw = QApplication.focusWidget()
+        if isinstance(fw, (QLineEdit, QTextEdit, QAbstractSpinBox, QKeySequenceEdit)) or (
+                isinstance(fw, QComboBox) and fw.isEditable()):
+            return False
+        key = event.key()
+        action = {Qt.Key_Left: "left", Qt.Key_Right: "right", Qt.Key_Space: "pause", Qt.Key_K: "pause",
+                  Qt.Key_J: "j", Qt.Key_L: "live"}.get(key)
+        if action is None and key in (Qt.Key_Up, Qt.Key_Down) and not isinstance(fw, (QAbstractItemView, QComboBox)):
+            action = "up" if key == Qt.Key_Up else "down"
+        if action is None:
+            return False
+        self._on_key(action, [])
+        return True
+
+    def _on_video_click(self, x: float | None = None, width: float | None = None) -> None:
         """Tek tık YouTube gibi ANINDA uygulanır (eskiden çift tık süresi kadar bekliyordu). Çift tık gelirse
         (tam ekran) az önceki tıklamaların etkisi geri alınır: `_undo_recent_clicks`."""
         if not self.engine or not self.current_req:
             return
-        pos = self.engine._get("mouse-pos") or {}
-        osd = self.engine._get("osd-dimensions") or {}
-        self._click_at = (pos.get("x") if isinstance(pos, dict) else None,
-                          osd.get("w") if isinstance(osd, dict) else None)
+        if x is None:
+            pos = self.engine._get("mouse-pos") or {}
+            osd = self.engine._get("osd-dimensions") or {}
+            x = pos.get("x") if isinstance(pos, dict) else None
+            width = osd.get("w") if isinstance(osd, dict) else None
+        self._click_at = (x, width)
         done = self._do_video_click()
         now = time.monotonic()
         self._recent_clicks = [c for c in self._recent_clicks if now - c[0] < self._dbl_window] + (
@@ -2105,6 +2217,9 @@ class MainWindow(QMainWindow):
                 return
             self.recorder.stop_all()
         self._save_settings()
+        app = QApplication.instance()
+        if app is not None:
+            app.removeEventFilter(self)
         if self.engine:
             self.engine.shutdown()
             self.engine = None
