@@ -53,6 +53,16 @@ Bilgisayar Miracast destekliyorsa panelde **Yansıt panelini aç (Win+K)** düğ
   geçmişinden tekrar açabilirsiniz. Paneldeki **Yeni kod** düğmesi kodu değiştirir.
 - Bağlantı zaten doğrudandır: bilgisayar ve TV aynı Wi-Fi'de konuşur, internete çıkılmaz.
 
+### Telefondan kumanda ve klavye
+Telefonun tarayıcısında TV'deki adresin aynısını açın (ör. `192.168.1.16:8780`) ve kodu girin. Telefonda rakam
+klavyesi kendiliğinden açılır. Telefon kumanda olur:
+- **Dokunmatik yüzey:** Parmağınızı kaydırınca fare hareket eder. Dokunmak tıklar, iki parmakla dokunmak sağ tıklar,
+  iki parmakla kaydırmak sayfayı kaydırır. **Basılı tut** ile sürükleyebilirsiniz.
+- **Yazma:** Kutuya telefon klavyesiyle yazdığınız her harf, Türkçe karakterler dahil, anında bilgisayarda yazılır.
+  Silme ve otomatik düzeltme de aynen gider. Klavyedeki "Gönder" tuşu Enter'a basar.
+- **Tuşlar:** Enter, Sil, Esc, Tab, oklar, Ses −/+, Sessiz, Oynat/Duraklat, Başlat, Alt+Tab, Masaüstü.
+- **Ekranı izleme:** "Ekranı bu telefonda izle" ile görüntüyü telefonda da görebilirsiniz.
+
 ### TV'de "Bu web sayfası kullanılamıyor" çıkarsa
 - Adresi **http://** ile başlayarak, panelde yazdığı gibi eksiksiz yazın (ör. `http://192.168.1.16:8780/2391`).
 - LG gibi bazı TV'ler adresi kendiliğinden **https://** ile açar. Uygulama aynı portta https'yi de destekler ama

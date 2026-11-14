@@ -268,7 +268,7 @@ def test_kurulum_parcalari():
     assert kur.startswith(b"\xef\xbb\xbf")                   # PowerShell 5.1 Türkçe için UTF-8 BOM
     assert kur.count(b"\r\n") == kur.count(b"\n")              # Windows satır sonu (CRLF)
     assert not kur.startswith(b"\xef\xbb\xbf" * 2)           # çift BOM: ilk satır yorum sayılmaz, hata verir
-    for dosya in ("tv_yansit.py", "girdi.py", "ses.py", "sertifika.py", "lg.py", "panel.html", "tv.html", "tv-yansit.ico"):
+    for dosya in ("tv_yansit.py", "girdi.py", "ses.py", "sertifika.py", "lg.py", "panel.html", "telefon.html", "tv.html", "tv-yansit.ico"):
         assert dosya.encode() in kur and (kok / dosya).exists()
     assert isinstance(tv.kurulum_ayari(), dict)
 
@@ -523,3 +523,23 @@ def test_video_abone_geride_kalinca_anahtar_kareye_atlar():
     kayit = tv.video_kayitlari([("cfg",), (7, 1, b"abc", 10.0)], b"\x01cfg", simdi=10.05)
     assert kayit[:1] == b"\x00" and kayit[11:15] == b"\x01cfg"
     assert kayit[15:16] == b"\x01" and int.from_bytes(kayit[24:26], "big") == 50
+
+
+def test_telefon_sayfasi(monkeypatch, tmp_path):
+    monkeypatch.setattr(tv, "VERI", tmp_path)
+    app = tv.Uygulama(0, kaynak="test")
+    isleyici = tv.sunucu_kur(app)
+    isleyici._yerel = lambda self: False      # telefon: başka cihaz
+    srv = tv.ThreadingHTTPServer(("127.0.0.1", 0), isleyici)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    taban = f"http://127.0.0.1:{srv.server_port}"
+    try:
+        sayfa = urllib.request.urlopen(f"{taban}/{app.pin}/telefon", timeout=5).read().decode()
+        assert f"/{app.pin}/girdi" in sayfa and "__" not in sayfa.split("<script>")[1][:200]
+        assert "Dokunmatik yüzey" in sayfa
+        giris = urllib.request.urlopen(f"{taban}/", timeout=5).read().decode()
+        assert 'inputmode="numeric"' in giris and "/telefon" in giris   # telefonda rakam klavyesi + kumanda sayfası
+        with pytest.raises(urllib.error.HTTPError):
+            urllib.request.urlopen(f"{taban}/0000/telefon" if app.pin != "0000" else f"{taban}/1111/telefon", timeout=5)
+    finally:
+        srv.shutdown()

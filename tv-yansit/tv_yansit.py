@@ -1038,23 +1038,33 @@ def kalici_pin(yeni: bool = False) -> str:
 GIRIS_SAYFASI = """<!doctype html><html lang="tr"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>TV Yansıt</title>
 <style>html,body{margin:0;height:100%;background:#0f1115;color:#e8eaf0;font-family:sans-serif}
-main{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;text-align:center}
-h1{font-size:44px;margin:0 0 12px}p{font-size:26px;color:#9aa0ad;margin:8px}
-#kod{display:flex;gap:18px;margin:34px 0}#kod div{width:90px;height:110px;border-radius:14px;background:#181b22;
-border:3px solid #333a48;font:700 64px/110px monospace;color:#fff}#kod div.d{border-color:#4f8cff}
-#m{font-size:28px;min-height:36px;color:#ff6b6b}</style></head><body><main>
-<h1>TV Yansıt</h1><p>Bilgisayardaki panelde yazan 4 haneli kodu kumandanın rakam tuşlarıyla girin</p>
-<div id="kod"><div></div><div></div><div></div><div></div></div><p id="m"></p></main>
+main{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100%;text-align:center;padding:16px;box-sizing:border-box}
+h1{font-size:clamp(28px,6vw,44px);margin:0 0 12px}p{font-size:clamp(16px,3.5vw,26px);color:#9aa0ad;margin:8px}
+#kod{display:flex;gap:clamp(8px,3vw,18px);margin:28px 0;cursor:text}#kod div{width:clamp(56px,18vw,90px);height:clamp(70px,22vw,110px);
+border-radius:14px;background:#181b22;border:3px solid #333a48;font:700 clamp(40px,12vw,64px)/clamp(70px,22vw,110px) monospace;color:#fff}
+#kod div.d{border-color:#4f8cff}#m{font-size:clamp(16px,4vw,28px);min-height:36px;color:#ff6b6b}
+#gir{position:absolute;opacity:0;width:1px;height:1px;left:-10px}</style></head><body><main>
+<h1>TV Yansıt</h1><p>Bilgisayardaki panelde yazan 4 haneli kodu girin</p>
+<div id="kod"><div></div><div></div><div></div><div></div></div>
+<input id="gir" type="tel" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="one-time-code">
+<p id="m"></p></main>
 <script>
-var kod='', kutular=document.getElementById('kod').children, m=document.getElementById('m');
+var kod='', kutular=document.getElementById('kod').children, m=document.getElementById('m'), gir=document.getElementById('gir');
+/* telefon: dokunmatik ve küçük ekran → kumanda/klavye sayfası; TV: görüntü sayfası */
+var telefon=('ontouchstart' in window)&&Math.min(screen.width,screen.height)<700;
 function ciz(){for(var i=0;i<4;i++){kutular[i].textContent=kod.charAt(i)||'';kutular[i].className=i===kod.length?'d':'';}}
 function dene(){var x=new XMLHttpRequest();x.open('GET','/'+kod,true);x.onload=function(){
- if(x.status===200){location.href='/'+kod;}else{m.textContent=x.status===403?'Çok fazla yanlış deneme: bilgisayardaki paneli açın':'Kod yanlış, tekrar deneyin';kod='';ciz();}};
+ if(x.status===200){location.href='/'+kod+(telefon?'/telefon':'');}else{m.textContent=x.status===403?'Çok fazla yanlış deneme: bilgisayardaki paneli açın':'Kod yanlış, tekrar deneyin';kod='';gir.value='';ciz();}};
  x.onerror=function(){m.textContent='Bilgisayara ulaşılamadı';};x.send();}
-document.addEventListener('keydown',function(e){var k=e.keyCode||e.which,r=-1;
+function ekle(r){if(kod.length<4){kod+=r;m.textContent='';ciz();if(kod.length===4)dene();}}
+document.addEventListener('keydown',function(e){if(e.target===gir)return;var k=e.keyCode||e.which,r=-1;
  if(k>=48&&k<=57)r=k-48;else if(k>=96&&k<=105)r=k-96;
- if(r>=0&&kod.length<4){kod+=r;m.textContent='';ciz();if(kod.length===4)dene();e.preventDefault();}
+ if(r>=0){ekle(r);e.preventDefault();}
  else if((k===8||k===37||k===461)&&kod.length){kod=kod.slice(0,-1);ciz();e.preventDefault();}},false);
+/* telefon klavyesi: kutulara dokununca rakam klavyesi açılır */
+gir.addEventListener('input',function(){var v=gir.value.replace(/[^0-9]/g,'').slice(0,4);kod=v;m.textContent='';ciz();if(kod.length===4)dene();},false);
+document.getElementById('kod').onclick=function(){gir.focus();};
+if(telefon)setTimeout(function(){gir.focus();},300);
 ciz();
 </script></body></html>"""
 
@@ -1265,6 +1275,13 @@ def tv_sayfasi(app: "Uygulama") -> bytes:
             .replace("__GIRDI__", f"{p}/girdi"))
     return html.replace("__KUMANDA__", "true").replace("__SANALKOL__", "true" if sanal else "false").encode("utf-8")
 
+def telefon_sayfasi(app: "Uygulama") -> bytes:
+    """Telefon: dokunmatik yüzey (fare), telefon klavyesiyle yazma, tuşlar."""
+    p = f"/{app.pin}"
+    html = (KOK / "telefon.html").read_text(encoding="utf-8")
+    return html.replace("__GIRDI__", f"{p}/girdi").replace("__TV__", p).encode("utf-8")
+
+
 YANLIS_PIN_SINIRI = 30
 
 
@@ -1318,6 +1335,8 @@ def sunucu_kur(app: Uygulama) -> type[BaseHTTPRequestHandler]:
                 return self._kare()
             if yol == f"{p}/ses":
                 return self._ses()
+            if yol == f"{p}/telefon":
+                return self._gonder(200, telefon_sayfasi(app), "text/html; charset=utf-8")
             if yol == f"{p}/video":
                 return self._video()
             if yol == f"{p}/canli.mjpg":
