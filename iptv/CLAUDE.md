@@ -80,6 +80,10 @@ python -m pytest tests -q              # testler (libmpv2/ffmpeg/7z varsa başs�
   📌 Sabitle (`pip_pin`, `set_pip_pinned`, `ui.pip_pinned`): `_lock_pip` yer (moveEvent geri taşır) + boyut kilidi,
   Esc/çift tık kapatmaz (`_pip_pinned_msg`; ⤢/Ctrl+M kapatır); sabitliyken kapanışta `ui.pip_restore` →
   açılışta `_restore_pinned_pip` (canlı/film/bölüm, kaldığı saniye) mini oynatıcıda.
+  Sabitken Windows'ta `_set_noactivate` (WS_EX_NOACTIVATE: tıklama oyunun odağını almaz; WS_EX_LAYERED/TRANSPARENT
+  kullanma — gömülü D3D penceresini bozabilir), `_pip_top_timer` 500 ms, `_pip_keys_poll` (20 ms yoklamada):
+  ön pencere değişince hemen TOPMOST + Ctrl+Alt+K/Boşluk/J/L/+/−/H (`PIP_KEYS`, `_pip_hotkey`; oklar yok: Intel
+  ekran döndürme), `_set_pip_hidden` (SW_HIDE / SW_SHOWNOACTIVATE).
 - Film/dizi sunucusu HTTP Range desteklemiyorsa (`engine.linear`, `_check_linear`): VOD önbelleği diskte
   (`cache-on-disk`), sınır 6GiB'a çıkar; `seek`/`seek_abs` hedefi `cached_range()` içine sıkıştırır ve `seek-clamped`
   yayar (mpv uzak atlamayı sessizce reddederdi). YouTube tuşları: J/L ±10 sn (canlıda j=altyazı, l=canlı), K, Home.

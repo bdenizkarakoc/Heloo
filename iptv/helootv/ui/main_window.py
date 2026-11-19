@@ -28,6 +28,10 @@ from .player_panel import PlayerPanel
 from .settings_page import SettingsPage
 from .workers import run_task
 
+PIN_TIP_OFF = "Sabitle: hep burada ve en önde kalsın (oyun oynarken de)"
+PIN_TIP_ON = ("Sabit — oyun öndeyken de görünür, tıklamak oyunun odağını almaz.\n"
+              "Her yerden: Ctrl+Alt+K duraklat · Ctrl+Alt+J / L 10 sn geri/ileri · Ctrl+Alt + / − ses · "
+              "Ctrl+Alt+H gizle/göster\nÇözmek için tıklayın")
 log = logging.getLogger("helootv.ui")
 TABS = [("live", "📺  Canlı TV"), ("movie", "🎬  Filmler"), ("series", "🎞  Diziler"), ("fav", "⭐  Favoriler"),
         ("settings", "⚙  Ayarlar")]
@@ -98,6 +102,9 @@ class MainWindow(QMainWindow):
         self._pip_bar_timer = QTimer(self, interval=150, timeout=self._pip_bar_tick)
         self._pip_bar_seen = 0.0
         self._pip_lock = None
+        self._pip_hidden = False
+        self._pip_keys_down: set = set()
+        self._pip_last_fg = 0
         # mini oynatıcı hep en önde kalsın: başka pencere (oyun) öne geçerse 2 sn'de bir yeniden en üste alınır
         self._pip_top_timer = QTimer(self, interval=1000, timeout=self._pip_keep_on_top)
         self._fs_bar_seen = 0.0
@@ -1158,6 +1165,8 @@ class MainWindow(QMainWindow):
         try:
             import ctypes
             down = bool(ctypes.windll.user32.GetAsyncKeyState(0x01) & 0x8000)     # VK_LBUTTON
+            if self._pip and self._pip_lock is not None:
+                self._pip_keys_poll()
         except Exception:
             return
         self._mouse_poll(down, self._cursor_pos(), time.monotonic())
@@ -2246,11 +2255,12 @@ class MainWindow(QMainWindow):
         self.settings["ui"]["pip_pinned"] = on
         self._save_timer.start()
         self.player.pip_pin.setChecked(on)
-        self.player.pip_pin.setToolTip("Sabit — çözmek için tıklayın" if on else "Sabitle: hep burada kalsın")
+        self.player.pip_pin.setToolTip(PIN_TIP_ON if on else PIN_TIP_OFF)
         if self._pip:
             self._lock_pip(on)
         if self.engine:
-            self.engine.show_text("📌 Sabitlendi: hep burada kalır" if on else "Sabitleme kaldırıldı", 1800)
+            self.engine.show_text("📌 Sabit: oyunda da önde · Ctrl+Alt+K duraklat · J/L ±10 sn · +/− ses · H gizle"
+                                  if on else "Sabitleme kaldırıldı", 3500 if on else 1800)
 
     def _lock_pip(self, on: bool) -> None:
         if on:
@@ -2261,6 +2271,87 @@ class MainWindow(QMainWindow):
             self._pip_lock = None
             self.setMaximumSize(16777215, 16777215)
             self.setMinimumSize(320, 200) if self._pip else self.setMinimumSize(0, 0)
+            self._set_pip_hidden(False)
+        self._set_noactivate(on)
+        self._pip_top_timer.setInterval(500 if on else 1000)
+        self._pip_keys_down = set()
+
+    def _set_noactivate(self, on: bool) -> None:
+        """Sabit mini oynatıcı oyunun odağını hiç almaz (WS_EX_NOACTIVATE): üstüne tıklansa da (duraklat, ses…)
+        oyun önde ve klavye/fare oyunda kalır — özel tam ekran oyunlar odak kaybında küçülüyordu. Pencere yeniden
+        oluşturulmaz (yalnız stil biti), gömülü mpv etkilenmez."""
+        if os.name != "nt" or self.headless:
+            return
+        try:
+            import ctypes
+            u32 = ctypes.windll.user32
+            u32.GetWindowLongPtrW.restype = ctypes.c_ssize_t
+            u32.GetWindowLongPtrW.argtypes = (ctypes.c_void_p, ctypes.c_int)
+            u32.SetWindowLongPtrW.restype = ctypes.c_ssize_t
+            u32.SetWindowLongPtrW.argtypes = (ctypes.c_void_p, ctypes.c_int, ctypes.c_ssize_t)
+            hwnd = int(self.winId())
+            GWL_EXSTYLE, WS_EX_NOACTIVATE = -20, 0x08000000
+            ex = u32.GetWindowLongPtrW(hwnd, GWL_EXSTYLE)
+            new = (ex | WS_EX_NOACTIVATE) if on else (ex & ~WS_EX_NOACTIVATE)
+            if new != ex:
+                u32.SetWindowLongPtrW(hwnd, GWL_EXSTYLE, new)
+                # SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED
+                u32.SetWindowPos(hwnd, 0, 0, 0, 0, 0, 0x0002 | 0x0001 | 0x0004 | 0x0010 | 0x0020)
+        except Exception:
+            log.debug("odak almama biti ayarlanamadı", exc_info=True)
+
+    # Sabit mini oynatıcının her yerden (oyun öndeyken de) çalışan tuşları: Ctrl+Alt + …  (oklar kullanılmaz: bazı
+    # Intel sürücülerinde Ctrl+Alt+ok ekranı döndürür)
+    PIP_KEYS = {0x4B: "pause", 0x20: "pause", 0x4A: "back", 0x4C: "fwd", 0xBB: "vol_up", 0x6B: "vol_up",
+                0xBD: "vol_down", 0x6D: "vol_down", 0x48: "hide"}     # K Boşluk J L + (num +) - (num -) H
+
+    def _pip_hotkey(self, action: str) -> None:
+        if not self._pip:
+            return
+        if action == "hide":
+            self._set_pip_hidden(not self._pip_hidden)
+        elif action == "pause":
+            self._toggle_pause()
+        elif action in ("back", "fwd"):
+            self._seek_by(10.0 if action == "fwd" else -10.0)
+        elif action in ("vol_up", "vol_down"):
+            self._volume_step(10 if action == "vol_up" else -10)
+
+    def _pip_keys_poll(self) -> None:
+        """Sabitliyken Ctrl+Alt tuşları genel olarak yoklanır (oyun öndeyken de çalışır; tuş oyundan çalınmaz)."""
+        import ctypes
+        u32 = ctypes.windll.user32
+        mods = (u32.GetAsyncKeyState(0x11) & 0x8000) and (u32.GetAsyncKeyState(0x12) & 0x8000)   # Ctrl + Alt
+        down = {vk for vk in self.PIP_KEYS if mods and u32.GetAsyncKeyState(vk) & 0x8000}
+        for vk in down - self._pip_keys_down:
+            self._pip_hotkey(self.PIP_KEYS[vk])
+        self._pip_keys_down = down
+        # oyun (ya da başka pencere) öne geçince hemen yeniden en üste
+        fg = u32.GetForegroundWindow()
+        if fg != self._pip_last_fg:
+            self._pip_last_fg = fg
+            if not self._pip_hidden:
+                self._set_topmost(True, quiet=True)
+
+    def _set_pip_hidden(self, on: bool) -> None:
+        """Ctrl+Alt+H: sabit mini oynatıcıyı geçici gizle / göster (ses sürer); gösterirken odak çalınmaz."""
+        on = bool(on) and self._pip
+        if on == self._pip_hidden:
+            return
+        self._pip_hidden = on
+        if os.name == "nt" and not self.headless:
+            try:
+                import ctypes
+                ctypes.windll.user32.ShowWindow(int(self.winId()), 0 if on else 4)   # SW_HIDE / SW_SHOWNOACTIVATE
+                if not on:
+                    self._set_topmost(True, quiet=True)
+                return
+            except Exception:
+                pass
+        if on:
+            self.hide()
+        else:
+            self.show()
 
     def _pip_pinned_msg(self) -> bool:
         """Sabitliyken Esc/çift tık mini oynatıcıyı kapatmaz (yalnız ⤢ ya da Ctrl+M)."""
@@ -2324,7 +2415,7 @@ class MainWindow(QMainWindow):
     def _pip_keep_on_top(self) -> None:
         """Mini oynatıcı oyuna geçince de görünür kalsın: küçültüldüyse odağı çalmadan geri açılır, TOPMOST yenilenir.
         (Özel tam ekran — exclusive fullscreen — oyunların üstüne hiçbir pencere çıkamaz; kenarlıksız pencere kipi gerekir.)"""
-        if not self._pip:
+        if not self._pip or self._pip_hidden:
             return
         if self.isMinimized():
             restored = False

@@ -766,6 +766,15 @@ def test_pip_pin_locks_place_and_comes_back(tmp_path, monkeypatch):
             app.processEvents()
         assert win.pos() == place
         assert win.minimumSize() == size == win.maximumSize()      # boyut da kilitli
+        assert win._pip_top_timer.interval() == 500                  # sabitken daha sık en üste
+        # her yerden çalışan tuşların eylemleri (Ctrl+Alt+H gizle/göster)
+        assert win.PIP_KEYS[0x48] == "hide" and win.PIP_KEYS[0x4B] == "pause"
+        win._pip_hotkey("hide")
+        assert win._pip_hidden and not win.isVisible()
+        win._pip_keep_on_top()                                       # gizliyken geri açılmaz
+        assert win._pip_hidden
+        win._pip_hotkey("hide")
+        assert not win._pip_hidden and win.isVisible()
         win._on_key("esc", [])
         win._video_dblclick("mpv")
         assert win._pip                                              # Esc / çift tık kapatmaz

@@ -143,6 +143,10 @@ TiviMate / IPTVnator / OTT Navigator'daki özelliklerin karşılıkları:
   pencere" kipinde olmalı; "özel tam ekran" oyunların üstüne Windows hiçbir pencere çizdirmez). Esc ya da çift tık: geri döner.
   **📌 Sabitle**: küçük ekran yerinde kilitlenir (sürüklense de yerine döner), Esc/çift tık kapatmaz (yalnız ⤢);
   sabitliyken uygulamayı kapatırsanız bir sonraki açılışta aynı yerde, aynı kanal/film/bölümle kaldığı yerden açılır.
+  **Oyun oynarken (tek ekran)**: sabit küçük ekran oyunun üstünde kalır ve **tıklansa da oyunun odağını almaz**
+  (oyun küçülmez, klavye/fare oyunda kalır). Oyundan çıkmadan: **Ctrl+Alt+K** duraklat · **Ctrl+Alt+J / L** 10 sn
+  geri/ileri · **Ctrl+Alt + / −** ses · **Ctrl+Alt+H** gizle/göster. Oyunu **kenarlıksız pencere** (Borderless /
+  Windowed Fullscreen) kipinde çalıştırın: "özel tam ekran" kipinde Windows hiçbir pencereyi oyunun üstüne çizmez.
 - **🔒 Ebeveyn kilidi**: Ayarlar → Ağ ve arayüz → "Ebeveyn kilidi (PIN)". PIN belirlenince yetişkin içerik yalnız PIN
   ile görünür ve uygulama her açılışta yeniden kilitlenir; "Varsayılanlara dön" kilidi kaldırmaz. PIN'in kendisi
   saklanmaz (tuzlu PBKDF2 özeti).
