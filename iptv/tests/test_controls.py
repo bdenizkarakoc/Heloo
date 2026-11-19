@@ -804,6 +804,7 @@ def test_key_action_mapping():
     assert key_action(Qt.Key_Z, "z") is None
 
 
+@pytest.mark.skipif(not (_mpv_ok() and shutil.which("ffmpeg")), reason="libmpv/ffmpeg yok")
 def test_video_mouse_and_keys_like_youtube(tmp_path, monkeypatch):
     """Videonun üstünde (Qt olayları): sağa tık +5, sağa çift tık +5 daha (tam ekran olmaz), ortaya çift tık tam ekran,
     tekerlek sarar, ← → tuşları sarar."""
