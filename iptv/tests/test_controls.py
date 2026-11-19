@@ -18,7 +18,8 @@ def test_click_zones():
     assert z(None, None, "movie") == "pause"            # konum bilinmiyorsa duraklat
     assert z(100, 1200, "image") == "none"              # fotoğrafta sarma/duraklatma yok
     s = settings_mod.merged_defaults()
-    assert s["controls"] == {"click_action": "zones", "seek_step": 5, "wheel": "seek", "mv_audio_hover": True,
+    assert s["controls"] == {"click_action": "zones", "seek_step": 5, "wheel": "seek", "dblclick": "none",
+                             "middle_click": "none", "mv_audio_hover": True,
                              "arrow_keys": "volume", "media_keys_zap": False, "stay_live": True, "catchup": "ask"}
     bad = settings_mod._sanitize({"controls": {"click_action": "x", "seek_step": 999}})
     assert bad["controls"]["click_action"] == "zones" and bad["controls"]["seek_step"] == 60
@@ -95,7 +96,8 @@ def test_click_pause_and_side_seek(tmp_path, monkeypatch):
         p2 = pos()
         click(1150)
         assert pump(3, lambda: abs(pos() - (p2 + 10)) < 1.5)
-        # çift tık: duraklatma/sarma yok, yalnız tam ekran
+        # çift tık (ayar "tam ekran"): duraklatma/sarma yok, yalnız tam ekran
+        win.settings["controls"]["dblclick"] = "fullscreen"
         paused, p3 = real_get("pause"), pos()
         mouse["x"] = 600
         win._on_key("click", [])
@@ -525,6 +527,7 @@ def test_mouse_poll_and_keys_work_without_mpv_input(tmp_path, monkeypatch):
     s = settings_mod.merged_defaults()
     s["ui"]["resume_last_channel"] = False
     s["ui"]["auto_refresh_hours"] = 0
+    s["controls"]["dblclick"] = "fullscreen"          # bu testte çift tık tam ekran
     win = MainWindow(Store(tmp_path / "t.db"), s, headless=True)
     win.resize(1280, 720)
     win.show()
@@ -864,7 +867,24 @@ def test_video_mouse_and_keys_like_youtube(tmp_path, monkeypatch):
         assert pump(3, lambda: abs(pos() - (p1 + 10)) < 1.5), (p1, pos())
         assert not win._fs
         pump(0.8)
-        # ortaya tık: durdur/sürdür; ortaya çift tık: tam ekran ve duraklatma geri alınır
+        # varsayılan: ortaya çift tık tam ekrana GEÇMEZ (kullanıcı ayarlar)
+        assert s["controls"]["dblclick"] == "none"
+        QTest.mouseClick(host, Qt.LeftButton, Qt.NoModifier, mid)
+        QTest.mouseDClick(host, Qt.LeftButton, Qt.NoModifier, mid)
+        pump(0.3)
+        assert not win._fs
+        pump(0.8)
+        # orta tuş: ayara göre (varsayılan hiçbir şey; "pause" seçilince durdurur)
+        was = eng._get("pause")
+        QTest.mouseClick(host, Qt.MiddleButton, Qt.NoModifier, mid)
+        assert eng._get("pause") is was
+        s["controls"]["middle_click"] = "pause"
+        pump(0.5)
+        QTest.mouseClick(host, Qt.MiddleButton, Qt.NoModifier, mid)
+        assert eng._get("pause") is (not was)
+        pump(0.5)
+        # ayar "tam ekran": ortaya tık durdur/sürdür; ortaya çift tık tam ekran ve duraklatma geri alınır
+        s["controls"]["dblclick"] = "fullscreen"
         was = eng._get("pause")
         QTest.mouseClick(host, Qt.LeftButton, Qt.NoModifier, mid)
         assert eng._get("pause") is (not was)

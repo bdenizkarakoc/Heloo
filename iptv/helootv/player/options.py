@@ -106,7 +106,7 @@ def create_options(settings: dict, *, wid: int | None = None, input_conf: str | 
         "idle": "yes",
         "keep-open": "no",
         "ytdl": "no",                    # IPTV adreslerinde yt-dlp kancası açılışı yavaşlatır
-        "osc": "no" if headless else "yes",
+        "osc": "no",                     # denetim çubuğu uygulamada (Qt); mpv'nin kendi çubuğu iki ayrı görünüm yapardı
         "input-default-bindings": "yes",
         "input-vo-keyboard": "yes",
         "hwdec": resolve_hwdec(settings, platform),
@@ -138,8 +138,8 @@ def quality_options(settings: dict, platform: str = sys.platform) -> dict:
         "cursor-autohide": "1000",
         "cursor-autohide-fs-only": "no",
         "osd-duration": "1800",
-        "osd-font-size": "38",
-        ("osd-outline-size", "osd-border-size"): "2.6",
+        "osd-font-size": "28",
+        ("osd-outline-size", "osd-border-size"): "1.8",
         "osd-bold": "yes",
         "osd-on-seek": "msg-bar",
         "volume-max": "150",

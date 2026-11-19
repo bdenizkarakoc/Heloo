@@ -149,7 +149,7 @@ def _initials(name: str) -> str:
 
 class CategoryDelegate(QStyledItemDelegate):
     def sizeHint(self, option, index) -> QSize:
-        return QSize(option.rect.width(), 36)
+        return QSize(option.rect.width(), 30)
 
     def paint(self, p: QPainter, option, index) -> None:
         r = index.data(RowRole) or {}
@@ -176,7 +176,7 @@ class CategoryDelegate(QStyledItemDelegate):
 
 
 class ChannelDelegate(QStyledItemDelegate):
-    ROW_H = 60
+    ROW_H = 46
 
     def __init__(self, images, parent=None, numbered: bool = True):
         super().__init__(parent)
@@ -194,16 +194,16 @@ class ChannelDelegate(QStyledItemDelegate):
         p.save()
         p.setRenderHint(QPainter.Antialiasing)
         p.setRenderHint(QPainter.SmoothPixmapTransform)
-        rect = QRectF(option.rect.adjusted(3, 2, -3, -2))
+        rect = QRectF(option.rect.adjusted(3, 1, -3, -1))
         playing = model.playing_key == it.key
         if option.state & QStyle.State_Selected:
-            p.fillPath(_rounded(rect, 9), QColor(theme.PANEL_2))
+            p.fillPath(_rounded(rect, 8), QColor(theme.PANEL_2))
             p.setPen(QPen(QColor(theme.ACCENT), 1.4))
-            p.drawPath(_rounded(rect.adjusted(0.7, 0.7, -0.7, -0.7), 9))
+            p.drawPath(_rounded(rect.adjusted(0.7, 0.7, -0.7, -0.7), 8))
         elif option.state & QStyle.State_MouseOver:
-            p.fillPath(_rounded(rect, 9), QColor("#171d2a"))
+            p.fillPath(_rounded(rect, 8), QColor("#171d2a"))
         if playing:
-            p.fillRect(QRectF(rect.left(), rect.top() + 10, 3, rect.height() - 20), QColor(theme.ACCENT_2))
+            p.fillRect(QRectF(rect.left(), rect.top() + 8, 3, rect.height() - 16), QColor(theme.ACCENT_2))
         x = rect.left() + 8
         base_font = QFont(option.font)
         if self.numbered:
@@ -212,10 +212,10 @@ class ChannelDelegate(QStyledItemDelegate):
             small.setPointSizeF(base_font.pointSizeF() * 0.9)
             p.setFont(small)
             num = index.model().number_of(index.row()) if hasattr(index.model(), "number_of") else index.row() + 1
-            p.drawText(QRectF(x, rect.top(), 34, rect.height()), Qt.AlignVCenter | Qt.AlignRight, str(num))
-            x += 42
-        logo_rect = QRectF(x, rect.top() + 8, 68, rect.height() - 16)
-        p.fillPath(_rounded(logo_rect, 7), QColor("#0b0e14"))
+            p.drawText(QRectF(x, rect.top(), 28, rect.height()), Qt.AlignVCenter | Qt.AlignRight, str(num))
+            x += 35
+        logo_rect = QRectF(x, rect.top() + 5, 54, rect.height() - 10)
+        p.fillPath(_rounded(logo_rect, 6), QColor("#0b0e14"))
         dpr = p.device().devicePixelRatioF() if p.device() else 1.0
         pm = self.images.pixmap(it.logo, QSize(int(logo_rect.width() - 8), int(logo_rect.height() - 6)), "fit", dpr)
         if pm is not None:
@@ -228,7 +228,7 @@ class ChannelDelegate(QStyledItemDelegate):
             f.setBold(True)
             p.setFont(f)
             p.drawText(logo_rect, Qt.AlignCenter, _initials(it.name))
-        x = logo_rect.right() + 12
+        x = logo_rect.right() + 10
         right_pad = 30 if (it.key in model.favs or it.archive) else 8
         text_w = rect.right() - x - right_pad
         cur, _nxt = model.now_next(it)
@@ -238,7 +238,7 @@ class ChannelDelegate(QStyledItemDelegate):
         p.setPen(QColor("white" if playing else theme.TEXT))
         fm = QFontMetrics(name_font)
         if cur:
-            p.drawText(QRectF(x, rect.top() + 7, text_w, 20), Qt.AlignLeft | Qt.AlignVCenter,
+            p.drawText(QRectF(x, rect.top() + 3, text_w, 18), Qt.AlignLeft | Qt.AlignVCenter,
                        fm.elidedText(it.name, Qt.ElideRight, int(text_w)))
             sub = QFont(base_font)
             sub.setPointSizeF(base_font.pointSizeF() * 0.9)
@@ -246,13 +246,13 @@ class ChannelDelegate(QStyledItemDelegate):
             p.setPen(QColor(theme.MUTED))
             fm2 = QFontMetrics(sub)
             t = f"{hhmm(cur['start'])}  {cur['title']}"
-            p.drawText(QRectF(x, rect.top() + 26, text_w, 18), Qt.AlignLeft | Qt.AlignVCenter,
+            p.drawText(QRectF(x, rect.top() + 20, text_w, 16), Qt.AlignLeft | Qt.AlignVCenter,
                        fm2.elidedText(t, Qt.ElideRight, int(text_w)))
             now = time.time()
             frac = min(1.0, max(0.0, (now - cur["start"]) / max(1, cur["stop"] - cur["start"])))
-            bar = QRectF(x, rect.bottom() - 9, min(text_w, 220), 3)
+            bar = QRectF(x, rect.bottom() - 6, min(text_w, 200), 2.5)
             p.fillPath(_rounded(bar, 1.5), QColor(theme.LINE))
-            p.fillPath(_rounded(QRectF(bar.left(), bar.top(), bar.width() * frac, 3), 1.5), QColor(theme.ACCENT))
+            p.fillPath(_rounded(QRectF(bar.left(), bar.top(), bar.width() * frac, 2.5), 1.25), QColor(theme.ACCENT))
         else:
             p.drawText(QRectF(x, rect.top(), text_w, rect.height()), Qt.AlignLeft | Qt.AlignVCenter,
                        fm.elidedText(it.name, Qt.ElideRight, int(text_w)))
@@ -263,17 +263,17 @@ class ChannelDelegate(QStyledItemDelegate):
             icons.append(("⟲", theme.ACCENT_2))
         if icons:
             p.setFont(base_font)
-            yy = rect.top() + 8
+            yy = rect.top() + 4
             for ch, color in icons:
                 p.setPen(QColor(color))
-                p.drawText(QRectF(rect.right() - 26, yy, 20, 20), Qt.AlignCenter, ch)
-                yy += 20
+                p.drawText(QRectF(rect.right() - 24, yy, 18, 18), Qt.AlignCenter, ch)
+                yy += 18
         p.restore()
 
 
 class PosterDelegate(QStyledItemDelegate):
-    CELL = QSize(178, 304)
-    POSTER = QSize(162, 240)
+    CELL = QSize(150, 262)
+    POSTER = QSize(136, 204)
 
     def __init__(self, images, parent=None):
         super().__init__(parent)
@@ -338,7 +338,7 @@ class PosterDelegate(QStyledItemDelegate):
             p.drawPath(_rounded(poster.adjusted(0.75, 0.75, -0.75, -0.75), 10))
         title_font = QFont(option.font)
         title_font.setBold(True)
-        title_font.setPointSizeF(option.font.pointSizeF() * 0.95)
+        title_font.setPointSizeF(option.font.pointSizeF() * 0.92)
         p.setFont(title_font)
         p.setPen(QColor(theme.TEXT))
         fm = QFontMetrics(title_font)

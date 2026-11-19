@@ -78,6 +78,7 @@ f             script-message helootv fullscreen
 F11           script-message helootv fullscreen
 MBTN_LEFT_DBL script-message helootv dblclick
 MBTN_LEFT     script-message helootv click
+MBTN_MID      script-message helootv middle
 J             script-message helootv back10
 L             script-message helootv fwd10
 k             script-message helootv pause
@@ -703,8 +704,10 @@ class MpvEngine:
     def flash(self, text: str, where: str = "center", ms: int = 650) -> None:
         """Ekranda kısa süre büyük bir simge/yazı (YouTube gibi): where = center | left | right."""
         an = {"center": 5, "left": 4, "right": 6}.get(where, 5)
-        data = ("{\\an%d\\fs110\\bord5\\shad0\\1c&HFFFFFF&\\3c&H000000&\\1a&H10&}" % an
-                + ("\\h\\h\\h" if where == "left" else "") + text + ("\\h\\h\\h" if where == "right" else ""))
+        size = 44 if where == "center" else 30          # küçük ve sade (eskiden çok büyüktü)
+        pad = "\\h" * 6
+        data = ("{\\an%d\\fs%d\\b1\\bord2\\shad1\\4a&H80&\\1c&HFFFFFF&\\3c&H000000&\\1a&H18&}" % (an, size)
+                + (pad if where == "left" else "") + text + (pad if where == "right" else ""))
         try:
             if self.mpv is None:
                 return

@@ -489,6 +489,15 @@ class SettingsPage(QScrollArea):
         self.wheel.addItem("Film/dizide ileri–geri sar (canlıda ses)", "seek")
         self.wheel.addItem("Her zaman ses aç / kıs", "volume")
         self.wheel.setToolTip("Fare tekerleği videonun üstündeyken ne yapsın")
+        self.dblclick = QComboBox()
+        self.dblclick.addItem("Hiçbir şey yapma", "none")
+        self.dblclick.addItem("Tam ekran (mini oynatıcıda: normal pencere)", "fullscreen")
+        self.dblclick.setToolTip("Videonun ortasına çift tıklayınca (kenarlarda çift tık her zaman sarar)")
+        self.middle_click = QComboBox()
+        for label, val in (("Hiçbir şey yapma", "none"), ("Duraklat / sürdür", "pause"), ("Tam ekran", "fullscreen"),
+                           ("Sessiz", "mute")):
+            self.middle_click.addItem(label, val)
+        self.middle_click.setToolTip("Farenin orta tuşu (tekerleğe basma) videonun üstünde")
         self.mv_hover = QCheckBox("Çoklu görüntüde ses, fare imlecinin üstündeki ekrana geçsin")
         self.arrow_keys = QComboBox()
         self.arrow_keys.addItem("Ses aç / kıs (YouTube gibi; yanlışlıkla kanal değişmez)", "volume")
@@ -520,6 +529,8 @@ class SettingsPage(QScrollArea):
         lay.addWidget(QLabel("Videoya tek tıklama"), r, 0); lay.addWidget(self.click_action, r, 1); r += 1
         lay.addWidget(QLabel("Kenara tıklayınca sarma"), r, 0); lay.addWidget(self.seek_step, r, 1); r += 1
         lay.addWidget(QLabel("Fare tekerleği"), r, 0); lay.addWidget(self.wheel, r, 1); r += 1
+        lay.addWidget(QLabel("Ortaya çift tık"), r, 0); lay.addWidget(self.dblclick, r, 1); r += 1
+        lay.addWidget(QLabel("Farenin orta tuşu"), r, 0); lay.addWidget(self.middle_click, r, 1); r += 1
         lay.addWidget(QLabel("↑ / ↓ ok tuşları"), r, 0); lay.addWidget(self.arrow_keys, r, 1); r += 1
         lay.addWidget(self.media_zap, r, 0, 1, 2); r += 1
         lay.addWidget(self.stay_live, r, 0, 1, 2); r += 1
@@ -533,6 +544,8 @@ class SettingsPage(QScrollArea):
         self.click_action.currentIndexChanged.connect(self._changed)
         self.seek_step.valueChanged.connect(self._changed)
         self.wheel.currentIndexChanged.connect(self._changed)
+        self.dblclick.currentIndexChanged.connect(self._changed)
+        self.middle_click.currentIndexChanged.connect(self._changed)
         self.mv_hover.toggled.connect(self._changed)
         self.arrow_keys.currentIndexChanged.connect(self._changed)
         self.media_zap.toggled.connect(self._changed)
@@ -731,6 +744,8 @@ class SettingsPage(QScrollArea):
         self.click_action.setCurrentIndex(max(0, self.click_action.findData(ctl["click_action"])))
         self.seek_step.setValue(int(ctl["seek_step"]))
         self.wheel.setCurrentIndex(max(0, self.wheel.findData(ctl.get("wheel", "seek"))))
+        self.dblclick.setCurrentIndex(max(0, self.dblclick.findData(ctl.get("dblclick", "none"))))
+        self.middle_click.setCurrentIndex(max(0, self.middle_click.findData(ctl.get("middle_click", "none"))))
         self.mv_hover.setChecked(bool(ctl["mv_audio_hover"]))
         self.rec_folder.setText(s["record"].get("folder", ""))
         self.arrow_keys.setCurrentIndex(max(0, self.arrow_keys.findData(ctl["arrow_keys"])))
@@ -797,7 +812,8 @@ class SettingsPage(QScrollArea):
         v["low_boost"] = self.low_boost.isChecked()
         s["record"]["folder"] = self.rec_folder.text().strip()
         s["controls"].update(click_action=self.click_action.currentData(), seek_step=self.seek_step.value(),
-                               wheel=self.wheel.currentData(),
+                               wheel=self.wheel.currentData(), dblclick=self.dblclick.currentData(),
+                               middle_click=self.middle_click.currentData(),
                              mv_audio_hover=self.mv_hover.isChecked(), arrow_keys=self.arrow_keys.currentData(),
                              media_keys_zap=self.media_zap.isChecked(), stay_live=self.stay_live.isChecked(),
                              catchup=self.catchup_mode.currentData())

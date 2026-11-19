@@ -93,13 +93,14 @@ ETKİNLEŞTİRDİ" ya da ne yapmanız gerektiği. Komut satırından: `.venv\Scr
 | Ortaya tık | duraklat / sürdür |
 | Sağ üçte bire tık | **5 sn ileri** (art arda tıkladıkça ilerler: çift tık = 10 sn) |
 | Sol üçte bire tık | **5 sn geri** (çift tık = 10 sn) |
-| Ortaya çift tık | tam ekran |
+| Ortaya çift tık | varsayılan hiçbir şey; Ayarlar'dan **tam ekran** seçilebilir |
+| Orta tuş (tekerleğe basma) | varsayılan hiçbir şey; duraklat / tam ekran / sessiz seçilebilir |
 | Tekerlek yukarı / aşağı | 5 sn ileri / geri (canlıda ses) |
 | Alttaki çubuk | tıklanan yere atlar, sürükleyin; üstüne gelince o noktanın dakikası görünür, açık gri kısım inmiş bölüm |
 
 Oynarken fare durunca imleç gizlenir. Alttaki ±10 / ±1 dk düğmeleri kaldırıldı (sarma videonun üstünden yapılır);
 istenen dakika için **⏱ Git** (G). Ayarlar → **Oynatma kontrolleri**: tıklama davranışı, sarma süresi (1–60 sn),
-fare tekerleği (sarma / ses).
+fare tekerleği (sarma / ses), ortaya çift tık, farenin orta tuşu.
 
 **Tuşlar** (odak nerede olursa olsun film/dizide çalışır; yazı kutusu hariç):
 

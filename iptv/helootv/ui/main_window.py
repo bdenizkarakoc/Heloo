@@ -107,6 +107,7 @@ class MainWindow(QMainWindow):
         self._click_seen: dict[str, float] = {}
         self._dbl_seen: dict[str, float] = {}
         self._wheel_seen: dict[str, float] = {}
+        self._middle_seen: dict[str, float] = {}
         self._mp_down = False
         self._mp_press: tuple | None = None
         self._mp_last_click = 0.0
@@ -133,8 +134,8 @@ class MainWindow(QMainWindow):
         self.topbar = QFrame()
         self.topbar.setObjectName("TopBar")
         h = QHBoxLayout(self.topbar)
-        h.setContentsMargins(14, 8, 14, 8)
-        h.setSpacing(6)
+        h.setContentsMargins(10, 5, 10, 5)
+        h.setSpacing(4)
         logo = QLabel()
         logo.setPixmap(theme.draw_logo(30))
         logo.setStyleSheet("background: transparent;")
@@ -276,6 +277,7 @@ class MainWindow(QMainWindow):
         host.clicked.connect(lambda x, w: self._video_click("qt", x, w))
         host.double_clicked.connect(lambda x, w: self._video_dblclick("qt", x, w))
         host.wheel_steps.connect(lambda n: self._video_wheel("qt", n))
+        host.middle_clicked.connect(lambda: self._middle_click("qt"))
         host.key_action.connect(self._on_key)
         pl.seek_by.connect(self._seek_by)
         pl.menus["audio"].aboutToShow.connect(self._fill_audio_menu)
@@ -992,6 +994,8 @@ class MainWindow(QMainWindow):
                 self._commit_digits()
             else:
                 self._show_info()
+        elif action == "middle":
+            self._middle_click("mpv")
         elif action == "wheel" and args:
             self._video_wheel("mpv", int(args[0]))
         elif action == "mute" and eng:
@@ -1059,6 +1063,8 @@ class MainWindow(QMainWindow):
         if self._dbl_seeks(x, width):
             self._on_video_click(x, width)
             return
+        if self.settings["controls"].get("dblclick", "none") != "fullscreen":
+            return                     # ayar kapalı: çift tık tam ekrana geçmez (iki tık = iki ayrı tık)
         self._undo_recent_clicks()     # çift tıkın tek tek tıklamaları videoyu durdurmuş/sarmış olmasın
         if self._pip:
             if not self._pip_pinned_msg():
@@ -1081,6 +1087,23 @@ class MainWindow(QMainWindow):
         if zone not in ("back", "forward"):
             return False
         return not (req.kind == "live" and ctl.get("stay_live", True))
+
+    def _middle_click(self, source: str) -> None:
+        """Farenin orta tuşu (tekerlek tıklaması): Ayarlar → Oynatma kontrolleri (varsayılan: hiçbir şey)."""
+        if self._other_source_recent(self._middle_seen, source, 0.35):
+            return
+        what = self.settings["controls"].get("middle_click", "none")
+        if what == "pause":
+            self._toggle_pause()
+        elif what == "fullscreen":
+            if self._pip:
+                if not self._pip_pinned_msg():
+                    self._set_pip(False)
+            else:
+                self._set_fullscreen(not self._fs)
+        elif what == "mute" and self.engine:
+            self.engine.cycle("mute")
+            self.engine.flash("🔇" if self.engine._get("mute") else "🔊")
 
     def _video_wheel(self, source: str, steps: int) -> None:
         """Fare tekerleği videonun üstünde: film/dizide ileri/geri sarar (ayardaki adım), canlıda ses.

@@ -50,6 +50,7 @@ class MpvHost(QWidget):
     clicked = Signal(float, float)           # x, genişlik
     double_clicked = Signal(float, float)
     wheel_steps = Signal(int)                # +1 yukarı (ileri), −1 aşağı (geri)
+    middle_clicked = Signal()
     key_action = Signal(str, list)
 
     def __init__(self, parent=None):
@@ -99,6 +100,8 @@ class MpvHost(QWidget):
         if event.button() == Qt.LeftButton:
             self._press = event.position()
             self.setFocus(Qt.MouseFocusReason)
+        elif event.button() == Qt.MiddleButton:
+            self.middle_clicked.emit()
         event.accept()
 
     def mouseReleaseEvent(self, event) -> None:
@@ -313,8 +316,8 @@ class PlayerPanel(QWidget):
         self.bar = QFrame()
         self.bar.setObjectName("PlayerBar")
         bl = QVBoxLayout(self.bar)
-        bl.setContentsMargins(12, 8, 12, 8)
-        bl.setSpacing(6)
+        bl.setContentsMargins(10, 4, 10, 6)
+        bl.setSpacing(2)
         top = QHBoxLayout()
         self.title = QLabel("—")
         self.title.setObjectName("H2")
@@ -348,7 +351,7 @@ class PlayerPanel(QWidget):
         self.pos_label.setObjectName("Muted")
         self.seek = SeekBar()
         self.seek.setToolTip("Tıklayın ya da sürükleyin: istediğiniz yere atlayın")
-        self.seek.setMinimumHeight(30)
+        self.seek.setMinimumHeight(24)
         self.dur_label = QLabel("0:00")
         self.dur_label.setObjectName("Muted")
         self._duration = 0.0
