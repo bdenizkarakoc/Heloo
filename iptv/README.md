@@ -86,35 +86,42 @@ ETKİNLEŞTİRDİ" ya da ne yapmanız gerektiği. Komut satırından: `.venv\Scr
 - **EPG** boşsa: Xtream'in kendi `xmltv.php`'si ya da listedeki `url-tvg` kullanılır. Listeler 12 saatte bir, EPG
   günde iki kez kendiliğinden yenilenir.
 
-**Tuşlar** (video penceresine tıklayınca oynatıcı tuşları alır):
+**Film ve dizide YouTube gibi** — fare videonun üstünde:
+
+| Fare | Ne yapar |
+|---|---|
+| Ortaya tık | duraklat / sürdür |
+| Sağ üçte bire tık | **5 sn ileri** (art arda tıkladıkça ilerler: çift tık = 10 sn) |
+| Sol üçte bire tık | **5 sn geri** (çift tık = 10 sn) |
+| Ortaya çift tık | tam ekran |
+| Tekerlek yukarı / aşağı | 5 sn ileri / geri (canlıda ses) |
+| Alttaki çubuk | tıklanan yere atlar, sürükleyin; üstüne gelince o noktanın dakikası görünür, açık gri kısım inmiş bölüm |
+
+Oynarken fare durunca imleç gizlenir. Alttaki ±10 / ±1 dk düğmeleri kaldırıldı (sarma videonun üstünden yapılır);
+istenen dakika için **⏱ Git** (G). Ayarlar → **Oynatma kontrolleri**: tıklama davranışı, sarma süresi (1–60 sn),
+fare tekerleği (sarma / ses).
+
+**Tuşlar** (odak nerede olursa olsun film/dizide çalışır; yazı kutusu hariç):
 
 | Tuş | Canlı TV | Film / dizi |
 |---|---|---|
-| ↑ / ↓ | önceki / sonraki kanal | +60 / −60 sn |
-| ← / → | 10 sn geri / ileri (zaman kaydırma) | 10 sn geri / ileri |
+| ← / → | — (hep canlı) | 5 sn geri / ileri (art arda basışlar toplanır: → → → = 15 sn) |
+| J / L | altyazı / canlıya dön | 10 sn geri / ileri |
+| Boşluk / K | duraklat | duraklat |
+| ↑ / ↓ | ses | ses |
+| 0–9 | kanal numarası | %0–%90'a atla |
+| Home | — | baştan |
 | PgUp / PgDn | 10 kanal geri / ileri | ±10 dk |
-| 0–9, Enter | kanal numarası | %0–%90'a atla |
 | Geri (⌫) | son izlenen kanala dön | — |
-| Boşluk / P | duraklat (zaman kaydırma başlar) | duraklat |
-| L | canlı yayına dön | — |
-| F, F11, çift tık | tam ekran | tam ekran |
+| F, F11 | tam ekran | tam ekran |
+| M | sessiz | sessiz |
+| G, Ctrl+J | — | dakikaya git |
 | Esc | tam ekrandan / sinema modundan çık | |
-| T | sinema modu (listeleri gizle) | |
-| I / E | bilgi (çözünürlük, VSR, gecikme) / şimdi-sonra | bilgi |
-| M, tekerlek | sessiz, ses | sessiz, ses |
-| A / J / V | ses izi / altyazı / altyazı aç-kapa | |
-| Sağ tık | mpv menüsü (ses/altyazı izi seçimi) | |
+| T / I / E | sinema modu / bilgi / şimdi-sonra | |
+| A / V | ses izi / altyazı aç-kapa | |
 
 Uygulama genelinde: **Ctrl+F** ara, **F5** yenile, **Ctrl+↑/↓** kanal, **Ctrl+1…5** sekmeler, **Ctrl+D** favori,
 **Ctrl+P** görüntü ayarları.
-
-**Videoya tıklama (YouTube gibi)**: tek tık ortada → duraklat / sürdür; sağ üçte bir → **5 sn ileri**, sol üçte bir →
-**5 sn geri** (ekranda "5 sn ⏩" / "⏪ 5 sn"). Çift tık her zaman tam ekran (bekleyen tek tık iptal edilir, video
-duraklamaz). Ayarlar → **Oynatma kontrolleri**: davranış (kenarlar sarar / her yer duraklatır / kapalı) ve sarma
-süresi (1–60 sn). Canlı yayında sağ/sol zaman kaydırma tamponu içinde sarar.
-
-**İleri / geri sarma:** film, dizi ve dosyalarda alt çubukta ilerleme çubuğu (sürükleyin ya da tıklayın), geçen/toplam
-süre ve **−1 dk / −10 / +10 / +1 dk** düğmeleri vardır. Canlı yayında çubuk gizlenir; ←/→ zaman kaydırma yapar.
 
 ## Kayıt, zamanlanmış kayıt, hatırlatıcı, mini oynatıcı
 

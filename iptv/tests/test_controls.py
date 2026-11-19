@@ -18,7 +18,7 @@ def test_click_zones():
     assert z(None, None, "movie") == "pause"            # konum bilinmiyorsa duraklat
     assert z(100, 1200, "image") == "none"              # fotoğrafta sarma/duraklatma yok
     s = settings_mod.merged_defaults()
-    assert s["controls"] == {"click_action": "zones", "seek_step": 5, "mv_audio_hover": True,
+    assert s["controls"] == {"click_action": "zones", "seek_step": 5, "wheel": "seek", "mv_audio_hover": True,
                              "arrow_keys": "volume", "media_keys_zap": False, "stay_live": True, "catchup": "ask"}
     bad = settings_mod._sanitize({"controls": {"click_action": "x", "seek_step": 999}})
     assert bad["controls"]["click_action"] == "zones" and bad["controls"]["seek_step"] == 60
@@ -785,4 +785,129 @@ def test_pip_pin_locks_place_and_comes_back(tmp_path, monkeypatch):
         assert not win._pip
     finally:
         win.engine = None
+        win.close()
+
+
+def test_key_action_mapping():
+    from PySide6.QtCore import Qt
+
+    from helootv.ui.player_panel import key_action
+    assert key_action(Qt.Key_Right, "") == ("right", [])
+    assert key_action(Qt.Key_Space, " ") == ("pause", [])
+    assert key_action(Qt.Key_L, "L", Qt.ShiftModifier) == ("fwd10", [])
+    assert key_action(Qt.Key_J, "J", Qt.ShiftModifier) == ("back10", [])
+    assert key_action(Qt.Key_L, "l") == ("live", [])
+    assert key_action(Qt.Key_F, "f") == ("fullscreen", [])
+    assert key_action(Qt.Key_M, "m") == ("mute", [])
+    assert key_action(Qt.Key_7, "7") == ("digit", ["7"])
+    assert key_action(Qt.Key_Right, "", Qt.ControlModifier) is None      # Ctrl'li kısayollar QShortcut'ta
+    assert key_action(Qt.Key_Z, "z") is None
+
+
+def test_video_mouse_and_keys_like_youtube(tmp_path, monkeypatch):
+    """Videonun üstünde (Qt olayları): sağa tık +5, sağa çift tık +5 daha (tam ekran olmaz), ortaya çift tık tam ekran,
+    tekerlek sarar, ← → tuşları sarar."""
+    monkeypatch.setenv("HELOOTV_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    vid = tmp_path / "film.mkv"
+    subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=25:d=240",
+                    "-c:v", "libx264", "-preset", "ultrafast", "-g", "25", str(vid)], check=True)
+    from PySide6.QtCore import QPoint, QPointF, Qt
+    from PySide6.QtGui import QWheelEvent
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QApplication
+
+    from helootv.player.engine import MpvEngine
+    from helootv.store import Store
+    from helootv.ui.main_window import MainWindow
+    app = QApplication.instance() or QApplication([])
+    s = settings_mod.merged_defaults()
+    s["ui"]["resume_last_channel"] = False
+    s["ui"]["auto_refresh_hours"] = 0
+    win = MainWindow(Store(tmp_path / "t.db"), s, headless=True)
+    win.show()
+    eng = MpvEngine(s, headless=True, on_event=lambda n, d: win.bridge.event.emit(n, d), extra_options={"ao": "null"})
+    eng.start()
+    win.engine = eng
+
+    def pump(sec, until=None):
+        end = time.time() + sec
+        while time.time() < end:
+            app.processEvents()
+            if until and until():
+                return True
+            time.sleep(0.02)
+        return bool(until and until())
+
+    def pos():
+        return float(eng._get("time-pos") or 0)
+    host = win.player.host
+    try:
+        win.play_file(str(vid))
+        assert pump(10, lambda: pos() > 0.3 and not win.player.loading)
+        win.goto_time("1:00")
+        assert pump(5, lambda: abs(pos() - 60) < 1.5)
+        eng._set("pause", "yes")
+        pump(0.3)
+        w, h = host.width(), host.height()
+        right, mid = QPoint(int(w * 0.9), h // 2), QPoint(w // 2, h // 2)
+        # sağa tek tık: +5
+        p0 = pos()
+        QTest.mouseClick(host, Qt.LeftButton, Qt.NoModifier, right)
+        assert pump(3, lambda: abs(pos() - (p0 + 5)) < 1.2), (p0, pos())
+        pump(0.8)
+        # sağa çift tık: iki kez sarar (+10), tam ekran olmaz
+        p1 = pos()
+        QTest.mouseClick(host, Qt.LeftButton, Qt.NoModifier, right)        # gerçek fare: tık + çift tık olayı
+        QTest.mouseDClick(host, Qt.LeftButton, Qt.NoModifier, right)
+        assert pump(3, lambda: abs(pos() - (p1 + 10)) < 1.5), (p1, pos())
+        assert not win._fs
+        pump(0.8)
+        # ortaya tık: durdur/sürdür; ortaya çift tık: tam ekran ve duraklatma geri alınır
+        was = eng._get("pause")
+        QTest.mouseClick(host, Qt.LeftButton, Qt.NoModifier, mid)
+        assert eng._get("pause") is (not was)
+        pump(0.8)
+        was = eng._get("pause")
+        QTest.mouseClick(host, Qt.LeftButton, Qt.NoModifier, mid)
+        QTest.mouseDClick(host, Qt.LeftButton, Qt.NoModifier, mid)
+        pump(0.3)
+        assert win._fs and eng._get("pause") is was
+        win._set_fullscreen(False)
+        pump(0.5)
+        # fare tekerleği: yukarı ileri, aşağı geri (ayardaki adım)
+        p2 = pos()
+        ev = QWheelEvent(QPointF(mid), QPointF(host.mapToGlobal(mid)), QPoint(0, 0), QPoint(0, 120),
+                         Qt.NoButton, Qt.NoModifier, Qt.NoScrollPhase, False)
+        QApplication.sendEvent(host, ev)
+        assert pump(3, lambda: abs(pos() - (p2 + 5)) < 1.2), (p2, pos())
+        pump(0.5)
+        p3 = pos()
+        ev = QWheelEvent(QPointF(mid), QPointF(host.mapToGlobal(mid)), QPoint(0, 0), QPoint(0, -240),
+                         Qt.NoButton, Qt.NoModifier, Qt.NoScrollPhase, False)
+        QApplication.sendEvent(host, ev)
+        assert pump(3, lambda: abs(pos() - (p3 - 10)) < 1.2), (p3, pos())
+        # klavye: video odaktayken → ←, L (Shift+L) 10 sn
+        host.setFocus()
+        p4 = pos()
+        QTest.keyClick(host, Qt.Key_Right)
+        assert pump(3, lambda: abs(pos() - (p4 + 5)) < 1.2), (p4, pos())
+        p5 = pos()
+        QTest.keyClick(host, Qt.Key_Left)
+        assert pump(3, lambda: abs(pos() - (p5 - 5)) < 1.2), (p5, pos())
+        # art arda hızlı basış kaybolmaz: → → → = 15 sn (mpv eski konumdan hesaplardı)
+        pump(1.5)
+        p6 = pos()
+        for _ in range(3):
+            QTest.keyClick(host, Qt.Key_Right)
+        assert pump(4, lambda: abs(pos() - (p6 + 15)) < 1.2), (p6, pos())
+        # tekerlek ses ayarında
+        s["controls"]["wheel"] = "volume"
+        v0 = float(eng._get("volume"))
+        win._video_wheel("qt", 1)
+        assert float(eng._get("volume")) == v0 + 5
+        # imleç oynarken gizlenir
+        win._tick()
+        assert host.autohide
+    finally:
         win.close()

@@ -106,6 +106,7 @@ class MainWindow(QMainWindow):
         self._recent_clicks: list[tuple] = []
         self._click_seen: dict[str, float] = {}
         self._dbl_seen: dict[str, float] = {}
+        self._wheel_seen: dict[str, float] = {}
         self._mp_down = False
         self._mp_press: tuple | None = None
         self._mp_last_click = 0.0
@@ -270,7 +271,12 @@ class MainWindow(QMainWindow):
         pl.volume_step.connect(self._volume_step)
         pl.pip_clicked.connect(lambda: self._set_pip(not self._pip))
         pl.pip_pin_toggled.connect(self.set_pip_pinned)
-        pl.seek_to.connect(lambda sec: self.engine and self.engine.seek_abs(sec))
+        pl.seek_to.connect(lambda sec: self.engine and self.engine.seek_abs(sec, exact=True))
+        host = pl.host
+        host.clicked.connect(lambda x, w: self._video_click("qt", x, w))
+        host.double_clicked.connect(lambda x, w: self._video_dblclick("qt", x, w))
+        host.wheel_steps.connect(lambda n: self._video_wheel("qt", n))
+        host.key_action.connect(self._on_key)
         pl.seek_by.connect(self._seek_by)
         pl.menus["audio"].aboutToShow.connect(self._fill_audio_menu)
         pl.menus["sub"].aboutToShow.connect(self._fill_sub_menu)
@@ -418,6 +424,10 @@ class MainWindow(QMainWindow):
             self.player.set_idle("Oynatıcı kapandı", "Uygulamayı yeniden başlatın.")
 
     def _tick(self) -> None:
+        self.player.host.autohide = bool(self.current_req and not self.player.loading
+                                         and self.current_req.kind != "image")
+        if self.engine is not None and not self.headless:
+            self._capture_video_input()
         mv = getattr(self, "_multiview", None)
         if mv is not None and mv.isVisible():
             mv.tick()
@@ -982,6 +992,15 @@ class MainWindow(QMainWindow):
                 self._commit_digits()
             else:
                 self._show_info()
+        elif action == "wheel" and args:
+            self._video_wheel("mpv", int(args[0]))
+        elif action == "mute" and eng:
+            eng.cycle("mute")
+            eng.flash("🔇" if eng._get("mute") else "🔊")
+        elif action == "audio" and eng:
+            eng.cycle("audio")
+        elif action == "subvis" and eng:
+            eng.cycle("sub-visibility")
         elif action == "lossless":                 # video penceresi odaktayken Lossless Scaling kısayolu (Ctrl+Z)
             self.toggle_lossless()
         elif action == "click":
@@ -1033,8 +1052,12 @@ class MainWindow(QMainWindow):
             return
         self._on_video_click(x, width)
 
-    def _video_dblclick(self, source: str) -> None:
+    def _video_dblclick(self, source: str, x: float | None = None, width: float | None = None) -> None:
         if self._other_source_recent(self._dbl_seen, source, 0.6):
+            return
+        # YouTube gibi: kenarlara art arda tıklamak sarmayı sürdürür (sağ: ileri, sol: geri); ortada çift tık tam ekran
+        if self._dbl_seeks(x, width):
+            self._on_video_click(x, width)
             return
         self._undo_recent_clicks()     # çift tıkın tek tek tıklamaları videoyu durdurmuş/sarmış olmasın
         if self._pip:
@@ -1042,6 +1065,56 @@ class MainWindow(QMainWindow):
                 self._set_pip(False)
         else:
             self._set_fullscreen(not self._fs)
+
+    def _dbl_seeks(self, x: float | None, width: float | None) -> bool:
+        """Çift tık kenarda mı ve orada sarma yapılıyor mu (film/dizi; canlıda "hep canlı" değilse)?"""
+        eng, req = self.engine, self.current_req
+        if not eng or not req:
+            return False
+        if x is None:
+            pos = eng._get("mouse-pos") or {}
+            osd = eng._get("osd-dimensions") or {}
+            x = pos.get("x") if isinstance(pos, dict) else None
+            width = osd.get("w") if isinstance(osd, dict) else None
+        ctl = self.settings["controls"]
+        zone = opt.click_zone(x, width, req.kind, ctl.get("click_action", "zones"))
+        if zone not in ("back", "forward"):
+            return False
+        return not (req.kind == "live" and ctl.get("stay_live", True))
+
+    def _video_wheel(self, source: str, steps: int) -> None:
+        """Fare tekerleği videonun üstünde: film/dizide ileri/geri sarar (ayardaki adım), canlıda ses.
+        Ayarlar → Oynatma kontrolleri → "Fare tekerleği" ile ses de yapılabilir."""
+        if not steps or self._other_source_recent(self._wheel_seen, source, 0.4):
+            return
+        eng, req = self.engine, self.current_req
+        if not eng:
+            return
+        ctl = self.settings["controls"]
+        if req and req.kind not in ("live", "image") and ctl.get("wheel", "seek") == "seek":
+            self._seek_by(float(int(ctl.get("seek_step", 5)) * steps))
+        else:
+            self._volume_step(5 * steps)
+
+    def _capture_video_input(self) -> None:
+        """Windows: mpv'nin video alt penceresini devre dışı bırak → fare ve klavye o pencereye değil, Qt'deki
+        `MpvHost`'a gelir (tık, çift tık, tekerlek, tuşlar her zaman uygulamada işlenir; görüntü etkilenmez).
+        mpv pencereyi yeniden oluşturabilir: her tikte denetlenir (ucuz)."""
+        if os.name != "nt":
+            return
+        try:
+            import ctypes
+            from ctypes import wintypes
+            u32 = ctypes.windll.user32
+            found = []
+            proc = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)(
+                lambda h, _l: found.append(h) or True)
+            u32.EnumChildWindows(int(self.player.host.winId()), proc, 0)
+            for h in found:
+                if u32.IsWindowEnabled(h):
+                    u32.EnableWindow(h, False)
+        except Exception:
+            log.debug("video girdisi yakalanamadı", exc_info=True)
 
     def _point_is_ours(self) -> bool:
         """İmlecin altındaki pencere Heloo TV'nin ana penceresi mi (üstünde başka pencere/iletişim kutusu yok mu)?"""
@@ -1087,7 +1160,7 @@ class MainWindow(QMainWindow):
             return                                   # uzun basış ya da sürükleme: tıklama değil
         if now - self._mp_last_click < QApplication.doubleClickInterval() / 1000.0:
             self._mp_last_click = 0.0
-            self._video_dblclick("poll")
+            self._video_dblclick("poll", float(local.x()), float(host.width()))
         else:
             self._mp_last_click = now
             self._video_click("poll", float(local.x()), float(host.width()))
@@ -1114,12 +1187,16 @@ class MainWindow(QMainWindow):
             return False
         key = event.key()
         action = {Qt.Key_Left: "left", Qt.Key_Right: "right", Qt.Key_Space: "pause", Qt.Key_K: "pause",
-                  Qt.Key_J: "j", Qt.Key_L: "live"}.get(key)
+                  Qt.Key_J: "j", Qt.Key_L: "live", Qt.Key_F: "fullscreen", Qt.Key_M: "mute",
+                  Qt.Key_Home: "home"}.get(key)
+        args: list = []
+        if action is None and Qt.Key_0 <= key <= Qt.Key_9 and not isinstance(fw, QAbstractItemView):
+            action, args = "digit", [str(key - Qt.Key_0)]          # YouTube: 0–9 → %0–%90
         if action is None and key in (Qt.Key_Up, Qt.Key_Down) and not isinstance(fw, (QAbstractItemView, QComboBox)):
             action = "up" if key == Qt.Key_Up else "down"
         if action is None:
             return False
-        self._on_key(action, [])
+        self._on_key(action, args)
         return True
 
     def _on_video_click(self, x: float | None = None, width: float | None = None) -> None:
@@ -1291,7 +1368,10 @@ class MainWindow(QMainWindow):
         self._select_tab(tab if TABS[tab][0] != "settings" else 0)
 
     def _on_tab(self, i: int) -> None:
+        changed = self.pages.currentIndex() != i
         self.pages.setCurrentIndex(i)
+        if changed:
+            self._fade_in(self.pages.currentWidget())
         key = TABS[i][0]
         if key != "settings":
             self.settings["ui"]["last_tab"] = key
@@ -1318,6 +1398,29 @@ class MainWindow(QMainWindow):
         self.pages.setVisible(not self._theater)
         self.right.setVisible(key == "live" or playing or self._theater)
         self.epg_panel.setVisible(key == "live" and not self._theater)
+
+    def _fade_in(self, w, ms: int = 180) -> None:
+        """Sayfa geçişinde yumuşak belirme (yalnız listeler; mpv'nin yerel penceresi hiçbir efektin içinde olmaz).
+        Efekt bitince kaldırılır: sürekli bir çizim yükü bırakmaz."""
+        if w is None or w.isAncestorOf(self.player.host) or w is self.player.host:
+            return
+        from PySide6.QtCore import QEasingCurve, QPropertyAnimation
+        from PySide6.QtWidgets import QGraphicsOpacityEffect
+        eff = QGraphicsOpacityEffect(w)
+        eff.setOpacity(0.0)
+        w.setGraphicsEffect(eff)
+        anim = QPropertyAnimation(eff, b"opacity", w)
+        anim.setDuration(ms)
+        anim.setStartValue(0.0)
+        anim.setEndValue(1.0)
+        anim.setEasingCurve(QEasingCurve.OutCubic)
+
+        def done() -> None:
+            if w.graphicsEffect() is eff:
+                w.setGraphicsEffect(None)
+        anim.finished.connect(done)
+        anim.start(QPropertyAnimation.DeleteWhenStopped)
+        self._fade_anim = anim
 
     def _set_theater(self, on: bool) -> None:
         self._theater = bool(on)

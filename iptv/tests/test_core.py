@@ -161,7 +161,10 @@ def test_xmltv_time():
     assert epg.parse_xmltv_time("bad") is None
 
 
-def test_m3u_import_epg_and_queries(tmp_path):
+def test_m3u_import_epg_and_queries(tmp_path, monkeypatch):
+    # örnek EPG 9 Kasım 2026 tarihli: saat o güne sabitlenir (7 günden eski programlar budanır)
+    import time as _time
+    monkeypatch.setattr(_time, "time", lambda: float(epg.parse_xmltv_time("20261109180000 +0300")))
     store = Store(tmp_path / "t.db")
     sid = store.add_source(name="Liste", kind="m3u", url=str(DATA / "sample.m3u"))
     counts = catalog.refresh_source(store, store.get_source(sid), settings_mod.merged_defaults())

@@ -72,6 +72,7 @@ DEFAULTS: dict[str, Any] = {
     "controls": {
         "click_action": "zones",  # zones (orta: duraklat, kenarlar: sar) | pause (her yer duraklat) | none
         "seek_step": 5,           # kenara tıklayınca kaç saniye sarılsın
+        "wheel": "seek",          # videonun üstünde fare tekerleği: seek (film/dizide sar, canlıda ses) | volume
         "mv_audio_hover": True,   # çoklu görüntüde ses fare imlecinin üstündeki hücreye geçsin
         "arrow_keys": "volume",   # ↑/↓: volume (ses, YouTube gibi) | channel (kanal değiştir)
         "media_keys_zap": False,  # kulaklık/klavye "sonraki/önceki" tuşları canlı yayında kanal değiştirsin
@@ -136,6 +137,7 @@ CHOICES: dict[tuple[str, str], tuple] = {
 RANGES: dict[tuple[str, str], tuple[float, float]] = {
     ("audio", "volume"): (0, 150),
     ("controls", "seek_step"): (1, 60),
+    ("controls", "wheel"): ("seek", "volume"),
     ("picture", "brightness"): (-100, 100), ("picture", "contrast"): (-100, 100),
     ("picture", "saturation"): (-100, 100), ("picture", "gamma"): (-100, 100), ("picture", "hue"): (-100, 100),
     ("picture", "deband"): (0, 3),

@@ -133,6 +133,7 @@ def test_player_panel_seek_and_picture_dialog(monkeypatch, tmp_path):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
+    from PySide6.QtCore import Qt
     from helootv.ui.picture_dialog import PictureDialog
     from helootv.ui.player_panel import PlayerPanel, _clock
     from helootv.ui.subs_dialogs import AiSubsDialog, OnlineSubsDialog
@@ -150,9 +151,15 @@ def test_player_panel_seek_and_picture_dialog(monkeypatch, tmp_path):
     p.seek.setValue(5000)
     p._seek_release()
     assert got[-1] == ("to", 1800.0)
-    plus = [b for b in p.bar.findChildren(type(p.btn_stop)) if b.text() == "+10"][0]
-    plus.click()
-    assert got[-1] == ("by", 10.0)
+    # alttaki ±10 / ±1 dk düğmeleri yok: sarma videonun üstünden (tık, çift tık, tekerlek) ve çubuktan
+    assert not [b for b in p.bar.findChildren(type(p.btn_stop)) if b.text() in ("+10", "−10", "+1 dk", "−1 dk")]
+    # YouTube çubuğu: tıklanan yere atlar
+    from PySide6.QtCore import QPoint
+    from PySide6.QtTest import QTest
+    QTest.mouseClick(p.seek, Qt.LeftButton, Qt.NoModifier, QPoint(8 + (p.seek.width() - 16) // 4, 10))
+    assert got[-1][0] == "to" and abs(got[-1][1] - 900.0) < 20, got[-1]
+    p.set_status({"kind": "movie", "duration": 3600.0, "pos": 900.0, "cache": 600.0})
+    assert abs(p.seek._buffered - 1500 / 3600) < 0.01
     p.set_status({"kind": "live", "duration": 0, "pos": 5})
     assert p.seek_box.isHidden()
     assert _clock(3725) == "1:02:05" and set(p.menus) == {"audio", "sub", "picture"}

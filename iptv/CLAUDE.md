@@ -85,9 +85,15 @@ python -m pytest tests -q              # testler (libmpv2/ffmpeg/7z varsa başs�
   ekran) `_undo_recent_clicks` etkisini geri alır. Mini oynatıcıda `PlayerPanel.pip_bar` (Qt düğmeleri: ±10 sn,
   durdur, ses, büyüt; yalnız fare üstündeyken `_pip_bar_tick`, 1,5 sn sonra gizlenir), pencere bırakıldığı yerde
   (ilk kez sağ üst). `_update_layout` tam ekranda ve mini oynatıcıda hiçbir şey göstermez. Çubuk/mini düğmeleri `_seek_by` (canlıda "hep canlı"ya uyar).
-- Video girdisi iki bağımsız yoldan: mpv bağlamaları (`click`/`dblclick` script-message) + Windows'ta fare yoklaması
-  (`_mouse_poll`: GetAsyncKeyState + imleç, `_point_is_ours`); `_video_click/_video_dblclick` aynı tıklamayı bir kez
-  işler. Film/dizide → ← Boşluk J K L uygulama düzeyi `eventFilter` ile odaktan bağımsız videoya gider (yazı kutusu hariç).
+- Video girdisi: Windows'ta `_capture_video_input` (her tikte) mpv'nin video alt penceresini `EnableWindow(False)`
+  yapar → fare/klavye Qt'deki `MpvHost`'a gelir (`clicked`/`double_clicked`/`wheel_steps`/`key_action`, tuş eşlemesi
+  `player_panel.key_action`; imleç oynarken `autohide`). Yedekler: mpv bağlamaları (`click`/`dblclick`/`wheel`
+  script-message) + fare yoklaması (`_mouse_poll`); `_video_click/_video_dblclick/_video_wheel` kaynakları ayıklar
+  (aynı olay bir kez). Kenarda çift tık sarmayı sürdürür (`_dbl_seeks`), ortada tam ekran. Tekerlek `controls.wheel`
+  (seek: film/dizide ±seek_step, canlıda ses). `engine.seek` film/dizide art arda sarmaları hedefe ekler
+  (`_seek_target`, `SEEK_CHAIN`; mpv bitmemiş sarmada göreli sarmayı eski konumdan hesaplardı) ve mutlak+exact gider.
+  İlerleme çubuğu `SeekBar` (kendi çizer: inmiş kısım, üstünde dakika, tık = oraya atla; odak almaz). Alttaki ±10/±1 dk
+  düğmeleri yok (sarma videonun üstünden). Sayfa geçişi `_fade_in` (efekt bitince kaldırılır; mpv penceresine uygulanmaz). Film/dizide → ← Boşluk J K L uygulama düzeyi `eventFilter` ile odaktan bağımsız videoya gider (yazı kutusu hariç).
 - HLS kalite önbelleği (`_pin_cache`) yalnız yönlendirmesiz adreslerde (`urljoin(req.url, info.uri) == variant`):
   oturum adresi önbelleğe alınırsa eski kanal görünür. Kanal geçişinde `PlayerPanel.show_loading` → "playing" olayıyla video.
 - Veritabanı: `store.py` (iş parçacığı başına bağlantı, WAL). EPG ayrı dosyada (`*-epg.db`); uzun EPG içe aktarımı

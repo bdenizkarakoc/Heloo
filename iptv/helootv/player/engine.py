@@ -98,9 +98,9 @@ CLOSE_WIN     ignore
 ctrl+w        script-message helootv stop
 NEXT          script-message helootv next
 PREV          script-message helootv prev
-WHEEL_UP      add volume 2
-WHEEL_DOWN    add volume -2
-m             cycle mute
+WHEEL_UP      script-message helootv wheel 1
+WHEEL_DOWN    script-message helootv wheel -1
+m             script-message helootv mute
 a             cycle audio
 v             cycle sub-visibility
 j             script-message helootv j
@@ -183,6 +183,8 @@ class MpvEngine:
         self._drop_mark: tuple[float, int] | None = None
         self.lighten = 0             # 0 tam iyileştirme | 1 gürültü azaltma kapalı | 2 + VSR/yapay zekâ kapalı
         self.linear = False          # film sunucusu ortadan başlatmayı desteklemiyor (yalnız inen kısma atlanır)
+        self._seek_target: float | None = None   # art arda sarmaların birikimi (seek)
+        self._seek_at = 0.0
         self._vp: dict | None = None
         self._screen: tuple[int, int] | None = None
         self._plan: dict = {}
@@ -337,6 +339,7 @@ class MpvEngine:
         with self._lock:
             self._cancel_retry()
             self._gen += 1
+            self._seek_target = None
             self.request = req
             self._retry = 0
             self._user_paused = False
@@ -642,15 +645,33 @@ class MpvEngine:
                 self._boost = False
         return paused
 
+    SEEK_CHAIN = 1.2      # sn: bu süre içinde gelen sarmalar bir öncekinin HEDEFİNE eklenir
+
     def seek(self, seconds: float) -> None:
-        if self.request and self.request.kind == "live":
+        """Göreli sarma. Film/dizide art arda basışlar (→ → →, sağa çift tık, tekerlek) kaybolmasın: mpv önceki sarma
+        bitmeden gelen göreli sarmayı ESKİ konumdan hesaplardı (3 basış = 5 sn). Hedef saklanır, yeni sarma ona eklenir
+        ve mutlak konuma gidilir."""
+        req = self.request
+        if req and req.kind == "live":
             self._user_paused = True  # canlıda geri sarınca zaman kaydırma kipine geç
-        if self.linear:
+            self.command("seek", f"{seconds:.1f}", "relative+exact")
+            return
+        now = time.monotonic()
+        base = None
+        if self._seek_target is not None and now - self._seek_at < self.SEEK_CHAIN:
+            base = self._seek_target
+        if base is None:
             pos = self._get("time-pos")
-            if isinstance(pos, (int, float)):
-                self.seek_abs(pos + seconds, exact=True)
+            if not isinstance(pos, (int, float)):
+                self.command("seek", f"{seconds:.1f}", "relative+exact")
                 return
-        self.command("seek", f"{seconds:.1f}", "relative+exact")
+            base = float(pos)
+        target = base + float(seconds)
+        dur = self._get("duration")
+        if isinstance(dur, (int, float)) and dur > 0:
+            target = min(target, max(0.0, float(dur) - 1.0))
+        target = max(0.0, target)
+        self.seek_abs(target, exact=True)
 
     def cached_range(self) -> tuple[float, float] | None:
         """İndirilmiş (atlanabilir) aralık, sn. Sunucu ortadan başlatmayı desteklemiyorsa yalnız buraya atlanabilir."""
@@ -738,6 +759,7 @@ class MpvEngine:
                     self._emit("seek-clamped", {"wanted": target, "got": clamped, "start": lo, "end": rng[1]})
                 target = clamped
         self.command("seek", f"{target:.2f}", "absolute+exact" if exact else "absolute+keyframes")
+        self._seek_target, self._seek_at = target, time.monotonic()
         return target
 
     def sub_add(self, path: str, title: str = "", lang: str = "") -> None:
