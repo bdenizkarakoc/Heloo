@@ -117,7 +117,7 @@ def test_picture_presets_roundtrip():
     # bozuk değerler varsayılana döner
     bad = settings_mod._sanitize({"picture": {"brightness": 500, "denoise": "x"}, "video": {"sharpen": 3}})
     assert bad["picture"]["brightness"] == 100 and bad["picture"]["denoise"] == "auto"
-    assert bad["video"]["sharpen"] == "light"
+    assert bad["video"]["sharpen"] == "medium"
 
 
 def shaders_sharp(name):
@@ -285,3 +285,24 @@ def test_vod_seek_tracks_subs_picture(monkeypatch, tmp_path):
             win.grab().save(os.environ["HELOOTV_SHOT"])
     finally:
         win.close()
+
+
+def test_net_preset_default_and_migration(tmp_path):
+    """Varsayılan görüntü "Net (önerilen)"; eski sürümde hiç değiştirilmemiş "Doğal" ona geçer, kendi ayarı korunur."""
+    import json
+
+    from helootv.player import options as opt
+    s = settings_mod.merged_defaults()
+    assert s["picture"]["preset"] == "net" and s["video"]["sharpen"] == "medium"
+    assert s["picture"]["contrast"] == opt.PICTURE_PRESETS["net"]["contrast"]
+    old = {"meta": {"version": 5}, "video": {"sharpen": "light"},
+           "picture": {"preset": "natural", "brightness": 0, "contrast": 0, "saturation": 0, "gamma": 0, "hue": 0}}
+    p = tmp_path / "s.json"
+    p.write_text(json.dumps(old), encoding="utf-8")
+    got = settings_mod.load_settings(p)
+    assert got["picture"]["preset"] == "net" and got["video"]["sharpen"] == "medium"
+    mine = dict(old, picture=dict(old["picture"], preset="custom", contrast=12))
+    p.write_text(json.dumps(mine), encoding="utf-8")
+    got = settings_mod.load_settings(p)
+    assert got["picture"]["preset"] == "custom" and got["picture"]["contrast"] == 12 and got["video"]["sharpen"] == "light"
+    assert opt.quality_options(s, "win32")["cscale"] == "lanczos"

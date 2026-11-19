@@ -42,7 +42,7 @@ class PictureDialog(QDialog):
         pre = QHBoxLayout()
         pre.setSpacing(6)
         self.preset_btns: dict[str, QPushButton] = {}
-        for key in ("natural", "vivid", "cinema", "sports", "noisy"):
+        for key in ("net", "natural", "vivid", "cinema", "sports", "noisy"):
             b = QPushButton(opt.PRESET_LABELS[key])
             b.setObjectName("Seg")
             b.setCheckable(True)

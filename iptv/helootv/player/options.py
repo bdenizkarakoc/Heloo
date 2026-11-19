@@ -184,6 +184,7 @@ def quality_options(settings: dict, platform: str = sys.platform) -> dict:
     else:
         o.update({"scale": "lanczos", "scale-antiring": "0"})
     # küçültme (VSR/FSR çıktısı pencereden büyükse) için hafif ve keskin filtre; ewa_* küçültmede GPU'yu boşa yorar
+    o["cscale"] = "lanczos"          # renk (chroma) büyütme: IPTV 4:2:0 renk kenarları keskin (ucuz, ayrık süzgeç)
     o["dscale"] = "mitchell"
     o["correct-downscaling"] = "yes"
     if win:
@@ -385,6 +386,10 @@ def cli_args(opts: dict) -> list[str]:
 # kullanır → gecikme eklemez; IPTV'deki karıncalanmayı (gürültü/kumlanma) ve titreşimi en etkili bunu giderir.
 DENOISE = {"light": "1.5:1.5:4:4", "medium": "2.5:2:6:5", "strong": "4:3:9:7"}
 PICTURE_PRESETS = {
+    # önerilen (varsayılan): hafif kontrast + renk, orta keskinlik — IPTV'nin soluk/yumuşak görüntüsünü canlandırır,
+    # renkleri bozmaz (RTX VSR açıkken keskinlik yarıya iner: çift keskinlik halesi olmaz)
+    "net": {"brightness": 0, "contrast": 4, "saturation": 6, "gamma": 0, "hue": 0, "denoise": "auto",
+            "deband": 1, "sharpen": "medium"},
     "natural": {"brightness": 0, "contrast": 0, "saturation": 0, "gamma": 0, "hue": 0, "denoise": "auto",
                 "deband": 1, "sharpen": "light"},
     "vivid": {"brightness": 2, "contrast": 8, "saturation": 15, "gamma": 0, "hue": 0, "denoise": "auto",
@@ -396,7 +401,7 @@ PICTURE_PRESETS = {
     "noisy": {"brightness": 0, "contrast": 3, "saturation": 2, "gamma": 0, "hue": 0, "denoise": "strong",
               "deband": 3, "sharpen": "medium"},
 }
-PRESET_LABELS = {"natural": "Doğal", "vivid": "Canlı", "cinema": "Sinema", "sports": "Spor",
+PRESET_LABELS = {"net": "Net (önerilen)", "natural": "Doğal", "vivid": "Canlı", "cinema": "Sinema", "sports": "Spor",
                  "noisy": "Karıncalı yayın", "custom": "Kendi ayarım"}
 DEBAND = {0: None, 1: ("2", "35", "16", "5"), 2: ("3", "48", "20", "8"), 3: ("4", "64", "24", "12")}
 

@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 # Varsayılanlar "en iyi" deneyim içindir: RTX VSR ile 4K, düşük gecikme, canlıya yetişme, otomatik yeniden bağlanma.
-SETTINGS_VERSION = 5
+SETTINGS_VERSION = 6
 
 DEFAULTS: dict[str, Any] = {
     "meta": {"version": SETTINGS_VERSION},
@@ -25,7 +25,7 @@ DEFAULTS: dict[str, Any] = {
         "ai_upscaler": "fsrcnnx",  # RTX VSR yokken yapay zekâ büyütücü: fsrcnnx | artcnn | fsr | off
         "amd_fsr": True,          # AMD/Intel kartta AMD FSR ile büyüt (NVIDIA'da RTX VSR)
         "gpu_vendor": "",         # açılışta algılanır: nvidia | amd | intel
-        "sharpen": "light",       # CAS keskinleştirme: off | light | medium | strong
+        "sharpen": "medium",      # CAS keskinleştirme: off | light | medium | strong (RTX VSR açıkken yarısı)
         "low_boost": True,        # ≤576p düşük kaliteli kaynaklarda daha güçlü deband + keskinlik
     },
     "export": {
@@ -36,8 +36,8 @@ DEFAULTS: dict[str, Any] = {
     },
     # Görüntü ayarları (oynarken "🎨 Görüntü" penceresinden anında değişir)
     "picture": {
-        "preset": "natural",      # natural | vivid | cinema | sports | noisy | custom
-        "brightness": 0, "contrast": 0, "saturation": 0, "gamma": 0, "hue": 0,   # -100..100 (mpv)
+        "preset": "net",          # net (önerilen) | natural | vivid | cinema | sports | noisy | custom
+        "brightness": 0, "contrast": 4, "saturation": 6, "gamma": 0, "hue": 0,   # -100..100 (mpv)
         "denoise": "auto",        # off | auto | light | medium | strong — karıncalanma (hqdn3d, gecikmesiz)
         "deband": 1,              # 0..3 renk bandı yumuşatma gücü
     },
@@ -114,7 +114,7 @@ DEFAULTS: dict[str, Any] = {
 CHOICES: dict[tuple[str, str], tuple] = {
     ("video", "vsr_target"): ("2160", "1440", "screen"),
     ("video", "deinterlace"): ("auto", "yes", "no"),
-    ("picture", "preset"): ("natural", "vivid", "cinema", "sports", "noisy", "custom"),
+    ("picture", "preset"): ("net", "natural", "vivid", "cinema", "sports", "noisy", "custom"),
     ("picture", "denoise"): ("off", "auto", "light", "medium", "strong"),
     ("video", "sharpen"): ("off", "light", "medium", "strong"),
     ("subtitles", "style"): ("outline", "box"),
@@ -219,6 +219,15 @@ def _migrate(s: dict, version) -> None:
         # v4: tam ekrana geçince Lossless Scaling kendiliğinden açılıyordu; artık yalnız kısayolla (Ctrl+Z)
         if s.get("lossless", {}).get("mode") == "fullscreen":
             s["lossless"]["mode"] = "manual"
+    if not isinstance(version, int) or version < 6:
+        # v5 varsayılanı "Doğal" + hafif keskinlik görüntüyü soluk/yumuşak bırakıyordu → "Net (önerilen)".
+        # Yalnız hiç değiştirilmemişse (kullanıcının kendi ayarı korunur)
+        pic = s.get("picture", {})
+        untouched = (pic.get("preset") == "natural" and s["video"].get("sharpen") == "light"
+                     and all(int(pic.get(k, 0) or 0) == 0 for k in ("brightness", "contrast", "saturation", "gamma", "hue")))
+        if untouched:
+            from .player.options import apply_preset
+            apply_preset(s, "net")
     s["meta"]["version"] = SETTINGS_VERSION
 
 

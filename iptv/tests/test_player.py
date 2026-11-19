@@ -106,7 +106,7 @@ def test_interlaced_denoise_and_migration(tmp_path):
     p = tmp_path / "settings.json"
     p.write_text(json.dumps({"video": {"vsr_target": "2160", "sharpen": "strong"}}), encoding="utf-8")
     s = settings_mod.load_settings(p)
-    assert s["video"]["vsr_target"] == "screen" and s["video"]["sharpen"] == "strong" and s["meta"]["version"] == 5
+    assert s["video"]["vsr_target"] == "screen" and s["video"]["sharpen"] == "strong" and s["meta"]["version"] == settings_mod.SETTINGS_VERSION
     p.write_text(json.dumps({"meta": {"version": 2}, "video": {"vsr_target": "2160"}}), encoding="utf-8")
     assert settings_mod.load_settings(p)["video"]["vsr_target"] == "2160"   # yeni sürümde seçilen 4K kalır
     # v2 → v3: 1,5 sn tampon donma yapıyordu → Dengeli, canlıya yetişme kapalı; v3'te seçilen "low" korunur

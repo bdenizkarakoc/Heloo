@@ -283,7 +283,7 @@ açılışta kartı tanır (`Win32_VideoController`) ve AMD/Intel kartta:
 
 | Ayar | Ne yapar |
 |---|---|
-| Hazır ayarlar | **Doğal**, **Canlı**, **Sinema**, **Spor** (güçlü keskinlik), **Karıncalı yayın** (güçlü gürültü azaltma + deband) |
+| Hazır ayarlar | **Net (önerilen, varsayılan)**: hafif kontrast ve renk, orta keskinlik · **Doğal**, **Canlı**, **Sinema**, **Spor** (güçlü keskinlik), **Karıncalı yayın** (güçlü gürültü azaltma + deband) |
 | Parlaklık, kontrast, doygunluk, gama, ton | −100…100 (mpv; GPU'da, gecikmesiz) |
 | Karıncalanma azaltma | `hqdn3d` (FFmpeg): uzamsal + zamansal gürültü azaltma. Zamansal kısım yalnız **önceki** kareyi kullanır → gecikme eklemez. *Otomatik*: ≤576p orta, 720p hafif, 1080p ve üstü kapalı (RTX VSR temizler); elle her çözünürlükte açılabilir |
 | Keskinlik | AMD FidelityFX **CAS** tarzı uyarlanır keskinleştirme (kendi GLSL shader'ımız, `helootv/glsl/cas.glsl`); kenarları bulanıklaştırmadan netleştirir, aşırı keskinlik halesi yapmaz |

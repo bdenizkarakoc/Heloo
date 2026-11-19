@@ -1842,8 +1842,8 @@ class MainWindow(QMainWindow):
         m.clear()
         self._menu_action(m, "🎨 Görüntü ayarları…  (Ctrl+P)", self.picture_dialog)
         m.addSeparator()
-        cur = self.settings["picture"].get("preset", "natural")
-        for key in ("natural", "vivid", "cinema", "sports", "noisy"):
+        cur = self.settings["picture"].get("preset", "net")
+        for key in ("net", "natural", "vivid", "cinema", "sports", "noisy"):
             self._menu_action(m, opt.PRESET_LABELS[key], lambda k=key: self._apply_preset(k), cur == key)
         if cur == "custom":
             self._menu_action(m, opt.PRESET_LABELS["custom"], lambda: None, True)

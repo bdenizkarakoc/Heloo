@@ -31,6 +31,8 @@ python -m pytest tests -q              # testler (libmpv2/ffmpeg/7z varsa başs�
 - Görüntü ayarları (`settings["picture"]` + `video.sharpen/low_boost`) `opt.picture_options` ile anında uygulanır
   (`engine.apply_picture`); gürültü azaltma `vsr_plan`'da `@helootv-dn:lavfi=[hqdn3d]` olarak VSR'den önce gelir.
   Keskinlik kendi CAS shader'ımız (`helootv/glsl/cas.glsl`, `cas_sharpness` parametresi).
+  Varsayılan hazır ayar `net` (kontrast +4, renk +6, keskinlik orta; VSR'de CAS yarıya iner), ayar göçü v6 yalnız
+  hiç değiştirilmemiş "Doğal"ı ona geçirir. `cscale=lanczos` (renk kenarları).
 - Altyazı: OpenSubtitles `subs_online.py` (API anahtarı ayarlarda), yapay zekâ altyazı `ai_subs.py` (faster-whisper,
   isteğe bağlı kurulur; ffmpeg ile 40 sn'lik parçalar, `on_update` → arayüzde `sub_add`/`sub_reload`).
 - Lossless Scaling (Steam 993090, ücretli, kapalı kaynak) asla pakete eklenmez/indirilmez: `lossless.py` yalnız
